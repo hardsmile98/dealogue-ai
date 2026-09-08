@@ -1,1 +1,7 @@
 export { BrandMark } from './BrandMark/BrandMark'
+export { StatTile } from './StatTile/StatTile'
+export type { StatTileDelta } from './StatTile/StatTile'
+export { PageHeader } from './PageHeader/PageHeader'
+export { EmptyState } from './EmptyState/EmptyState'
+export { StackedColumnChart } from './StackedColumnChart/StackedColumnChart'
+export type { ChartColumn, ChartSeries } from './StackedColumnChart/StackedColumnChart'

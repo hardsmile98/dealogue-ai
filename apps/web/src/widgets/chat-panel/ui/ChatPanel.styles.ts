@@ -1,0 +1,173 @@
+import type { SxStyles } from '@/shared/types'
+
+export const chatPanelStyles = {
+  root: {
+    display: 'grid',
+    gridTemplateColumns: { xs: '1fr', md: '360px 1fr' },
+    height: { xs: 'calc(100dvh - 240px)', md: 'calc(100dvh - 268px)' },
+    minHeight: 520,
+    border: '1px solid',
+    borderColor: 'divider',
+    borderRadius: 3,
+    overflow: 'hidden',
+    bgcolor: 'background.paper',
+  },
+
+  // Левая колонка — список
+  listPane: {
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 0,
+    minWidth: 0,
+    borderRight: { md: '1px solid' },
+    borderColor: { md: 'divider' },
+  },
+  listTools: {
+    p: 1.5,
+    pb: 1,
+    borderBottom: '1px solid',
+    borderColor: 'divider',
+  },
+  filterRow: {
+    display: 'flex',
+    gap: 0.75,
+    flexWrap: 'wrap',
+    mt: 1,
+  },
+  list: {
+    flexGrow: 1,
+    overflowY: 'auto',
+    py: 0.5,
+  },
+  listItem: {
+    alignItems: 'flex-start',
+    gap: 1.5,
+    px: 1.5,
+    py: 1.25,
+    borderRadius: 0,
+    '&.Mui-selected': {
+      bgcolor: 'rgba(79, 70, 229, 0.08)',
+      '&:hover': { bgcolor: 'rgba(79, 70, 229, 0.12)' },
+    },
+  },
+  listItemBody: {
+    minWidth: 0,
+    flexGrow: 1,
+  },
+  listItemTop: {
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 1,
+  },
+  peerName: {
+    fontWeight: 600,
+    fontSize: 14,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  time: {
+    fontSize: 12,
+    color: 'text.secondary',
+    flexShrink: 0,
+  },
+  preview: {
+    fontSize: 13,
+    color: 'text.secondary',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    mt: 0.25,
+  },
+  listItemBottom: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 1,
+    mt: 0.75,
+  },
+  listFooter: {
+    px: 2,
+    py: 1,
+    fontSize: 12,
+    color: 'text.secondary',
+    borderTop: '1px solid',
+    borderColor: 'divider',
+  },
+
+  // Правая колонка — переписка
+  threadPane: {
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 0,
+    minWidth: 0,
+    bgcolor: '#f7f7fb',
+  },
+  threadHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 1.5,
+    px: 2,
+    py: 1.5,
+    bgcolor: 'background.paper',
+    borderBottom: '1px solid',
+    borderColor: 'divider',
+  },
+  threadHeaderText: {
+    minWidth: 0,
+    flexGrow: 1,
+  },
+  threadPeerName: {
+    fontWeight: 600,
+    fontSize: 15,
+  },
+  threadPeerMeta: {
+    fontSize: 12,
+    color: 'text.secondary',
+  },
+  threadHeaderRight: {
+    display: { xs: 'none', sm: 'flex' },
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 0.5,
+    fontSize: 12,
+    color: 'text.secondary',
+    flexShrink: 0,
+  },
+  messages: {
+    flexGrow: 1,
+    overflowY: 'auto',
+    py: 1.5,
+  },
+  dayDivider: {
+    display: 'flex',
+    justifyContent: 'center',
+    my: 1.5,
+  },
+  dayDividerLabel: {
+    px: 1.5,
+    py: 0.25,
+    borderRadius: 10,
+    bgcolor: 'rgba(16, 24, 40, 0.06)',
+    fontSize: 12,
+    color: 'text.secondary',
+  },
+  threadFooter: {
+    px: 2,
+    py: 1,
+    fontSize: 12,
+    color: 'text.secondary',
+    bgcolor: 'background.paper',
+    borderTop: '1px solid',
+    borderColor: 'divider',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 1,
+    '& svg': { fontSize: 16 },
+  },
+  threadEmpty: {
+    flexGrow: 1,
+    display: 'grid',
+    placeItems: 'center',
+  },
+} satisfies SxStyles

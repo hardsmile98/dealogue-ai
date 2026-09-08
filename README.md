@@ -44,6 +44,11 @@ cd apps/web && cp .env.example .env && npm install --legacy-peer-deps && npm run
 Если у `apps/web` нет `.env` с `VITE_API_URL`, форма входа работает на моке
 и в сеть не ходит — удобно, когда backend не поднят.
 
+Раздел «Аккаунты Telegram» (список аккаунтов, подключение, статистика по кодам
+из первых сообщений, чаты) пока работает на локальном моке в самом фронтенде:
+эндпоинтов `/telegram/*` в `apps/api` ещё нет. Контракт, который нужно
+реализовать, описан в [apps/web/README.md](apps/web/README.md#telegram).
+
 ## Подробности
 
 - [apps/api/README.md](apps/api/README.md) — эндпоинты авторизации, миграции,

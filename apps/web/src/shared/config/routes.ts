@@ -5,6 +5,21 @@
 export const ROUTES = {
   home: '/',
   login: '/login',
+  accounts: '/accounts',
+  /** Шаблоны для роутера: сегменты `:accountId` / `:chatId` подставляет React Router. */
+  account: '/accounts/:accountId',
+  accountStats: '/accounts/:accountId/stats',
+  accountChats: '/accounts/:accountId/chats',
+  accountChat: '/accounts/:accountId/chats/:chatId',
 } as const
 
 export type AppRoute = (typeof ROUTES)[keyof typeof ROUTES]
+
+/** Готовые ссылки на страницы аккаунта — чтобы не собирать пути руками. */
+export const accountLinks = {
+  root: (accountId: string) => `${ROUTES.accounts}/${accountId}`,
+  stats: (accountId: string) => `${ROUTES.accounts}/${accountId}/stats`,
+  chats: (accountId: string) => `${ROUTES.accounts}/${accountId}/chats`,
+  chat: (accountId: string, chatId: string) =>
+    `${ROUTES.accounts}/${accountId}/chats/${chatId}`,
+}
