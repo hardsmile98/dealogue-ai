@@ -26,16 +26,11 @@ import type {
   StatsTotalsDto,
   TelegramAccountDto,
 } from '../telegram.types.js';
+import { TelegramDialogStartsService } from './telegram-dialog-starts.service.js';
 import { TelegramRuntimeService } from './telegram-runtime.service.js';
 
 const MAX_PERIOD_DAYS = 366;
 const CHATS_LIMIT = 500;
-
-interface DayCodeRow {
-  day: string;
-  code: string | null;
-  count: number | string;
-}
 
 /** Чтение для контроллера: список, карточка, удаление, чаты, сообщения, статистика. */
 @Injectable()
@@ -43,6 +38,7 @@ export class TelegramAccountsService {
   constructor(
     private readonly config: TelegramConfig,
     private readonly runtime: TelegramRuntimeService,
+    private readonly dialogStarts: TelegramDialogStartsService,
     @InjectRepository(TelegramAccountEntity)
     private readonly accounts: Repository<TelegramAccountEntity>,
     @InjectRepository(TelegramChatEntity)
@@ -176,45 +172,12 @@ export class TelegramAccountsService {
     return account;
   }
 
-  /**
-   * Первые входящие сообщения по дням и кодам. «День» считается в зоне
-   * `timezone`: границы периода — локальные полуночи, переведённые в timestamptz.
-   */
-  private groupByDayAndCode(
-    accountId: string,
-    from: string,
-    to: string,
-    timezone: string,
-  ): Promise<DayCodeRow[]> {
-    return this.chats.query(
-      `
-        SELECT to_char(c.first_message_at AT TIME ZONE $4, 'YYYY-MM-DD') AS day,
-               c.lead_code AS code,
-               COUNT(*)::int AS count
-        FROM telegram_chats c
-        WHERE c.account_id = $1
-          AND c.first_message_direction = 'in'
-          AND c.first_message_at >= ($2::timestamp AT TIME ZONE $4)
-          AND c.first_message_at < (($3::timestamp + interval '1 day') AT TIME ZONE $4)
-        GROUP BY day, code
-      `,
-      [accountId, from, to, timezone],
-    );
+  private groupByDayAndCode(accountId: string, from: string, to: string, timezone: string) {
+    return this.dialogStarts.groupByDayAndCode(accountId, from, to, timezone);
   }
 
-  private async newChatsToday(accountIds: string[]): Promise<Map<string, number>> {
-    const rows: { account_id: string; count: number | string }[] = await this.chats.query(
-      `
-        SELECT c.account_id, COUNT(*)::int AS count
-        FROM telegram_chats c
-        WHERE c.account_id = ANY($1::uuid[])
-          AND c.first_message_direction = 'in'
-          AND c.first_message_at >= ((now() AT TIME ZONE $2)::date::timestamp AT TIME ZONE $2)
-        GROUP BY c.account_id
-      `,
-      [accountIds, this.config.timezone],
-    );
-    return new Map(rows.map((row) => [row.account_id, Number(row.count)]));
+  private newChatsToday(accountIds: string[]): Promise<Map<string, number>> {
+    return this.dialogStarts.countToday(accountIds, this.config.timezone);
   }
 }
 

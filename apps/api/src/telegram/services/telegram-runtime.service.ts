@@ -15,8 +15,9 @@ import {
   isFloodWait,
 } from '../lib/telegram-errors.js';
 import { TelegramConfig } from '../telegram.config.js';
+import { TelegramDialogStartsService } from './telegram-dialog-starts.service.js';
 import { TelegramIngestService } from './telegram-ingest.service.js';
-import { TelegramSyncService } from './telegram-sync.service.js';
+import { TelegramSyncService, isNonHumanUser } from './telegram-sync.service.js';
 
 const { Api: Tl, events } = teleproto;
 
@@ -62,6 +63,7 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     private readonly factory: TelegramClientFactory,
     private readonly sync: TelegramSyncService,
     private readonly ingest: TelegramIngestService,
+    private readonly dialogStarts: TelegramDialogStartsService,
     @InjectRepository(TelegramAccountEntity)
     private readonly accounts: Repository<TelegramAccountEntity>,
   ) {
@@ -70,6 +72,11 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     if (!this.config.enabled) return;
+    // Если парсер кодов обновился — пересчитать старые начала диалогов, не мешая старту.
+    void this.dialogStarts
+      .reclassifyOutdated()
+      .catch((error) => this.logger.error(`Переклассификация не удалась: ${describeError(error)}`));
+
     const rows = await this.accounts.find({
       where: { status: In<TelegramAccountStatus>(['connected', 'error']) },
       order: { connectedAt: 'ASC' },
@@ -279,7 +286,7 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       const candidate = entity as { className?: string } | undefined;
       if (!candidate || candidate.className !== 'User') return null;
       const user = candidate as Api.User;
-      return user.bot || user.self || user.deleted ? 'skip' : user;
+      return isNonHumanUser(user) ? 'skip' : user;
     };
 
     const cached = classify(await event.getChat().catch(() => undefined));

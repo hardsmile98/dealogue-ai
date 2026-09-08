@@ -38,6 +38,9 @@ export class TelegramChatEntity {
   @Column({ name: 'first_message_at', type: 'timestamptz', nullable: true })
   firstMessageAt: Date | null;
 
+  @Column({ name: 'first_message_id', type: 'integer', nullable: true })
+  firstMessageId: number | null;
+
   @Column({ name: 'first_message_direction', type: 'varchar', length: 3, nullable: true })
   firstMessageDirection: MessageDirection | null;
 

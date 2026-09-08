@@ -142,11 +142,24 @@ N сообщений и самое первое (по нему фиксирую�
 - При остановке API клиенты аккуратно отключаются без logout — сессии
   остаются действительными.
 
-**Статистика.** Считается SQL-запросом по `telegram_chats`: только диалоги,
-которые начал собеседник (`first_message_direction = 'in'`), группировка по
-локальному дню в зоне `tz` и по `lead_code`. Код вычленяется из первого
-входящего сообщения по шаблону «Код: 5» / «код 12» / «code #7»
-(`lib/lead-code.ts`, дублируется во фронтенде).
+**Начала диалогов и статистика.** «Начало диалога» — отдельная таблица
+`telegram_dialog_starts`: одна строка на диалог, который начал собеседник,
+с датой, текстом первого сообщения, распознанным кодом и версией парсера.
+Строка создаётся в момент, когда синхронизация узнала первое сообщение
+чата (`services/telegram-dialog-starts.service.ts`), и это единственный
+источник для вкладки «Статистика»: запрос группирует строки по локальному
+дню в зоне `tz` и по `lead_code`, используя индекс `(account_id, started_at)`.
+Чаты и сообщения в статистике не участвуют, поэтому она не зависит от их
+объёма.
+
+Код распознаётся в `lib/lead-code.ts` по шаблонам «#1», «# 1», «№1»,
+«Код 6», «код - 6», «код: 6», «код #6», «code 6», «промокод 6»; всё прочее —
+«без кода». Перед разбором текст очищается от невидимых символов (ZWJ, word
+joiner — их вставляют в шаблоны против спам-фильтров). Если кодов несколько,
+берётся первый по позиции. Текст первого сообщения хранится в таблице, так
+что при изменении шаблонов достаточно поднять `LEAD_CODE_PARSER_VERSION`:
+строки со старой версией пересчитаются при следующем старте API, либо
+вручную — `npm run telegram:reclassify` (`-- --all` пересчитает всё).
 
 ## Структура
 
@@ -163,8 +176,10 @@ src/
       telegram-runtime.service.ts   живые клиенты, события, переподключение
       telegram-sync.service.ts      первичная и периодическая синхронизация
       telegram-ingest.service.ts    запись чатов и сообщений в базу
+      telegram-dialog-starts.service.ts  начала диалогов: запись, пересчёт кодов, агрегаты статистики
       telegram-accounts.service.ts  чтение: список, чаты, сообщения, статистика
-    entities/                 telegram_accounts, telegram_login_attempts, telegram_chats, telegram_messages
+    scripts/                  probe-proxy (проверка MTProxy), reclassify (пересчёт кодов)
+    entities/                 telegram_accounts, telegram_login_attempts, telegram_chats, telegram_messages, telegram_dialog_starts
     lib/                      lead-code, session-crypto, telegram-errors, phone, timezone
   auth/
     auth.controller.ts        POST /auth/login, GET /auth/me

@@ -5,7 +5,7 @@ import type { Api } from 'teleproto';
 import { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
 import type { MessageDirection } from '../entities/telegram-chat.entity.js';
 import { TelegramMessageEntity } from '../entities/telegram-message.entity.js';
-import { extractLeadCode } from '../lib/lead-code.js';
+import { TelegramDialogStartsService } from './telegram-dialog-starts.service.js';
 
 export interface StoreMessagesOptions {
   /** Общее число сообщений в диалоге по данным Telegram (если известно). */
@@ -94,6 +94,7 @@ export class TelegramIngestService {
     private readonly chats: Repository<TelegramChatEntity>,
     @InjectRepository(TelegramMessageEntity)
     private readonly messages: Repository<TelegramMessageEntity>,
+    private readonly dialogStarts: TelegramDialogStartsService,
   ) {}
 
   async upsertChat(accountId: string, user: Api.User): Promise<TelegramChatEntity> {
@@ -183,9 +184,16 @@ export class TelegramIngestService {
       const first = options.firstMessage;
       const direction = messageDirection(first);
       chat.firstMessageAt = new Date(first.date * 1000);
+      chat.firstMessageId = first.id;
       chat.firstMessageDirection = direction;
-      chat.leadCode = direction === 'in' ? extractLeadCode(messageText(first)) : null;
       chat.historySynced = true;
+      if (direction === 'in') {
+        // Начало диалога со стороны собеседника — источник правды для статистики.
+        chat.leadCode = await this.dialogStarts.record(chat, first);
+      } else {
+        chat.leadCode = null;
+        await this.dialogStarts.clear(chat.id);
+      }
     }
 
     await this.chats.save(chat);

@@ -20,14 +20,23 @@ interface DialogLike {
   message?: Api.Message;
 }
 
-/** Личный собеседник-человек; боты, «Избранное» и удалённые аккаунты не нужны. */
+/** Служебные аккаунты Telegram: уведомления (777000), Telegram Passport (42777). */
+const SERVICE_USER_IDS = new Set(['777000', '42777']);
+
+/** Не человек-собеседник: бот, «Избранное», удалённый аккаунт, служба Telegram, поддержка. */
+export function isNonHumanUser(user: Api.User): boolean {
+  return Boolean(
+    user.bot || user.self || user.deleted || user.support || SERVICE_USER_IDS.has(user.id.toString()),
+  );
+}
+
+/** Личный собеседник-человек из диалога или null. */
 export function privateUserOf(dialog: DialogLike): Api.User | null {
   if (!dialog.isUser) return null;
   const entity = dialog.entity as { className?: string } | undefined;
   if (!entity || entity.className !== 'User') return null;
   const user = entity as Api.User;
-  if (user.bot || user.self || user.deleted) return null;
-  return user;
+  return isNonHumanUser(user) ? null : user;
 }
 
 function sleep(ms: number): Promise<void> {
