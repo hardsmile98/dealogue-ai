@@ -26,6 +26,8 @@ const RETRY_BASE_MS = 15_000;
 const RETRY_MAX_MS = 5 * 60_000;
 const BOOT_STAGGER_MS = 700;
 const LOGOUT_TIMEOUT_MS = 5_000;
+/** Сколько свежих диалогов запросить, чтобы найти незнакомого собеседника. */
+const RESOLVE_DIALOGS_LIMIT = 30;
 
 interface LiveAccount {
   id: string;
@@ -35,6 +37,8 @@ interface LiveAccount {
   syncing: Promise<void> | null;
   /** Диалоги, для которых уже запущена догрузка истории по живому событию. */
   pendingDialogs: Set<string>;
+  /** Идущие запросы на резолв собеседника по peerId — чтобы не дублировать getDialogs. */
+  resolving: Map<string, Promise<Api.User | 'skip' | null>>;
   stopped: boolean;
 }
 
@@ -173,6 +177,7 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       resyncTimer: null,
       syncing: null,
       pendingDialogs: new Set(),
+      resolving: new Map(),
       stopped: false,
     };
     live.handler = (event) => {
@@ -216,14 +221,27 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     if (live.stopped || !event.isPrivate) return;
     const message = event.message;
     if (!message || message.className !== 'Message') return;
+    const peer = message.peerId;
+    if (!(peer instanceof Tl.PeerUser)) return;
+    const peerId = peer.userId.toString();
 
     try {
-      const entity = (await event.getChat()) as { className?: string } | undefined;
-      if (!entity || entity.className !== 'User') return;
-      const user = entity as Api.User;
-      if (user.bot || user.self || user.deleted) return;
+      const resolved = await this.resolvePeerUser(live, peerId, event);
+      if (resolved === 'skip') return;
+      if (resolved === null) {
+        // Собеседника не нашли даже в свежих диалогах — пусть подберёт синхронизация.
+        this.logger.warn(
+          `Аккаунт ${live.id}: не удалось определить собеседника ${peerId}, догружаем через синхронизацию`,
+        );
+        void this.runSync(live, 'incremental');
+        return;
+      }
+      const user = resolved;
 
       const chat = await this.ingest.upsertChat(live.id, user);
+      this.logger.log(
+        `Аккаунт ${live.id}: ${message.out ? 'исходящее для' : 'входящее от'} ${chat.peerName} (#${message.id})`,
+      );
       if (chat.historySynced) {
         await this.ingest.storeMessages(chat, [message]);
         return;
@@ -241,6 +259,47 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       await this.handleFailure(live, error, 'обработка сообщения');
     }
+  }
+
+  /**
+   * Личные сообщения приходят как updateShortMessage — без данных о
+   * собеседнике. `event.getChat()` берёт пользователя из кэша сущностей,
+   * который живёт в памяти и наполняется ответами getDialogs/getMessages.
+   * Для нового собеседника или сразу после перезапуска кэш пуст — тогда
+   * подтягиваем свежие диалоги: их ответ содержит пользователей с access hash.
+   * Несколько сообщений подряд от одного неизвестного собеседника ждут один
+   * и тот же запрос, а не плодят свои.
+   */
+  private async resolvePeerUser(
+    live: LiveAccount,
+    peerId: string,
+    event: NewMessageEvent,
+  ): Promise<Api.User | 'skip' | null> {
+    const classify = (entity: unknown): Api.User | 'skip' | null => {
+      const candidate = entity as { className?: string } | undefined;
+      if (!candidate || candidate.className !== 'User') return null;
+      const user = candidate as Api.User;
+      return user.bot || user.self || user.deleted ? 'skip' : user;
+    };
+
+    const cached = classify(await event.getChat().catch(() => undefined));
+    if (cached !== null) return cached;
+
+    let pending = live.resolving.get(peerId);
+    if (!pending) {
+      pending = (async () => {
+        const dialogs = await live.client.getDialogs({ limit: RESOLVE_DIALOGS_LIMIT });
+        for (const dialog of dialogs) {
+          const entity = dialog.entity as { className?: string; id?: { toString(): string } } | undefined;
+          if (entity?.className === 'User' && entity.id?.toString() === peerId) {
+            return classify(entity);
+          }
+        }
+        return null;
+      })().finally(() => live.resolving.delete(peerId));
+      live.resolving.set(peerId, pending);
+    }
+    return pending;
   }
 
   private async handleFailure(live: LiveAccount, error: unknown, stage: string): Promise<void> {

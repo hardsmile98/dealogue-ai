@@ -36,7 +36,7 @@ export const PERIOD_PRESETS: PeriodPreset[] = [
   { key: '30d', label: '30 дней', range: (now) => lastDaysRange(30, now) },
 ]
 
-export const DEFAULT_PERIOD: PeriodPresetKey = '7d'
+export const DEFAULT_PERIOD: PeriodPresetKey = 'today'
 
 export function presetRange(key: PeriodPresetKey, now = new Date()): DateRange {
   const preset = PERIOD_PRESETS.find((item) => item.key === key) ?? PERIOD_PRESETS[2]
