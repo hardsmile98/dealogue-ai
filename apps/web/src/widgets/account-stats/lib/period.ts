@@ -20,17 +20,17 @@ export function lastDaysRange(days: number, now = new Date()): DateRange {
 
 export const PERIOD_PRESETS: PeriodPreset[] = [
   {
-    key: 'today',
-    label: 'Сегодня',
-    range: (now) => ({ from: toDayKey(now), to: toDayKey(now) }),
-  },
-  {
     key: 'yesterday',
     label: 'Вчера',
     range: (now) => {
       const day = toDayKey(addDays(now, -1))
       return { from: day, to: day }
     },
+  },
+  {
+    key: 'today',
+    label: 'Сегодня',
+    range: (now) => ({ from: toDayKey(now), to: toDayKey(now) }),
   },
   { key: '7d', label: '7 дней', range: (now) => lastDaysRange(7, now) },
   { key: '30d', label: '30 дней', range: (now) => lastDaysRange(30, now) },
