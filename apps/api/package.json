@@ -18,9 +18,7 @@
     "migration:run": "tsx ./node_modules/typeorm/cli.js migration:run -d ./src/database/data-source.ts",
     "migration:revert": "tsx ./node_modules/typeorm/cli.js migration:revert -d ./src/database/data-source.ts",
     "migration:show": "tsx ./node_modules/typeorm/cli.js migration:show -d ./src/database/data-source.ts",
-    "migration:create": "tsx ./node_modules/typeorm/cli.js migration:create",
-    "telegram:probe": "tsx ./src/telegram/scripts/probe-proxy.ts",
-    "telegram:reclassify": "tsx ./src/telegram/scripts/reclassify.ts"
+    "migration:create": "tsx ./node_modules/typeorm/cli.js migration:create"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

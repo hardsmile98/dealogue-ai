@@ -82,7 +82,7 @@ npm run migration:revert && npm run migration:run
 молча рвёт соединение («NetSocket was closed» на первом же пакете). Поэтому
 `client/mtproxy-padded-transport.ts` подменяет класс соединения на свой
 `ConnectionTCPMTProxyPadded`; «голые» 16-байтовые секреты идут через abridged
-как раньше. Быстрая проверка прокси без приложения: `npm run telegram:probe`.
+как раньше.
 
 ### Эндпоинты (`/telegram/accounts`)
 
@@ -158,8 +158,7 @@ N сообщений и самое первое (по нему фиксирую�
 joiner — их вставляют в шаблоны против спам-фильтров). Если кодов несколько,
 берётся первый по позиции. Текст первого сообщения хранится в таблице, так
 что при изменении шаблонов достаточно поднять `LEAD_CODE_PARSER_VERSION`:
-строки со старой версией пересчитаются при следующем старте API, либо
-вручную — `npm run telegram:reclassify` (`-- --all` пересчитает всё).
+строки со старой версией пересчитаются при следующем старте API.
 
 ## Структура
 
@@ -178,7 +177,6 @@ src/
       telegram-ingest.service.ts    запись чатов и сообщений в базу
       telegram-dialog-starts.service.ts  начала диалогов: запись, пересчёт кодов, агрегаты статистики
       telegram-accounts.service.ts  чтение: список, чаты, сообщения, статистика
-    scripts/                  probe-proxy (проверка MTProxy), reclassify (пересчёт кодов)
     entities/                 telegram_accounts, telegram_login_attempts, telegram_chats, telegram_messages, telegram_dialog_starts
     lib/                      lead-code, session-crypto, telegram-errors, phone, timezone
   auth/

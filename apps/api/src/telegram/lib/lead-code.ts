@@ -10,8 +10,7 @@
  *
  * При изменении шаблонов повышайте LEAD_CODE_PARSER_VERSION: строки
  * telegram_dialog_starts со старой версией будут пересчитаны при старте
- * (см. TelegramDialogStartsService.reclassifyOutdated) или командой
- * `npm run telegram:reclassify`.
+ * (см. TelegramDialogStartsService.reclassifyOutdated).
  *
  * Правило продублировано в описании на фронтенде — обновлять текст там же.
  */
