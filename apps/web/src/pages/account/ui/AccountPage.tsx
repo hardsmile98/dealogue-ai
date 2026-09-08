@@ -35,6 +35,7 @@ export function AccountPage() {
 
   const { data: account, isLoading, error } = useGetAccountQuery(accountId, {
     skip: accountId === '',
+    pollingInterval: 30_000,
   })
 
   const tab: AccountTab = location.pathname.includes('/chats') ? 'chats' : 'stats'

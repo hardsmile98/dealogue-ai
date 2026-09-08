@@ -1,4 +1,4 @@
-export { API_URL, IS_MOCK_API, IS_MOCK_TELEGRAM } from './env'
+export { API_URL, IS_MOCK_API } from './env'
 export { ROUTES, accountLinks } from './routes'
 export type { AppRoute } from './routes'
 export {

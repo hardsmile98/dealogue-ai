@@ -1,6 +1,5 @@
 export { isFetchBaseQueryError } from './isFetchBaseQueryError'
 export { getApiErrorMessage } from './getApiErrorMessage'
-export { extractLeadCode } from './extractLeadCode'
 export {
   addDays,
   daysBetween,

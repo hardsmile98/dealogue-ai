@@ -77,9 +77,4 @@ export const accountsPageStyles = {
     gap: 0.5,
     whiteSpace: 'nowrap',
   },
-  mockNote: {
-    mt: 2,
-    color: 'text.secondary',
-    fontSize: 12,
-  },
 } satisfies SxStyles

@@ -1,7 +1,6 @@
 /**
- * Контракт backend-API раздела Telegram. Пока в apps/api эндпоинтов нет,
- * эти же типы отдаёт мок (shared/api/mock/telegram) — когда backend появится,
- * достаточно выключить VITE_MOCK_TELEGRAM, форма ответов должна совпасть.
+ * Контракт backend-API раздела Telegram — зеркало
+ * apps/api/src/telegram/telegram.types.ts. Менять синхронно.
  *
  * Все даты — ISO-строки; дни статистики — `YYYY-MM-DD`.
  */
@@ -95,6 +94,8 @@ export interface AccountStatsQuery {
   accountId: string
   from: string
   to: string
+  /** IANA-зона, в которой считать «день» (по умолчанию — зона браузера). */
+  tz?: string
 }
 
 export interface ChatsQuery {

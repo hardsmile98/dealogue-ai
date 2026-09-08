@@ -76,7 +76,7 @@ src/
     chat/                  чат и сообщение: типы, RTK Query, чип кода, пузырь сообщения
   shared/
     api/                   baseApi (единственный createApi), провайдер токена,
-                           contracts/ (DTO backend-API), mock/ (in-memory мок Telegram)
+                           contracts/ (DTO backend-API раздела Telegram)
     config/                env, ROUTES, палитра графиков
     lib/                   даты, форматирование, извлечение кода, ошибки API
     types/                 SxStyles
@@ -114,8 +114,8 @@ ui/
   при смене периода код не меняет цвет. Больше 6 кодов сворачиваются в
   «Другие коды». Палитра — `shared/config/chartPalette.ts`, порядок слотов
   проверен на различимость (в том числе при дальтонизме), не перетасовывать.
-- Код из первого сообщения вычленяет `shared/lib/extractLeadCode.ts`; мок
-  использует ту же функцию, так что правило одно.
+- Код из первого сообщения вычленяет backend (`apps/api/src/telegram/lib/lead-code.ts`);
+  фронтенд только показывает готовый `leadCode`.
 
 ## Маршруты
 
@@ -162,15 +162,15 @@ VITE_API_URL=http://localhost:3000
 
 ### Telegram
 
-Раздел работает на **in-memory моке** (`shared/api/mock/telegram/`), пока в
-`apps/api` нет эндпоинтов. Мок включён по умолчанию (`VITE_MOCK_TELEGRAM=true`)
-и генерирует детерминированные данные: 4 аккаунта в разных статусах, чаты за
-последние 45 дней, первые сообщения с кодами. Правила мока при подключении:
-любой номер от 10 цифр, любой пятизначный код кроме `00000`; номер,
-оканчивающийся на `0`, запрашивает облачный пароль (любой от 4 символов).
+По умолчанию раздел ходит в `/telegram/*` backend'а (см.
+[apps/api/README.md](../api/README.md#telegram)). Списки аккаунтов, чатов и
+сообщений опрашиваются раз в 30 / 15 / 10 секунд, статистика — раз в минуту,
+так что новые сообщения появляются без перезагрузки.
 
-Чтобы перейти на реальный API, выставьте `VITE_MOCK_TELEGRAM=false`. Контракт,
-которого ждёт фронтенд, описан типами в `shared/api/contracts/telegram.ts`:
+Мока у раздела нет: без поднятого backend'а с настроенным Telegram страница
+аккаунтов покажет ошибку из ответа API (503 «Раздел Telegram не настроен»).
+
+Контракт описан типами в `shared/api/contracts/telegram.ts`:
 
 | Метод | Путь | Ответ |
 |---|---|---|
@@ -180,7 +180,7 @@ VITE_API_URL=http://localhost:3000
 | POST | `/telegram/accounts/send-code` `{ phone }` | `SendCodeResponse` |
 | POST | `/telegram/accounts/sign-in` `{ attemptId, code }` | `SignInResponse` (`connected` или `password_required`) |
 | POST | `/telegram/accounts/password` `{ attemptId, password }` | `SubmitPasswordResponse` |
-| GET | `/telegram/accounts/:id/stats?from=YYYY-MM-DD&to=YYYY-MM-DD` | `AccountStatsDto` |
+| GET | `/telegram/accounts/:id/stats?from=YYYY-MM-DD&to=YYYY-MM-DD&tz=Europe/Moscow` | `AccountStatsDto` |
 | GET | `/telegram/accounts/:id/chats` | `ChatDto[]` |
 | GET | `/telegram/accounts/:id/chats/:chatId/messages` | `MessageDto[]` |
 

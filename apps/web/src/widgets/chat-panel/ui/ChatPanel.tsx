@@ -24,7 +24,11 @@ export function ChatPanel({ accountId, selectedChatId, onSelectChat }: ChatPanel
   const theme = useTheme()
   const isNarrow = useMediaQuery(theme.breakpoints.down('md'))
 
-  const { data: chats, isLoading, error } = useGetChatsQuery({ accountId })
+  // Новые диалоги и сообщения приходят с backend'а по мере синхронизации.
+  const { data: chats, isLoading, error } = useGetChatsQuery(
+    { accountId },
+    { pollingInterval: 15_000 },
+  )
   const selected = chats?.find((chat) => chat.id === selectedChatId) ?? null
 
   if (error) {

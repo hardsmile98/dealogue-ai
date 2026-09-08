@@ -44,10 +44,24 @@ cd apps/web && cp .env.example .env && npm install --legacy-peer-deps && npm run
 Если у `apps/web` нет `.env` с `VITE_API_URL`, форма входа работает на моке
 и в сеть не ходит — удобно, когда backend не поднят.
 
-Раздел «Аккаунты Telegram» (список аккаунтов, подключение, статистика по кодам
-из первых сообщений, чаты) пока работает на локальном моке в самом фронтенде:
-эндпоинтов `/telegram/*` в `apps/api` ещё нет. Контракт, который нужно
-реализовать, описан в [apps/web/README.md](apps/web/README.md#telegram).
+## Telegram
+
+Раздел «Аккаунты Telegram» подключает аккаунты пользователей через MTProto
+(библиотека [teleproto](https://www.npmjs.com/package/teleproto)), отслеживает
+входящие и исходящие сообщения и считает статистику по кодам из первых
+сообщений. Из России Telegram доступен только через MTProxy — адрес задаётся
+в `apps/api/.env`:
+
+```
+TELEGRAM_API_ID=…            # https://my.telegram.org/apps
+TELEGRAM_API_HASH=…
+TELEGRAM_SESSION_SECRET=…    # ключ шифрования сессий в базе
+TELEGRAM_MTPROXY=host:port:secret[,host2:port2:secret2]
+```
+
+Подробности — в [apps/api/README.md](apps/api/README.md#telegram). Без этих
+переменных backend отвечает на `/telegram/*` кодом 503, и фронтенд покажет
+эту ошибку на странице аккаунтов — мока у раздела нет.
 
 ## Подробности
 

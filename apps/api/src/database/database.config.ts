@@ -1,7 +1,12 @@
 import type { DataSourceOptions } from 'typeorm';
+import { TelegramAccountEntity } from '../telegram/entities/telegram-account.entity.js';
+import { TelegramChatEntity } from '../telegram/entities/telegram-chat.entity.js';
+import { TelegramLoginAttemptEntity } from '../telegram/entities/telegram-login-attempt.entity.js';
+import { TelegramMessageEntity } from '../telegram/entities/telegram-message.entity.js';
 import { UserEntity } from '../users/user.entity.js';
 import { CreateUsersTable1700000000000 } from './migrations/1700000000000-CreateUsersTable.js';
 import { SeedDemoUser1700000000001 } from './migrations/1700000000001-SeedDemoUser.js';
+import { CreateTelegramTables1700000000002 } from './migrations/1700000000002-CreateTelegramTables.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -42,8 +47,18 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
     password: config.password,
     database: config.database,
     logging: config.logging,
-    entities: [UserEntity],
-    migrations: [CreateUsersTable1700000000000, SeedDemoUser1700000000001],
+    entities: [
+      UserEntity,
+      TelegramAccountEntity,
+      TelegramLoginAttemptEntity,
+      TelegramChatEntity,
+      TelegramMessageEntity,
+    ],
+    migrations: [
+      CreateUsersTable1700000000000,
+      SeedDemoUser1700000000001,
+      CreateTelegramTables1700000000002,
+    ],
     // Схему меняем только миграциями.
     synchronize: false,
   };

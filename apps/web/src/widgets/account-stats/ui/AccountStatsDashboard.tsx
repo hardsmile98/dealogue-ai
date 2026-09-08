@@ -48,11 +48,10 @@ export function AccountStatsDashboard({ accountId }: AccountStatsDashboardProps)
     )
   }
 
-  const { data: stats, isLoading, isFetching, error } = useGetAccountStatsQuery({
-    accountId,
-    from: range.from,
-    to: range.to,
-  })
+  const { data: stats, isLoading, isFetching, error } = useGetAccountStatsQuery(
+    { accountId, from: range.from, to: range.to },
+    { pollingInterval: 60_000 },
+  )
 
   const model = useMemo(() => (stats ? buildStatsSeries(stats) : null), [stats])
 

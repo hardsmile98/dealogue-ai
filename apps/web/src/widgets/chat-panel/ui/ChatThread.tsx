@@ -36,7 +36,10 @@ function groupByDay(messages: Message[]): DayGroup[] {
 }
 
 export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
-  const { data: messages, isLoading, error } = useGetMessagesQuery({ accountId, chatId: chat.id })
+  const { data: messages, isLoading, error } = useGetMessagesQuery(
+    { accountId, chatId: chat.id },
+    { pollingInterval: 10_000 },
+  )
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const groups = useMemo(() => groupByDay(messages ?? []), [messages])

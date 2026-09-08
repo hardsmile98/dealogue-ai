@@ -5,10 +5,9 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Paper from '@mui/material/Paper'
-import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import TelegramIcon from '@mui/icons-material/Telegram'
-import { IS_MOCK_TELEGRAM, accountLinks } from '@/shared/config'
+import { accountLinks } from '@/shared/config'
 import { getApiErrorMessage, pluralize } from '@/shared/lib'
 import { EmptyState, PageHeader } from '@/shared/ui'
 import { ACCOUNT_STATUS_META, useGetAccountsQuery } from '@/entities/telegram-account'
@@ -27,7 +26,10 @@ const STATUS_ORDER: AccountStatus[] = ['connected', 'pending', 'disconnected', '
 /** Список подключённых аккаунтов Telegram — первый экран после входа. */
 export function AccountsPage() {
   const navigate = useNavigate()
-  const { data: accounts, isLoading, error } = useGetAccountsQuery()
+  // Статусы и счётчики меняются в фоне (синхронизация, обрывы) — опрашиваем.
+  const { data: accounts, isLoading, error } = useGetAccountsQuery(undefined, {
+    pollingInterval: 30_000,
+  })
   const [dialog, setDialog] = useState<DialogState>({ open: false, initialPhone: '' })
 
   const openConnect = (initialPhone = '') => setDialog({ open: true, initialPhone })
@@ -98,14 +100,6 @@ export function AccountsPage() {
           </Box>
         )}
       </Paper>
-
-      {IS_MOCK_TELEGRAM && (
-        <Typography sx={styles.mockNote}>
-          Демо-режим: данные сгенерированы локально. Для подключения подойдёт любой номер
-          и любой пятизначный код, кроме 00000; номер, оканчивающийся на 0, запросит
-          облачный пароль.
-        </Typography>
-      )}
 
       <ConnectAccountDialog
         open={dialog.open}
