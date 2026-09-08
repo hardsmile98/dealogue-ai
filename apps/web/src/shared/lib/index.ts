@@ -1,0 +1,1 @@
+export { isFetchBaseQueryError } from './isFetchBaseQueryError'
