@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { clipStart } from '../lib/text.js';
 
 export interface RetrievedExchange {
   id: string;
@@ -22,7 +23,7 @@ export class ExchangeRetrieverService {
   constructor(private readonly dataSource: DataSource) {}
 
   async similar(accountId: string, query: string, limit: number, excludeChatId?: string): Promise<RetrievedExchange[]> {
-    const text = query.trim().slice(0, 1000);
+    const text = clipStart(query.trim(), 1000);
     if (!text || limit <= 0) return [];
     const rows = await this.dataSource.query<RawRow[]>(
       `

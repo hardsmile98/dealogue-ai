@@ -9,6 +9,7 @@ import { AiConfig } from '../ai.config.js';
 import type { AiAgentSettingsEntity } from '../entities/ai-agent-settings.entity.js';
 import type { AlertType } from '../entities/alert.entity.js';
 import type { GuardResult } from '../lib/decision-guard.js';
+import { clipStart } from '../lib/text.js';
 import { AiJobsService } from './ai-jobs.service.js';
 import { AlertsService } from './alerts.service.js';
 
@@ -97,7 +98,7 @@ export class HandoffService {
         reason: input.reason || input.guard.notes.join(', '),
         stage: input.guard.stage,
         confidence: input.confidence,
-        lastClientText: input.lastClientText.slice(0, 300),
+        lastClientText: clipStart(input.lastClientText, 300),
         aiRunId: input.runId ?? undefined,
       },
     });
@@ -127,7 +128,7 @@ export class HandoffService {
 
     const title = type === 'ready_to_pay' ? '🔔 Готов к оплате' : '🙋 Нужен менеджер';
     const who = [chat.peerName, chat.peerUsername ? `@${chat.peerUsername}` : null].filter(Boolean).join(' ');
-    const quote = input.lastClientText.replace(/\s+/g, ' ').trim().slice(0, 200);
+    const quote = clipStart(input.lastClientText.replace(/\s+/g, ' ').trim(), 200);
     const link = `${this.config.webUrl}/accounts/${chat.accountId}/chats/${chat.id}`;
     const text = [`${title}: ${who}`, quote ? `«${quote}»` : null, `Открыть: ${link}`].filter(Boolean).join('\n');
 

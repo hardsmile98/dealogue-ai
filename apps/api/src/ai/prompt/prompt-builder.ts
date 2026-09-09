@@ -5,6 +5,7 @@ import type { LlmMessage } from '../llm/llm-provider.interface.js';
 import { buildConversation, describeForModel } from './context-window.js';
 import type { HistoryMessage } from './context-window.js';
 import type { SalesScript } from './sales-script.schema.js';
+import { clipStart } from '../lib/text.js';
 
 export interface FollowupContext {
   /** Номер касания, начиная с 1. */
@@ -216,7 +217,7 @@ function buildVolatileBlock(input: PromptInput): string {
 
 function oneLine(text: string, max: number): string {
   const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+  return flat.length > max ? `${clipStart(flat, max - 1)}…` : flat;
 }
 
 function formatNow(date: Date, tz: string): string {

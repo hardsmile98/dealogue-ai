@@ -1,5 +1,6 @@
 import type { MessageDirection } from '../../telegram/entities/telegram-chat.entity.js';
 import type { LlmMessage } from '../llm/llm-provider.interface.js';
+import { clipEnd, wellFormed } from '../lib/text.js';
 
 export interface HistoryMessage {
   direction: MessageDirection;
@@ -28,7 +29,7 @@ export function buildConversation(history: HistoryMessage[], charBudget: number)
   const merged: LlmMessage[] = [];
   for (const item of history) {
     const role = item.direction === 'in' ? 'user' : 'assistant';
-    const content = describeForModel(item.text, item.direction);
+    const content = wellFormed(describeForModel(item.text, item.direction));
     if (!content) continue;
     const last = merged[merged.length - 1];
     if (last && last.role === role) last.content += `\n${content}`;
@@ -42,7 +43,7 @@ export function buildConversation(history: HistoryMessage[], charBudget: number)
     total -= removed?.content.length ?? 0;
   }
   if (merged.length === 1 && merged[0].content.length > charBudget) {
-    merged[0].content = merged[0].content.slice(-charBudget);
+    merged[0].content = clipEnd(merged[0].content, charBudget);
   }
 
   if (merged.length > 0 && merged[0].role === 'assistant') {

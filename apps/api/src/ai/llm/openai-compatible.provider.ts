@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import type { Dispatcher } from 'undici';
+import { wellFormed } from '../lib/text.js';
 import { extractJson } from './json-parse.js';
 import { LlmError } from './llm-provider.interface.js';
 import type {
@@ -74,8 +75,9 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     const body = {
       model,
       messages: [
-        { role: 'system', content: system },
-        ...request.messages.map((m) => ({ role: m.role, content: m.content })),
+        // Одинокие суррогаты (обрубки эмодзи, в т.ч. из самого Telegram) ломают JSON у провайдера.
+        { role: 'system', content: wellFormed(system) },
+        ...request.messages.map((m) => ({ role: m.role, content: wellFormed(m.content) })),
       ],
       max_tokens: request.maxTokens,
       temperature: request.temperature ?? 1,

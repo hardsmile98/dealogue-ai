@@ -18,6 +18,7 @@ import { AiJobsService } from '../services/ai-jobs.service.js';
 import { AiSettingsService } from '../services/ai-settings.service.js';
 import { digestMapSystemPrompt, digestMapUserPrompt, digestReduceSystemPrompt, digestReduceUserPrompt } from './digest-prompts.js';
 import type { DigestDialog } from './digest-prompts.js';
+import { clipEnd, clipStart } from '../lib/text.js';
 import { MEDIA_PLACEHOLDER_RE } from './exchange-builder.js';
 import { ExchangeIndexerService } from './exchange-indexer.service.js';
 import { computeHabits, computeTiming } from './habits.js';
@@ -238,10 +239,10 @@ export class StyleLearningService implements OnModuleInit {
       if (m.aiRunId) continue;
       const text = m.text.trim();
       if (!text) continue;
-      lines.push(`${m.direction === 'in' ? 'К' : 'М'}: ${text.replace(/\s+/g, ' ').slice(0, 400)}`);
+      lines.push(`${m.direction === 'in' ? 'К' : 'М'}: ${clipStart(text.replace(/\s+/g, ' '), 400)}`);
     }
     let transcript = lines.join('\n');
-    if (transcript.length > DIALOG_CHARS) transcript = transcript.slice(-DIALOG_CHARS);
+    if (transcript.length > DIALOG_CHARS) transcript = clipEnd(transcript, DIALOG_CHARS);
     return transcript;
   }
 

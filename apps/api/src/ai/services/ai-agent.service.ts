@@ -22,6 +22,7 @@ import { guardDecision } from '../lib/decision-guard.js';
 import type { GuardResult } from '../lib/decision-guard.js';
 import { planDelay } from '../lib/humanize.js';
 import { LruSet } from '../lib/lru-set.js';
+import { clipStart } from '../lib/text.js';
 import { isWithinWindow, nextWindowStart, windowFromActiveHours, windowFromWorkingHours } from '../lib/working-hours.js';
 import type { ActiveWindow } from '../lib/working-hours.js';
 import { LlmProviderFactory } from '../llm/llm-provider.factory.js';
@@ -551,7 +552,7 @@ export class AiAgentService implements OnModuleInit {
         ...request,
         messages: [
           ...prompt.messages,
-          { role: 'assistant', content: raw.text.slice(0, 2000) || '{}' },
+          { role: 'assistant', content: clipStart(raw.text, 2000) || '{}' },
           { role: 'user', content: `Ответ не прошёл валидацию (${issue?.path.join('.') ?? ''}: ${issue?.message ?? 'invalid'}). Верни только валидный JSON по схеме.` },
         ],
       });
