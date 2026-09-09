@@ -22,11 +22,11 @@ import { guardDecision } from '../lib/decision-guard.js';
 import type { GuardResult } from '../lib/decision-guard.js';
 import { planDelay } from '../lib/humanize.js';
 import { LruSet } from '../lib/lru-set.js';
-import { clipStart } from '../lib/text.js';
 import { isWithinWindow, nextWindowStart, windowFromActiveHours, windowFromWorkingHours } from '../lib/working-hours.js';
 import type { ActiveWindow } from '../lib/working-hours.js';
+import { completeJson } from '../llm/complete-json.js';
 import { LlmProviderFactory } from '../llm/llm-provider.factory.js';
-import { LlmError, isLlmError } from '../llm/llm-provider.interface.js';
+import { isLlmError } from '../llm/llm-provider.interface.js';
 import type { LlmCompletionResult, LlmProvider } from '../llm/llm-provider.interface.js';
 import { DECISION_JSON_SCHEMA, DecisionSchema } from '../prompt/decision.schema.js';
 import type { Decision } from '../prompt/decision.schema.js';
@@ -544,22 +544,8 @@ export class AiAgentService implements OnModuleInit {
       model: settings.model ?? undefined,
       temperature: 1,
     };
-    let raw = await provider.complete(request);
-    let parsed = DecisionSchema.safeParse(raw.json);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      raw = await provider.complete({
-        ...request,
-        messages: [
-          ...prompt.messages,
-          { role: 'assistant', content: clipStart(raw.text, 2000) || '{}' },
-          { role: 'user', content: `Ответ не прошёл валидацию (${issue?.path.join('.') ?? ''}: ${issue?.message ?? 'invalid'}). Верни только валидный JSON по схеме.` },
-        ],
-      });
-      parsed = DecisionSchema.safeParse(raw.json);
-      if (!parsed.success) throw new LlmError('invalid_json', `Модель вернула невалидный JSON: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
-    }
-    return { raw, decision: parsed.data };
+    const { raw, data } = await completeJson(provider, request, DecisionSchema, 'Ответ модели');
+    return { raw, decision: data };
   }
 
   private async retrieve(

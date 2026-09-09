@@ -1,4 +1,4 @@
-import type { DigestPartial } from './style-profile.schema.js';
+import type { PhraseIntent } from './style-profile.schema.js';
 import { PHRASE_INTENTS } from './style-profile.schema.js';
 
 export interface DigestDialog {
@@ -48,39 +48,30 @@ export function digestMapUserPrompt(dialogs: DigestDialog[]): string {
 export function digestReduceSystemPrompt(): string {
   return [
     'Ты сводишь наблюдения из нескольких пачек переписок в один профиль стиля менеджера по продажам.',
-    'На входе — списки наблюдений о стиле, фраз с намерениями, FAQ, возражений и фактов из разных пачек.',
+    'На входе — наблюдения о стиле и дословные фразы менеджера с намерениями, собранные из разных пачек.',
     '',
     'Сделай:',
     '1. styleGuide — 1–2 абзаца конкретных инструкций «как писать, чтобы быть неотличимым от этого менеджера»: длина, регистр, пунктуация, эмодзи, обращение, приветствия, разбивка на сообщения, характерные слова. Формулируй как правила для исполнителя, без общих слов вроде «дружелюбно и профессионально».',
-    '2. phrasebook — по каждому намерению до 8 лучших дословных фраз (убери дубли и почти дубли).',
-    '3. faq — объединённые вопросы-ответы; seen — сколько раз встречалось похожее.',
-    '4. objections — объединённые возражения и ответы; seen аналогично.',
-    '5. facts — уникальные факты о продукте и условиях. Противоречащие друг другу факты (например разные цены) оставь оба и пометь «(встречались разные)».',
+    '2. phrasebook — по каждому намерению до 6 лучших фраз менеджера (убери дубли и почти дубли, длинные не бери). Фразы не переписывай — бери дословно.',
+    '',
+    'Ответ должен целиком уместиться в один JSON-объект, обрывать его нельзя: лучше меньше фраз, но валидный JSON.',
     '',
     'Пиши по-русски. Ответ — только JSON по схеме.',
   ].join('\n');
 }
 
-export function digestReduceUserPrompt(partials: DigestPartial[]): string {
-  const observations = partials.flatMap((p) => p.styleObservations);
-  const phrases = partials.flatMap((p) => p.phrases);
-  const faq = partials.flatMap((p) => p.faq);
-  const objections = partials.flatMap((p) => p.objections);
-  const facts = partials.flatMap((p) => p.facts);
+/** Вход сводки: только то, по чему модель принимает решение. */
+export interface DigestStyleInput {
+  observations: string[];
+  phrases: { intent: PhraseIntent; text: string }[];
+}
+
+export function digestReduceUserPrompt(input: DigestStyleInput): string {
   return [
-    `Наблюдения о стиле (${observations.length}):`,
-    ...observations.map((o) => `- ${o}`),
+    `Наблюдения о стиле (${input.observations.length}):`,
+    ...input.observations.map((o) => `- ${o}`),
     '',
-    `Фразы менеджера (${phrases.length}):`,
-    ...phrases.map((p) => `- [${p.intent}] ${p.text}`),
-    '',
-    `FAQ (${faq.length}):`,
-    ...faq.map((f) => `- В: ${f.q}\n  О: ${f.a}`),
-    '',
-    `Возражения (${objections.length}):`,
-    ...objections.map((o) => `- Возражение: ${o.objection}\n  Ответ: ${o.answer}`),
-    '',
-    `Факты (${facts.length}):`,
-    ...facts.map((f) => `- ${f}`),
+    `Фразы менеджера (${input.phrases.length}):`,
+    ...input.phrases.map((p) => `- [${p.intent}] ${p.text}`),
   ].join('\n');
 }

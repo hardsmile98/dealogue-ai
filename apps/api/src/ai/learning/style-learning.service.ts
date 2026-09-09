@@ -9,6 +9,7 @@ import { AiConfig } from '../ai.config.js';
 import { AiExchangeEntity } from '../entities/ai-exchange.entity.js';
 import { AiStyleProfileEntity } from '../entities/ai-style-profile.entity.js';
 import type { StyleProfileProgress } from '../entities/ai-style-profile.entity.js';
+import { completeJson } from '../llm/complete-json.js';
 import { LlmProviderFactory } from '../llm/llm-provider.factory.js';
 import { isLlmError } from '../llm/llm-provider.interface.js';
 import type { LlmProvider } from '../llm/llm-provider.interface.js';
@@ -16,10 +17,10 @@ import { AiJobWorker } from '../services/ai-job-worker.service.js';
 import type { JobContext, JobOutcome } from '../services/ai-job-worker.service.js';
 import { AiJobsService } from '../services/ai-jobs.service.js';
 import { AiSettingsService } from '../services/ai-settings.service.js';
+import { mergeKnowledge, styleInput } from './digest-merge.js';
 import { digestMapSystemPrompt, digestMapUserPrompt, digestReduceSystemPrompt, digestReduceUserPrompt } from './digest-prompts.js';
 import type { DigestDialog } from './digest-prompts.js';
 import { clipEnd, clipStart } from '../lib/text.js';
-import { MEDIA_PLACEHOLDER_RE } from './exchange-builder.js';
 import { ExchangeIndexerService } from './exchange-indexer.service.js';
 import { computeHabits, computeTiming } from './habits.js';
 import type { ManagerMessageSample } from './habits.js';
@@ -40,6 +41,8 @@ const DIALOG_CHARS = 2_500;
 /** Ниже этого числа диалогов с ответами менеджера профиль считается ненадёжным. */
 const THIN_DIALOGS = 30;
 const DIGEST_MAX_TOKENS = 4096;
+/** Потолок промпта сводки: остаток контекста нужен модели на сам ответ. */
+const REDUCE_PROMPT_CHARS = 60_000;
 
 interface DigestState {
   chatIds: string[];
@@ -90,6 +93,17 @@ export class StyleLearningService implements OnModuleInit {
     this.worker.kick();
   }
 
+  /**
+   * Кнопка «Остановить». Снять job мало: пока профиль числится building, в
+   * интерфейсе висит «Остановить» и заново обучить нельзя — поэтому статус
+   * возвращаем к прежнему (готовому или пустому) прямо здесь.
+   */
+  async cancel(accountId: string): Promise<void> {
+    await this.jobs.cancel('digest', accountId);
+    const profile = await this.settings.getProfile(accountId);
+    if (profile.status === 'building') await this.idle(profile, accountId);
+  }
+
   /** Оценка объёма до запуска: диалоги и символы, которые уйдут в модель. */
   async estimate(accountId: string): Promise<{ dialogs: number; chars: number; exchanges: number; thin: boolean }> {
     await this.indexer.indexRecent(accountId);
@@ -130,7 +144,10 @@ export class StyleLearningService implements OnModuleInit {
         await this.progress(ctx, profileRow, accountId, { dialogsTotal: 0, dialogsDone: 0, stage: 'collect' });
         await this.indexer.indexAccount(accountId);
         state.chatIds = await this.rankChats(accountId);
-        if (!(await ctx.heartbeat({ chatIds: state.chatIds }))) return { kind: 'cancelled' };
+        if (!(await ctx.heartbeat({ chatIds: state.chatIds }))) {
+          await this.idle(profileRow, accountId);
+          return { kind: 'cancelled' };
+        }
       }
 
       const total = state.chatIds.length;
@@ -158,7 +175,10 @@ export class StyleLearningService implements OnModuleInit {
           if (dialog) state.exemplars.push({ chatId: dialog.chatId, summary: ex.summary, outcome: ex.outcome });
         }
         const alive = await ctx.heartbeat({ partials: state.partials, exemplars: state.exemplars });
-        if (!alive) return { kind: 'cancelled' };
+        if (!alive) {
+          await this.idle(profileRow, accountId);
+          return { kind: 'cancelled' };
+        }
       }
 
       // 3. Reduce + привычки/тайминг кодом.
@@ -180,9 +200,10 @@ export class StyleLearningService implements OnModuleInit {
       return { kind: 'done' };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // Ошибка ключа — повторять бессмысленно.
+      // Ошибка ключа — повторять бессмысленно. После последней попытки — тоже.
       const fatal = isLlmError(error) && (error.kind === 'auth' || error.kind === 'bad_request');
-      await this.profiles.update(profileRow.id, { status: fatal ? 'error' : 'building', error: message });
+      const last = fatal || ctx.job.attempts >= ctx.job.maxAttempts;
+      await this.profiles.update(profileRow.id, { status: last ? 'error' : 'building', error: message });
       await this.realtime.publishForAccount(accountId, {
         type: 'learning.progress',
         accountId,
@@ -253,42 +274,58 @@ export class StyleLearningService implements OnModuleInit {
     while (selected.length > 1 && digestMapUserPrompt(selected).length > BATCH_CHARS) {
       selected = selected.slice(0, -1);
     }
-    const result = await provider.complete({
-      system: digestMapSystemPrompt(),
-      messages: [{ role: 'user', content: digestMapUserPrompt(selected) }],
-      schemaName: 'digest_partial',
-      jsonSchema: z.toJSONSchema(DigestPartialSchema) as Record<string, unknown>,
-      maxTokens: DIGEST_MAX_TOKENS,
-      timeoutMs: this.config.requestTimeoutMs * 2,
-      model,
-      temperature: 0.3,
-    });
-    const parsed = DigestPartialSchema.safeParse(result.json);
-    if (!parsed.success) {
-      this.logger.warn(`Пачка не разобралась: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
-      return DigestPartialSchema.parse({});
+    try {
+      const { data } = await completeJson(
+        provider,
+        {
+          system: digestMapSystemPrompt(),
+          messages: [{ role: 'user', content: digestMapUserPrompt(selected) }],
+          schemaName: 'digest_partial',
+          jsonSchema: z.toJSONSchema(DigestPartialSchema) as Record<string, unknown>,
+          maxTokens: DIGEST_MAX_TOKENS,
+          timeoutMs: this.config.requestTimeoutMs * 2,
+          model,
+          temperature: 0.3,
+        },
+        DigestPartialSchema,
+        'Пачка диалогов',
+      );
+      return data;
+    } catch (error) {
+      // Одна испорченная пачка не должна валить обучение целиком — остальные полезнее.
+      if (isLlmError(error) && error.kind === 'invalid_json') {
+        this.logger.warn(error.message);
+        return DigestPartialSchema.parse({});
+      }
+      throw error;
     }
-    return parsed.data;
   }
 
+  /**
+   * Сводка: стиль и фразник — от модели, знания — кодом. Модель, которую
+   * просили выдать ещё и сотни FAQ, возражений и фактов, упиралась в лимит
+   * ответа и обрывала JSON на полуслове.
+   */
   private async reduce(provider: LlmProvider, model: string | undefined, partials: DigestPartial[]) {
-    if (partials.length === 0) return DigestReduceSchema.parse({ styleGuide: '' });
-    const compact = compactPartials(partials);
-    const result = await provider.complete({
-      system: digestReduceSystemPrompt(),
-      messages: [{ role: 'user', content: digestReduceUserPrompt(compact) }],
-      schemaName: 'digest_reduce',
-      jsonSchema: z.toJSONSchema(DigestReduceSchema) as Record<string, unknown>,
-      maxTokens: DIGEST_MAX_TOKENS * 2,
-      timeoutMs: this.config.requestTimeoutMs * 3,
-      model,
-      temperature: 0.3,
-    });
-    const parsed = DigestReduceSchema.safeParse(result.json);
-    if (!parsed.success) {
-      throw new Error(`Сводка профиля не разобралась: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
-    }
-    return parsed.data;
+    const knowledge = mergeKnowledge(partials);
+    if (partials.length === 0) return { ...DigestReduceSchema.parse({ styleGuide: '' }), ...knowledge };
+    const compact = styleInput(partials);
+    const { data } = await completeJson(
+      provider,
+      {
+        system: digestReduceSystemPrompt(),
+        messages: [{ role: 'user', content: clipStart(digestReduceUserPrompt(compact), REDUCE_PROMPT_CHARS) }],
+        schemaName: 'digest_reduce',
+        jsonSchema: z.toJSONSchema(DigestReduceSchema) as Record<string, unknown>,
+        maxTokens: DIGEST_MAX_TOKENS * 2,
+        timeoutMs: this.config.requestTimeoutMs * 3,
+        model,
+        temperature: 0.3,
+      },
+      DigestReduceSchema,
+      'Сводка профиля',
+    );
+    return { ...data, ...knowledge };
   }
 
   private async computeStats(accountId: string) {
@@ -375,6 +412,23 @@ export class StyleLearningService implements OnModuleInit {
     this.logger.log(`Аккаунт ${accountId}: профиль стиля v${row.version + 1} готов (диалогов ${dialogs}, пачек ${state.partials.length})`);
   }
 
+  /** Профиль больше не строится: вернуть его к прежнему состоянию без ошибки. */
+  private async idle(row: AiStyleProfileEntity, accountId: string): Promise<void> {
+    await this.profiles.update(row.id, {
+      status: row.builtAt ? 'ready' : 'empty',
+      progress: null,
+      error: null,
+    });
+    await this.realtime.publishForAccount(accountId, {
+      type: 'learning.progress',
+      accountId,
+      job: 'digest',
+      status: 'cancelled',
+      done: 0,
+      total: 0,
+    });
+  }
+
   private async progress(
     ctx: JobContext,
     row: AiStyleProfileEntity,
@@ -393,29 +447,4 @@ export class StyleLearningService implements OnModuleInit {
       stage: progress.stage,
     });
   }
-}
-
-/** Убираем дубли перед reduce, чтобы промпт не раздувался. */
-function compactPartials(partials: DigestPartial[]): DigestPartial[] {
-  const seenPhrase = new Set<string>();
-  const seenFact = new Set<string>();
-  return partials.map((p) => ({
-    ...p,
-    phrases: p.phrases.filter((ph) => {
-      const key = `${ph.intent}:${normalize(ph.text)}`;
-      if (seenPhrase.has(key)) return false;
-      seenPhrase.add(key);
-      return !MEDIA_PLACEHOLDER_RE.test(ph.text.trim());
-    }),
-    facts: p.facts.filter((f) => {
-      const key = normalize(f);
-      if (seenFact.has(key)) return false;
-      seenFact.add(key);
-      return true;
-    }),
-  }));
-}
-
-function normalize(text: string): string {
-  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().slice(0, 60);
 }

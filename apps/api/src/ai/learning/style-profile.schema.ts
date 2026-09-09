@@ -123,13 +123,13 @@ export const DigestPartialSchema = z.object({
 
 export type DigestPartial = z.infer<typeof DigestPartialSchema>;
 
-/** Что модель выдаёт на шаге reduce. */
+/**
+ * Что модель выдаёт на шаге reduce. Только стиль и фразник: FAQ, возражения и
+ * факты сводятся кодом — их сотни, и в один ответ модели они не помещаются.
+ */
 export const DigestReduceSchema = z.object({
   styleGuide: z.string().max(3000),
   phrasebook: z.array(PhrasebookEntrySchema).default([]),
-  faq: z.array(SeenQaSchema).max(200).default([]),
-  objections: z.array(SeenObjectionSchema).max(100).default([]),
-  facts: z.array(z.string().max(500)).max(200).default([]),
 });
 
 export type DigestReduce = z.infer<typeof DigestReduceSchema>;

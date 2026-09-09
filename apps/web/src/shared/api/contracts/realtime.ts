@@ -10,7 +10,7 @@ export type RealtimeEvent =
       type: 'learning.progress'
       accountId: string
       job: 'import' | 'digest'
-      status: 'running' | 'done' | 'error'
+      status: 'running' | 'done' | 'error' | 'cancelled'
       done: number
       total: number
       stage?: string

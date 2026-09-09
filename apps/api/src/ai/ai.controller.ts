@@ -108,7 +108,7 @@ export class AiAccountController {
     @Param('id', ParseUUIDPipe) accountId: string,
   ): Promise<{ cancelled: true }> {
     await this.accounts.requireAccount(user.id, accountId);
-    await this.jobs.cancel('digest', accountId);
+    await this.learning.cancel(accountId);
     await this.jobs.cancel('import', accountId);
     return { cancelled: true };
   }
