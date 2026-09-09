@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import AppBar from '@mui/material/AppBar'
+import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
@@ -12,8 +13,10 @@ import Stack from '@mui/material/Stack'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import MenuIcon from '@mui/icons-material/Menu'
+import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined'
 import TelegramIcon from '@mui/icons-material/Telegram'
 import type { SvgIconComponent } from '@mui/icons-material'
+import { useGetAlertsCountQuery } from '@/entities/alert'
 import { useCurrentUser } from '@/entities/session'
 import { AccountAvatar } from '@/entities/telegram-account'
 import { LogoutButton } from '@/features/auth/logout'
@@ -25,16 +28,24 @@ interface NavItem {
   label: string
   to: string
   icon: SvgIconComponent
+  /** Показывать счётчик открытых алертов. */
+  badge?: boolean
 }
 
 /** Разделы приложения; новые добавляются сюда. */
-const NAV_ITEMS: NavItem[] = [{ label: 'Аккаунты', to: ROUTES.accounts, icon: TelegramIcon }]
+const NAV_ITEMS: NavItem[] = [
+  { label: 'Аккаунты', to: ROUTES.accounts, icon: TelegramIcon },
+  { label: 'Требуют внимания', to: ROUTES.attention, icon: NotificationsActiveOutlinedIcon, badge: true },
+]
 
 /** Каркас авторизованной части: боковое меню, шапка на мобильных, контент в Outlet. */
 export function AppShell() {
   const user = useCurrentUser()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
+  // SSE инвалидирует этот кэш при новом алерте; polling — страховка.
+  const { data: alertsCount } = useGetAlertsCountQuery(undefined, { pollingInterval: 60_000 })
+  const openAlerts = alertsCount?.open ?? 0
 
   const sidebar = (
     <>
@@ -46,7 +57,7 @@ export function AppShell() {
       <Box component="nav" sx={styles.nav}>
         <Typography sx={styles.navSectionLabel}>Telegram</Typography>
         <List disablePadding>
-          {NAV_ITEMS.map(({ label, to, icon: Icon }) => (
+          {NAV_ITEMS.map(({ label, to, icon: Icon, badge }) => (
             <ListItemButton
               key={to}
               component={NavLink}
@@ -56,7 +67,9 @@ export function AppShell() {
               sx={styles.navItem}
             >
               <ListItemIcon sx={styles.navIcon}>
-                <Icon fontSize="small" />
+                <Badge badgeContent={badge ? openAlerts : 0} color="error" max={99}>
+                  <Icon fontSize="small" />
+                </Badge>
               </ListItemIcon>
               <ListItemText primary={label} slotProps={{ primary: { sx: { fontWeight: 500 } } }} />
             </ListItemButton>

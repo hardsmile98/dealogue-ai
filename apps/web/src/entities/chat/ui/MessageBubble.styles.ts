@@ -33,10 +33,21 @@ export const messageBubbleStyles = {
   meta: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: 0.5,
+    alignItems: 'center',
+    gap: 0.75,
     mt: 0.25,
     fontSize: 11,
     color: 'text.secondary',
+  },
+  aiTag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 0.25,
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    color: 'primary.main',
+    '& svg': { fontSize: 12 },
   },
   firstBadge: {
     mb: 0.75,

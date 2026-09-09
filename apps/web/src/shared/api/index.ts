@@ -1,8 +1,14 @@
 export { baseApi } from './baseApi'
-export { setAuthTokenProvider } from './authToken'
+export { setAuthTokenProvider, getAuthToken } from './authToken'
+export { connectRealtime } from './realtime'
+export type { RealtimeConnection } from './realtime'
 export type {
   AccountStatsDto,
   AccountStatsQuery,
+  AiPausedReason,
+  AttentionReason,
+  ChatAiStateDto,
+  ChatAttentionDto,
   ChatDto,
   ChatPeerDto,
   ChatsQuery,
@@ -20,3 +26,44 @@ export type {
   TelegramAccountDto,
   TelegramAccountStatus,
 } from './contracts/telegram'
+export type {
+  AiDecisionDto,
+  AiGuardDto,
+  AiJobDto,
+  AiJobStatus,
+  AiJobType,
+  AiProviderInfoDto,
+  AiProvidersResponse,
+  AiRunDto,
+  AiRunStatus,
+  AiRunTrigger,
+  AiSettingsDto,
+  ChatAiQuery,
+  FollowupStepDto,
+  LearningStatusDto,
+  ObjectionDto,
+  PhraseIntent,
+  QaPairDto,
+  SalesScriptDto,
+  SetChatAiRequest,
+  StageDto,
+  StyleHabitsDto,
+  StyleProfileContentDto,
+  StyleProfileDto,
+  StyleProfileOverridesDto,
+  StyleProfileStatus,
+  StyleTimingDto,
+  TestGenerateRequest,
+  TestGenerateResponse,
+  UpdateAiSettingsRequest,
+  WorkingHoursDto,
+} from './contracts/ai'
+export type {
+  AlertDto,
+  AlertPayloadDto,
+  AlertStatus,
+  AlertType,
+  AlertsCountDto,
+  AlertsQuery,
+} from './contracts/alerts'
+export type { RealtimeEvent, RealtimeTicketResponse } from './contracts/realtime'

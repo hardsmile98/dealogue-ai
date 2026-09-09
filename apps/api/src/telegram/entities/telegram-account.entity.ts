@@ -13,6 +13,8 @@ export type TelegramAccountStatus =
   | 'disconnected'
   | 'error';
 
+export type DeepHistoryStatus = 'none' | 'running' | 'done' | 'error';
+
 @Entity({ name: 'telegram_accounts' })
 @Index(['userId', 'phone'], { unique: true })
 export class TelegramAccountEntity {
@@ -48,6 +50,10 @@ export class TelegramAccountEntity {
   /** Первичная выгрузка диалогов завершена — дальше только досинхронизация. */
   @Column({ name: 'history_synced', type: 'boolean', default: false })
   historySynced: boolean;
+
+  /** Глубокая выгрузка всей истории (для обучения ИИ). */
+  @Column({ name: 'deep_history_status', type: 'varchar', length: 16, default: 'none' })
+  deepHistoryStatus: DeepHistoryStatus;
 
   @Column({ name: 'connected_at', type: 'timestamptz' })
   connectedAt: Date;

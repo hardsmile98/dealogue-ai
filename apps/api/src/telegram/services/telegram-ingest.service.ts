@@ -102,17 +102,21 @@ export class TelegramIngestService {
     const peerName = displayNameOf(user);
     const peerUsername = user.username ?? null;
     const peerPhone = user.phone ? `+${user.phone}` : null;
+    // access hash нужен, чтобы писать собеседнику после перезапуска, когда кэш сущностей пуст.
+    const peerAccessHash = user.accessHash ? user.accessHash.toString() : null;
 
     const existing = await this.chats.findOne({ where: { accountId, peerId } });
     if (existing) {
       if (
         existing.peerName !== peerName ||
         existing.peerUsername !== peerUsername ||
-        existing.peerPhone !== peerPhone
+        existing.peerPhone !== peerPhone ||
+        (peerAccessHash !== null && existing.peerAccessHash !== peerAccessHash)
       ) {
         existing.peerName = peerName;
         existing.peerUsername = peerUsername;
         existing.peerPhone = peerPhone;
+        if (peerAccessHash !== null) existing.peerAccessHash = peerAccessHash;
         await this.chats.save(existing);
       }
       return existing;
@@ -120,7 +124,7 @@ export class TelegramIngestService {
 
     try {
       return await this.chats.save(
-        this.chats.create({ accountId, peerId, peerName, peerUsername, peerPhone }),
+        this.chats.create({ accountId, peerId, peerName, peerUsername, peerPhone, peerAccessHash }),
       );
     } catch (error) {
       // Гонка двух вставок (событие и синхронизация) — берём победителя.

@@ -186,3 +186,23 @@ VITE_API_URL=http://localhost:3000
 
 Ошибки ожидаются в формате NestJS: `{ "message": "..." }` — текст показывается
 пользователю как есть (`shared/lib/getApiErrorMessage.ts`).
+
+## ИИ-агент (что где лежит)
+
+- `shared/api/contracts/{ai,alerts,realtime}.ts` — зеркала backend-контрактов;
+  `shared/api/realtime.ts` — SSE-подключение по тикету.
+- `entities/ai-agent` — RTK Query для настроек/обучения/чата (инжектится в
+  `chatsApi`, чтобы включение ИИ инвалидировало список чатов), метаданные причин
+  паузы и пометок, чипы. `entities/alert` — алерты.
+- `features/ai-agent/toggle-chat` — переключатель в шапке чата;
+  `edit-settings` — форма скрипта и настроек; `learning` — выгрузка истории,
+  обучение, профиль с правками; `test-generate` — песочница.
+- `features/realtime` — `RealtimeProvider` (SSE → инвалидация кэшей, тост и
+  браузерное уведомление на алерт, без звука). `features/alerts/manage` — ack/resolve.
+- `widgets/attention-list`, `pages/attention` — раздел «Требуют внимания»;
+  `pages/account/ui/AccountAiPage.tsx` — вкладка «ИИ-агент» (`?tab=`).
+
+| Путь | Страница |
+|---|---|
+| `/attention` | `pages/attention` |
+| `/accounts/:accountId/ai` | `pages/account` → `AccountAiPage` |

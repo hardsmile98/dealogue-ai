@@ -1,15 +1,27 @@
 import { useEffect, useMemo, useRef } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined'
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import { formatDateTime, formatDayDivider, getApiErrorMessage, toDayKey } from '@/shared/lib'
+import {
+  ATTENTION_REASON_META,
+  AiStageChip,
+  useClearAttentionMutation,
+  useGetAiSettingsQuery,
+  useMarkAttentionSeenMutation,
+} from '@/entities/ai-agent'
 import { LeadCodeChip, MessageBubble, useGetMessagesQuery } from '@/entities/chat'
 import type { Chat, Message } from '@/entities/chat'
 import { AccountAvatar } from '@/entities/telegram-account'
+import { ChatAiSwitch } from '@/features/ai-agent/toggle-chat'
 import { chatPanelStyles as styles } from './ChatPanel.styles'
 
 interface ChatThreadProps {
@@ -40,6 +52,9 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
     { accountId, chatId: chat.id },
     { pollingInterval: 10_000 },
   )
+  const { data: settings } = useGetAiSettingsQuery(accountId)
+  const [markSeen] = useMarkAttentionSeenMutation()
+  const [clearAttention, { isLoading: clearing }] = useClearAttentionMutation()
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const groups = useMemo(() => groupByDay(messages ?? []), [messages])
@@ -54,9 +69,16 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
     if (node) node.scrollTop = node.scrollHeight
   }, [messages])
 
+  // Менеджер открыл чат с пометкой — алерты считаем увиденными.
+  useEffect(() => {
+    if (chat.attention.needed) void markSeen({ accountId, chatId: chat.id })
+  }, [accountId, chat.id, chat.attention.needed, markSeen])
+
   const peerMeta = [chat.peer.username ? `@${chat.peer.username}` : null, chat.peer.phone]
     .filter(Boolean)
     .join(' · ')
+  const attention = chat.attention.reason ? ATTENTION_REASON_META[chat.attention.reason] : null
+  const aiActive = chat.ai.enabled && !chat.ai.pausedReason
 
   return (
     <Box sx={styles.threadPane}>
@@ -70,12 +92,36 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
         <Box sx={styles.threadHeaderText}>
           <Typography sx={styles.threadPeerName}>{chat.peer.name}</Typography>
           <Typography sx={styles.threadPeerMeta}>{peerMeta || 'Без username и телефона'}</Typography>
+          <Box sx={styles.threadChips}>
+            <LeadCodeChip code={chat.leadCode} showEmpty />
+            <AiStageChip stageKey={chat.ai.stage} stages={settings?.script.stages} />
+            <span>Первое сообщение {formatDateTime(chat.firstMessageAt)}</span>
+          </Box>
         </Box>
         <Box sx={styles.threadHeaderRight}>
-          <LeadCodeChip code={chat.leadCode} showEmpty />
-          <span>Первое сообщение {formatDateTime(chat.firstMessageAt)}</span>
+          <ChatAiSwitch chat={chat} />
         </Box>
       </Box>
+
+      {attention && chat.attention.needed && (
+        <Alert
+          severity={attention.color === 'success' ? 'success' : attention.color === 'error' ? 'error' : 'warning'}
+          icon={<NotificationsActiveOutlinedIcon fontSize="inherit" />}
+          sx={styles.attentionBar}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              loading={clearing}
+              onClick={() => void clearAttention({ accountId, chatId: chat.id })}
+            >
+              Снять пометку
+            </Button>
+          }
+        >
+          <strong>{attention.label}.</strong> {attention.description}
+        </Alert>
+      )}
 
       <Box ref={scrollRef} sx={styles.messages}>
         {error && (
@@ -112,8 +158,21 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
       </Box>
 
       <Box sx={styles.threadFooter}>
-        <VisibilityOutlinedIcon />
-        Режим наблюдения: сообщения только читаются. Отвечать — из самого Telegram.
+        {aiActive ? (
+          <>
+            <SmartToyOutlinedIcon />
+            ИИ отвечает в этом чате. Чтобы вести диалог вручную — выключите переключатель или просто ответьте из
+            Telegram: ИИ остановится сам.
+            {chat.ai.messagesCount > 0 && (
+              <Chip size="small" variant="outlined" label={`сообщений ИИ: ${chat.ai.messagesCount}`} sx={{ ml: 'auto' }} />
+            )}
+          </>
+        ) : (
+          <>
+            <VisibilityOutlinedIcon />
+            Режим наблюдения: сообщения только читаются. Отвечать — из самого Telegram.
+          </>
+        )}
       </Box>
     </Box>
   )

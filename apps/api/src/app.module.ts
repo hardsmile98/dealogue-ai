@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiModule } from './ai/ai.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { buildTypeOrmOptions } from './database/database.config.js';
 import { TelegramModule } from './telegram/telegram.module.js';
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module.js';
     UsersModule,
     AuthModule,
     TelegramModule,
+    AiModule,
   ],
   controllers: [],
   providers: [],

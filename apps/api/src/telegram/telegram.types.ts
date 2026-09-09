@@ -2,7 +2,12 @@ import type {
   TelegramAccountEntity,
   TelegramAccountStatus,
 } from './entities/telegram-account.entity.js';
-import type { MessageDirection, TelegramChatEntity } from './entities/telegram-chat.entity.js';
+import type {
+  AiPausedReason,
+  AttentionReason,
+  MessageDirection,
+  TelegramChatEntity,
+} from './entities/telegram-chat.entity.js';
 import type { TelegramMessageEntity } from './entities/telegram-message.entity.js';
 
 /**
@@ -39,6 +44,25 @@ export interface ChatDto {
   messagesCount: number;
   firstMessageAt: string;
   leadCode: string | null;
+  ai: ChatAiStateDto;
+  attention: ChatAttentionDto;
+}
+
+export interface ChatAiStateDto {
+  enabled: boolean;
+  stage: string | null;
+  pausedReason: AiPausedReason | null;
+  pausedAt: string | null;
+  messagesCount: number;
+  lastReplyAt: string | null;
+  followupStep: number;
+  followupNextAt: string | null;
+}
+
+export interface ChatAttentionDto {
+  needed: boolean;
+  reason: AttentionReason | null;
+  at: string | null;
 }
 
 export interface MessageDto {
@@ -47,6 +71,8 @@ export interface MessageDto {
   direction: MessageDirection;
   text: string;
   sentAt: string;
+  /** Сообщение отправил ИИ (а не человек). */
+  byAi: boolean;
 }
 
 export interface DailyStatsDto {
@@ -121,6 +147,21 @@ export function toChatDto(chat: TelegramChatEntity): ChatDto {
     messagesCount: chat.messagesCount,
     firstMessageAt: (chat.firstMessageAt ?? lastAt).toISOString(),
     leadCode: chat.leadCode,
+    ai: {
+      enabled: chat.aiEnabled,
+      stage: chat.aiStage,
+      pausedReason: chat.aiPausedReason,
+      pausedAt: chat.aiPausedAt?.toISOString() ?? null,
+      messagesCount: chat.aiMessagesCount,
+      lastReplyAt: chat.aiLastReplyAt?.toISOString() ?? null,
+      followupStep: chat.aiFollowupStep,
+      followupNextAt: chat.aiFollowupNextAt?.toISOString() ?? null,
+    },
+    attention: {
+      needed: chat.needsAttention,
+      reason: chat.attentionReason,
+      at: chat.attentionAt?.toISOString() ?? null,
+    },
   };
 }
 
@@ -131,5 +172,6 @@ export function toMessageDto(message: TelegramMessageEntity): MessageDto {
     direction: message.direction,
     text: message.text,
     sentAt: message.sentAt.toISOString(),
+    byAi: message.aiRunId !== null && message.aiRunId !== undefined,
   };
 }

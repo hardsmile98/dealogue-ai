@@ -1,4 +1,10 @@
 import type { DataSourceOptions } from 'typeorm';
+import { AiAgentSettingsEntity } from '../ai/entities/ai-agent-settings.entity.js';
+import { AiExchangeEntity } from '../ai/entities/ai-exchange.entity.js';
+import { AiJobEntity } from '../ai/entities/ai-job.entity.js';
+import { AiRunEntity } from '../ai/entities/ai-run.entity.js';
+import { AiStyleProfileEntity } from '../ai/entities/ai-style-profile.entity.js';
+import { AlertEntity } from '../ai/entities/alert.entity.js';
 import { TelegramAccountEntity } from '../telegram/entities/telegram-account.entity.js';
 import { TelegramChatEntity } from '../telegram/entities/telegram-chat.entity.js';
 import { TelegramDialogStartEntity } from '../telegram/entities/telegram-dialog-start.entity.js';
@@ -10,6 +16,8 @@ import { SeedDemoUser1700000000001 } from './migrations/1700000000001-SeedDemoUs
 import { CreateTelegramTables1700000000002 } from './migrations/1700000000002-CreateTelegramTables.js';
 import { CreateDialogStarts1700000000003 } from './migrations/1700000000003-CreateDialogStarts.js';
 import { DropServiceChats1700000000004 } from './migrations/1700000000004-DropServiceChats.js';
+import { CreateAiAgent1700000000005 } from './migrations/1700000000005-CreateAiAgent.js';
+import { AddFollowupNextAt1700000000006 } from './migrations/1700000000006-AddFollowupNextAt.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -57,6 +65,12 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       TelegramChatEntity,
       TelegramMessageEntity,
       TelegramDialogStartEntity,
+      AiAgentSettingsEntity,
+      AiStyleProfileEntity,
+      AiExchangeEntity,
+      AiJobEntity,
+      AiRunEntity,
+      AlertEntity,
     ],
     migrations: [
       CreateUsersTable1700000000000,
@@ -64,6 +78,8 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       CreateTelegramTables1700000000002,
       CreateDialogStarts1700000000003,
       DropServiceChats1700000000004,
+      CreateAiAgent1700000000005,
+      AddFollowupNextAt1700000000006,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

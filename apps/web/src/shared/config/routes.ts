@@ -11,6 +11,9 @@ export const ROUTES = {
   accountStats: '/accounts/:accountId/stats',
   accountChats: '/accounts/:accountId/chats',
   accountChat: '/accounts/:accountId/chats/:chatId',
+  accountAi: '/accounts/:accountId/ai',
+  /** Чаты, где ИИ довёл клиента до оплаты или просит подключить менеджера. */
+  attention: '/attention',
 } as const
 
 export type AppRoute = (typeof ROUTES)[keyof typeof ROUTES]
@@ -22,4 +25,5 @@ export const accountLinks = {
   chats: (accountId: string) => `${ROUTES.accounts}/${accountId}/chats`,
   chat: (accountId: string, chatId: string) =>
     `${ROUTES.accounts}/${accountId}/chats/${chatId}`,
+  ai: (accountId: string) => `${ROUTES.accounts}/${accountId}/ai`,
 }

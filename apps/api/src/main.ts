@@ -26,6 +26,10 @@ async function bootstrap() {
     }),
   );
 
+  // SIGTERM/SIGINT → onModuleDestroy: воркер ИИ дожидается заданий и возвращает
+  // недоделанное в очередь, Telegram-клиенты закрываются штатно.
+  app.enableShutdownHooks();
+
   await app.listen(process.env.PORT ?? 3000);
 }
 

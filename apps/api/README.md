@@ -250,3 +250,66 @@ await queryRunner.query(
 - Guard написан на `@nestjs/jwt` без Passport: для одной JWT-стратегии
   Passport даёт мало, а зависимостей и CJS/ESM-стыков добавляет заметно.
 - `synchronize` выключен намеренно — схема меняется только миграциями.
+
+## ИИ-агент
+
+Модуль `src/ai` — агент продаж, который отвечает клиентам от лица менеджера.
+Telegram-модуль про него не знает: он только публикует события в
+`TelegramEventsService` и предоставляет отправку (`TelegramOutboundService`).
+
+### Как устроено
+
+- **Очередь в Postgres** (`ai_jobs`) — всё отложенное: ответы (`reply`),
+  дожимы (`followup`), обучение (`digest`), выгрузка истории (`import`).
+  Воркер `AiJobWorker` забирает задания через `FOR UPDATE SKIP LOCKED`,
+  повторяет с backoff, watchdog возвращает зависшие, при остановке процесса
+  недоделанное остаётся в очереди. Повторный enqueue сдвигает время запуска —
+  так работает debounce входящих.
+- **Ответ** (`AiAgentService.runForChat`): guards (ИИ включён на аккаунте и в
+  чате, аккаунт онлайн, предохранитель провайдера закрыт, рабочее окно,
+  лимиты) → история чата → похожие прошлые обмены из `ai_exchanges`
+  (`pg_trgm` + русский FTS) → промпт (`prompt/prompt-builder.ts`) → модель
+  (structured JSON) → `lib/decision-guard.ts` (роботизмы, суммы/ссылки вне
+  фактов, повторы, стоп-слова) → «человеческая» задержка из выученного
+  времени реакции менеджера с typing → 1–3 сообщения → `ai_runs` → handoff.
+- **Ручной ответ**: исходящее без `ai_run_id` — это менеджер из Telegram;
+  ИИ в чате выключается (`ai_paused_reason = manual_reply`).
+- **Handoff** (`HandoffService`): `ready_to_pay` / `needs_human` → алерт,
+  `needs_attention` на чате, пауза ИИ, уведомление в Telegram (`handoff_peer`
+  или «Избранное»), SSE-событие. `ai_error` — при проблемах провайдера.
+- **Обучение** (`learning/`): `HistoryImportService` выгружает всю историю
+  (бережно, с паузами, возобновляемо); `ExchangeIndexerService` режет её на
+  пары «клиент → менеджер»; `StyleLearningService` делает map-reduce через
+  модель и собирает профиль (`ai_style_profile`): styleGuide, phrasebook,
+  FAQ, возражения, факты; привычки и тайминг считаются кодом. Правки владельца —
+  в `overrides`.
+- **Провайдеры** (`llm/`): `OpenAiCompatibleProvider` (DeepSeek по умолчанию,
+  OpenAI, локальные), `MockProvider` для тестов, заглушка Anthropic. Один
+  предохранитель на провайдера.
+- **SSE** (`src/realtime`): `POST /realtime/ticket` → `GET /realtime/events?ticket=`.
+
+### Env
+
+См. блок «ИИ-агент» в `.env.example`: `AI_ENABLED`, `AI_PROVIDER`, `AI_MODEL`,
+`DEEPSEEK_API_KEY`, `AI_HTTP_PROXY`, лимиты воркера и дожимов, `WEB_URL`.
+
+### Эндпоинты (все под JWT)
+
+| Метод | Путь | Что |
+|---|---|---|
+| GET/PUT | `/telegram/accounts/:id/ai/settings` | настройки и скрипт |
+| GET | `/telegram/accounts/:id/ai/learning` | статус выгрузки/обучения, профиль, оценка |
+| POST | `/telegram/accounts/:id/ai/import` · `/learn` · `/learn/cancel` | задания |
+| GET/PUT | `/telegram/accounts/:id/ai/profile` · `/profile/overrides` | профиль и правки |
+| PATCH | `/telegram/accounts/:id/chats/:chatId/ai` | `{enabled}` |
+| POST | `/telegram/accounts/:id/chats/:chatId/ai/test` | песочница (без отправки) |
+| GET | `/telegram/accounts/:id/chats/:chatId/ai/runs` | аудит запусков |
+| POST | `…/chats/:chatId/ai/followups/stop` · `…/attention/seen` · `…/attention/clear` | дожимы и пометка |
+| GET | `/alerts` · `/alerts/count`; POST `/alerts/:id/ack` · `/resolve` | алерты |
+| GET | `/ai/providers` · `/health` | справочники |
+
+### Проверка без внешнего API
+
+В настройках аккаунта выберите провайдера `mock`: он отвечает детерминированно
+(«оплат/реквизит» → готов к оплате, «менеджер» → нужен человек, «тишина» →
+молчит, «ошибка» → ошибка провайдера). Unit-тесты чистых модулей: `npm test`.

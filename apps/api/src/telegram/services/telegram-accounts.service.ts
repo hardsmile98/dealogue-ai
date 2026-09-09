@@ -78,9 +78,7 @@ export class TelegramAccountsService {
   }
 
   async listMessages(userId: string, accountId: string, chatId: string): Promise<MessageDto[]> {
-    const account = await this.requireAccount(userId, accountId);
-    const chat = await this.chats.findOne({ where: { id: chatId, accountId: account.id } });
-    if (!chat) throw new NotFoundException('Чат не найден');
+    const { chat } = await this.requireChat(userId, accountId, chatId);
     const rows = await this.messages.find({
       where: { chatId: chat.id },
       order: { sentAt: 'ASC', telegramMessageId: 'ASC' },
@@ -165,11 +163,24 @@ export class TelegramAccountsService {
     }
   }
 
-  private async requireAccount(userId: string, accountId: string): Promise<TelegramAccountEntity> {
+  /** Аккаунт пользователя или 404 — единая точка проверки владения. */
+  async requireAccount(userId: string, accountId: string): Promise<TelegramAccountEntity> {
     this.ensureEnabled();
     const account = await this.accounts.findOne({ where: { id: accountId, userId } });
     if (!account) throw new NotFoundException('Аккаунт не найден');
     return account;
+  }
+
+  /** Чат внутри аккаунта пользователя или 404. */
+  async requireChat(
+    userId: string,
+    accountId: string,
+    chatId: string,
+  ): Promise<{ account: TelegramAccountEntity; chat: TelegramChatEntity }> {
+    const account = await this.requireAccount(userId, accountId);
+    const chat = await this.chats.findOne({ where: { id: chatId, accountId: account.id } });
+    if (!chat) throw new NotFoundException('Чат не найден');
+    return { account, chat };
   }
 
   private groupByDayAndCode(accountId: string, from: string, to: string, timezone: string) {

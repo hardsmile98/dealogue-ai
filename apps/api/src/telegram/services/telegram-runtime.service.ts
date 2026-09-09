@@ -7,6 +7,7 @@ import type { NewMessageEvent } from 'teleproto/events/NewMessage.js';
 import { TelegramClientFactory, safeDestroy } from '../client/telegram-client.factory.js';
 import { TelegramAccountEntity } from '../entities/telegram-account.entity.js';
 import type { TelegramAccountStatus } from '../entities/telegram-account.entity.js';
+import type { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
 import { SessionCrypto } from '../lib/session-crypto.js';
 import {
   TelegramUnavailableError,
@@ -16,7 +17,8 @@ import {
 } from '../lib/telegram-errors.js';
 import { TelegramConfig } from '../telegram.config.js';
 import { TelegramDialogStartsService } from './telegram-dialog-starts.service.js';
-import { TelegramIngestService } from './telegram-ingest.service.js';
+import { TelegramEventsService } from './telegram-events.service.js';
+import { TelegramIngestService, messageDirection } from './telegram-ingest.service.js';
 import { TelegramSyncService, isNonHumanUser } from './telegram-sync.service.js';
 
 const { Api: Tl, events } = teleproto;
@@ -64,10 +66,22 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     private readonly sync: TelegramSyncService,
     private readonly ingest: TelegramIngestService,
     private readonly dialogStarts: TelegramDialogStartsService,
+    private readonly events: TelegramEventsService,
     @InjectRepository(TelegramAccountEntity)
     private readonly accounts: Repository<TelegramAccountEntity>,
   ) {
     this.crypto = new SessionCrypto(config.sessionSecret || 'telegram-disabled');
+  }
+
+  /** Живой клиент аккаунта или null, если он сейчас не подключён. */
+  getClient(accountId: string): TelegramClient | null {
+    const live = this.live.get(accountId);
+    return live && !live.stopped ? live.client : null;
+  }
+
+  /** id всех подключённых сейчас аккаунтов. */
+  liveAccountIds(): string[] {
+    return [...this.live.keys()];
   }
 
   async onModuleInit(): Promise<void> {
@@ -164,6 +178,7 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       }
     }
     await safeDestroy(live.client);
+    this.events.emit({ kind: 'account-stopped', accountId });
   }
 
   // --- внутреннее -----------------------------------------------------------
@@ -206,6 +221,7 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     }, this.config.resyncIntervalMs);
 
     void this.runSync(live, account.historySynced ? 'incremental' : 'full');
+    this.events.emit({ kind: 'account-live', accountId: account.id });
   }
 
   private runSync(live: LiveAccount, mode: 'full' | 'incremental'): Promise<void> {
@@ -251,6 +267,7 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       );
       if (chat.historySynced) {
         await this.ingest.storeMessages(chat, [message]);
+        this.emitMessage(live.id, chat, message);
         return;
       }
 
@@ -263,9 +280,20 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       } finally {
         live.pendingDialogs.delete(chat.peerId);
       }
+      this.emitMessage(live.id, chat, message);
     } catch (error) {
       await this.handleFailure(live, error, 'обработка сообщения');
     }
+  }
+
+  private emitMessage(accountId: string, chat: TelegramChatEntity, message: Api.Message): void {
+    this.events.emit({
+      kind: 'message',
+      accountId,
+      chat,
+      message,
+      direction: messageDirection(message),
+    });
   }
 
   /**

@@ -18,7 +18,9 @@
     "migration:run": "tsx ./node_modules/typeorm/cli.js migration:run -d ./src/database/data-source.ts",
     "migration:revert": "tsx ./node_modules/typeorm/cli.js migration:revert -d ./src/database/data-source.ts",
     "migration:show": "tsx ./node_modules/typeorm/cli.js migration:show -d ./src/database/data-source.ts",
-    "migration:create": "tsx ./node_modules/typeorm/cli.js migration:create"
+    "migration:create": "tsx ./node_modules/typeorm/cli.js migration:create",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -35,7 +37,9 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "teleproto": "^1.229.0",
-    "typeorm": "^1.1.1"
+    "typeorm": "^1.1.1",
+    "undici": "^8.10.2",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
@@ -48,6 +52,8 @@
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
     "tsx": "^4.23.13",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
   }
 }

@@ -1,4 +1,5 @@
 import Box from '@mui/material/Box'
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined'
 import { formatTime } from '@/shared/lib'
 import type { Message } from '../model/types'
 import { LeadCodeChip } from './LeadCodeChip'
@@ -23,7 +24,15 @@ export function MessageBubble({ message, isFirst = false, leadCode = null }: Mes
           </Box>
         )}
         {message.text}
-        <Box sx={styles.meta}>{formatTime(message.sentAt)}</Box>
+        <Box sx={styles.meta}>
+          {message.byAi && (
+            <Box component="span" sx={styles.aiTag} title="Сообщение отправил ИИ-агент">
+              <SmartToyOutlinedIcon />
+              ИИ
+            </Box>
+          )}
+          {formatTime(message.sentAt)}
+        </Box>
       </Box>
     </Box>
   )

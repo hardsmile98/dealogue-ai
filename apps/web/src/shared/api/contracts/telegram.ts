@@ -50,6 +50,33 @@ export interface ChatDto {
   firstMessageAt: string
   /** Код, вычлененный из первого входящего сообщения («Код: 5» → "5"), или null. */
   leadCode: string | null
+  ai: ChatAiStateDto
+  attention: ChatAttentionDto
+}
+
+/** Почему ИИ в чате остановлен (null — работает или выключен вручную). */
+export type AiPausedReason = 'manual_reply' | 'handoff' | 'needs_human' | 'limit' | 'error'
+
+export type AttentionReason = 'ready_to_pay' | 'needs_human' | 'ai_error'
+
+export interface ChatAiStateDto {
+  enabled: boolean
+  /** Ключ текущего этапа воронки по мнению ИИ. */
+  stage: string | null
+  pausedReason: AiPausedReason | null
+  pausedAt: string | null
+  /** Сколько сообщений ИИ отправил с момента последнего включения. */
+  messagesCount: number
+  lastReplyAt: string | null
+  /** Сколько дожимов уже отправлено в текущей серии молчания клиента. */
+  followupStep: number
+  followupNextAt: string | null
+}
+
+export interface ChatAttentionDto {
+  needed: boolean
+  reason: AttentionReason | null
+  at: string | null
 }
 
 export interface MessageDto {
@@ -58,6 +85,8 @@ export interface MessageDto {
   direction: MessageDirection
   text: string
   sentAt: string
+  /** Сообщение отправил ИИ, а не человек. */
+  byAi: boolean
 }
 
 export interface DailyStatsDto {
