@@ -4,9 +4,16 @@ import type { TelegramClient } from 'teleproto';
 import { TelegramUnavailableError } from '../lib/telegram-errors.js';
 import { TelegramConfig } from '../telegram.config.js';
 import type { MtProxyConfig } from '../telegram.config.js';
-import { ConnectionTCPMTProxyPadded, needsPaddedTransport } from './mtproxy-padded-transport.js';
+import {
+  ConnectionTCPMTProxyPadded,
+  needsPaddedTransport,
+} from './mtproxy-padded-transport.js';
 
-const { TelegramClient: TelegramClientCtor, sessions, Logger: TeleprotoLogger } = teleproto;
+const {
+  TelegramClient: TelegramClientCtor,
+  sessions,
+  Logger: TeleprotoLogger,
+} = teleproto;
 
 /** Секунды на установку TCP-соединения через прокси. */
 const CONNECT_TIMEOUT_SEC = 12;
@@ -19,12 +26,14 @@ export interface ConnectedClient {
 
 /**
  * Собирает клиентов teleproto с едиными настройками: MTProxy, ретраи,
- * автопереподключение, тихий лог. Умеет перебирать несколько прокси —
+ * автопереподключение, лог через Nest. Умеет перебирать несколько прокси —
  * первый живой выигрывает.
  */
 @Injectable()
 export class TelegramClientFactory {
   private readonly logger = new Logger(TelegramClientFactory.name);
+  /** Внутренние сообщения teleproto: обрывы, реконнекты, пинги. */
+  private readonly clientLogger = new Logger('teleproto');
   /** С какого прокси начинать следующий перебор — чтобы не долбить один и тот же. */
   private rotation = 0;
 
@@ -34,7 +43,15 @@ export class TelegramClientFactory {
     return { apiId: this.config.apiId, apiHash: this.config.apiHash };
   }
 
-  create(sessionString: string, proxyIndex: number): TelegramClient {
+  /**
+   * @param label подпись в логах teleproto (телефон аккаунта), чтобы по
+   *   записям вроде «Ping failed, reconnecting» было видно, чей это клиент.
+   */
+  create(
+    sessionString: string,
+    proxyIndex: number,
+    label = 'без аккаунта',
+  ): TelegramClient {
     const proxy = this.config.proxies[proxyIndex];
     const client = new TelegramClientCtor(
       new sessions.StringSession(sessionString),
@@ -53,14 +70,15 @@ export class TelegramClientFactory {
         appVersion: '1.0',
         langCode: 'ru',
         systemLangCode: 'ru',
-        baseLogger: new TeleprotoLogger('error' as never),
+        baseLogger: this.createClientLogger(label),
       },
     );
 
     // teleproto при MTProxy жёстко ставит abridged-транспорт, а прокси
     // с секретами dd…/ee… принимают только padded intermediate — подменяем.
     if (proxy && needsPaddedTransport(proxy.secret)) {
-      client._connection = ConnectionTCPMTProxyPadded as unknown as typeof client._connection;
+      client._connection =
+        ConnectionTCPMTProxyPadded as unknown as typeof client._connection;
     }
     return client;
   }
@@ -69,7 +87,10 @@ export class TelegramClientFactory {
    * Подключается, перебирая прокси по кругу. Без прокси — одна прямая попытка.
    * Возвращает подключённого клиента и индекс сработавшего прокси.
    */
-  async connect(sessionString: string): Promise<ConnectedClient> {
+  async connect(
+    sessionString: string,
+    label?: string,
+  ): Promise<ConnectedClient> {
     const total = Math.max(1, this.config.proxies.length);
     const start = this.rotation % total;
     this.rotation += 1;
@@ -77,7 +98,7 @@ export class TelegramClientFactory {
     let lastError: unknown = null;
     for (let step = 0; step < total; step += 1) {
       const proxyIndex = (start + step) % total;
-      const client = this.create(sessionString, proxyIndex);
+      const client = this.create(sessionString, proxyIndex, label);
       try {
         await client.connect();
         return { client, proxyIndex };
@@ -98,6 +119,34 @@ export class TelegramClientFactory {
         ? `Не удалось подключиться к Telegram: ${lastError.message}`
         : undefined,
     );
+  }
+
+  /**
+   * Лог teleproto → Nest Logger с подписью аккаунта. Уровень задаётся
+   * `TELEGRAM_CLIENT_LOG_LEVEL`: на `warn` видны обрывы и неудачные реконнекты,
+   * на `info` — ещё и «Connection closed by server / Handling reconnect».
+   */
+  private createClientLogger(
+    label: string,
+  ): InstanceType<typeof TeleprotoLogger> {
+    const logger = new TeleprotoLogger(this.config.clientLogLevel as never);
+    logger.handler = ({ level, message, error }) => {
+      const text = `[${label}] ${message}${error ? ` — ${error instanceof Error ? error.message : String(error)}` : ''}`;
+      switch (level) {
+        case 'error':
+          this.clientLogger.error(text);
+          break;
+        case 'warn':
+          this.clientLogger.warn(text);
+          break;
+        case 'info':
+          this.clientLogger.log(text);
+          break;
+        default:
+          this.clientLogger.debug(text);
+      }
+    };
+    return logger;
   }
 }
 

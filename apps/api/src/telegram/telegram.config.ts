@@ -7,6 +7,15 @@ export interface MtProxyConfig {
   secret: string;
 }
 
+export type ClientLogLevel = 'none' | 'error' | 'warn' | 'info' | 'debug';
+const CLIENT_LOG_LEVELS: readonly string[] = [
+  'none',
+  'error',
+  'warn',
+  'info',
+  'debug',
+];
+
 /**
  * Настройки раздела Telegram. Всё читается один раз при старте;
  * если api_id / api_hash не заданы — модуль поднимается в «выключенном»
@@ -30,6 +39,11 @@ export class TelegramConfig {
   readonly resyncIntervalMs: number;
   /** Сколько живёт незавершённая попытка входа (номер → код → пароль). */
   readonly loginAttemptTtlMs: number;
+  /**
+   * Уровень внутренних логов teleproto (обрывы соединения, реконнекты, пинги).
+   * По умолчанию `warn`; для разбора зависаний ставьте `info` или `debug`.
+   */
+  readonly clientLogLevel: ClientLogLevel;
 
   constructor(config: ConfigService) {
     this.apiId = Number(config.get<string>('TELEGRAM_API_ID') ?? 0);
@@ -38,12 +52,21 @@ export class TelegramConfig {
     this.timezone = config.get<string>('TELEGRAM_TIMEZONE') ?? 'Europe/Moscow';
     this.dialogsLimit = readInt(config, 'TELEGRAM_SYNC_DIALOGS_LIMIT', 300);
     this.messagesLimit = readInt(config, 'TELEGRAM_SYNC_MESSAGES_LIMIT', 100);
-    this.recentDialogsLimit = readInt(config, 'TELEGRAM_RESYNC_DIALOGS_LIMIT', 40);
+    this.recentDialogsLimit = readInt(
+      config,
+      'TELEGRAM_RESYNC_DIALOGS_LIMIT',
+      40,
+    );
     this.resyncIntervalMs =
       readInt(config, 'TELEGRAM_RESYNC_INTERVAL_SEC', 120) * 1000;
     this.loginAttemptTtlMs =
       readInt(config, 'TELEGRAM_LOGIN_ATTEMPT_TTL_SEC', 600) * 1000;
     this.proxies = parseProxies(config.get<string>('TELEGRAM_MTPROXY') ?? '');
+    this.clientLogLevel = readLogLevel(
+      config,
+      'TELEGRAM_CLIENT_LOG_LEVEL',
+      'warn',
+    );
 
     if (!this.enabled) {
       this.logger.warn(
@@ -69,6 +92,15 @@ function readInt(config: ConfigService, key: string, fallback: number): number {
   const raw = config.get<string>(key);
   const value = raw === undefined ? NaN : Number(raw);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function readLogLevel(
+  config: ConfigService,
+  key: string,
+  fallback: ClientLogLevel,
+): ClientLogLevel {
+  const raw = (config.get<string>(key) ?? '').trim().toLowerCase();
+  return CLIENT_LOG_LEVELS.includes(raw) ? (raw as ClientLogLevel) : fallback;
 }
 
 /**
