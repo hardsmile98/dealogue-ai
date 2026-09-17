@@ -332,9 +332,26 @@ await queryRunner.query(
   reengage → offer → offer_question → price → price_question → 3 напоминания →
   `closed_silent`.
 
-Черновики для менеджера (кнопки «отправить / править / отклонить»),
-уведомления в Telegram, обучение на оценках и статистика — этапы 5–7.
-Ходы в режиме `manager` пока не делаются (входящие только помечаются).
+Этап 5 (менеджер) сделан:
+
+- `agent/services/drafts.service.ts` — очередь черновиков и решения менеджера:
+  отправить как есть / с правками / свой ответ / не отвечать, переписать
+  (`regenerate`), сохранить как образец или заметку. Статус решения — из
+  сравнения текстов (`agent/drafts/draft-decision.ts`);
+- подтверждённый ход `supervised` уходит с `ai_turn_id` и закрывается как ход
+  бота (этап, счётчики, следующее касание, `dryRun` учитывается); ответ на
+  передачу уходит без `ai_turn_id` — это сообщение человека;
+- «не отвечать» по ходу-касанию переносит касание на новый интервал;
+- режим `manager`: входящее не остаётся без ответа — бот готовит черновик
+  (ход `manager_draft`, исход `awaiting_approval`), задача модели «предложи
+  ответ, который отправит человек» (`agent/drafts/manager-draft.ts`);
+- уведомление в Telegram (`agent/jobs/notify.service.ts`, job `notify:{draftId}`):
+  причина, имя клиента, первые 120 символов входящего и ссылка на чат; текст
+  черновика не дублируется. Аккаунт офлайн — перенос, черновик решён — молчим;
+- ответы менеджера из Telegram при висящем черновике закрывают его как
+  `replaced`; несколько сообщений подряд в течение трёх минут склеиваются.
+
+Обучение на оценках (похожие случаи, аномалии) и статистика — этапы 6–7.
 
 ### Как устроено
 
@@ -372,6 +389,8 @@ await queryRunner.query(
 | GET/PATCH | `/telegram/accounts/:id/chats/:chatId/ai` | состояние чата; режим, слоты, заметка |
 | POST | `…/chats/:chatId/ai/resume` · `…/ai/turn` | вернуть боту (режим, этап, касание сейчас/по интервалу); ручной ход |
 | GET | `…/chats/:chatId/ai/turns`; POST `…/turns/:turnId/rate` | журнал ходов; оценка 👍/👎 (с созданием заметки) |
+| GET | `/telegram/accounts/:id/ai/drafts?status=&kind=&limit=&cursor=` · `/drafts` | очередь черновиков по аккаунту и по всем аккаунтам владельца |
+| POST | `…/ai/drafts/:draftId/send` · `/dismiss` · `/regenerate` · `/to-example` · `/to-note` | решения менеджера по черновику |
 | POST | `/telegram/accounts/:id/chats/:chatId/messages` | сообщение клиенту от менеджера |
 | POST | `…/chats/:chatId/attention/seen` · `…/attention/clear` | пометка «требует внимания» |
 | GET | `/alerts` · `/alerts/count`; POST `/alerts/:id/ack` · `/resolve` | алерты |

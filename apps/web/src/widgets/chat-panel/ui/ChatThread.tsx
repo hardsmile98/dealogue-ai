@@ -60,6 +60,8 @@ function ghostsOf(turns: TurnDto[]): ThreadItem[] {
   const result: ThreadItem[] = []
   for (const turn of turns) {
     if (turn.outcome !== 'dry_run' && turn.outcome !== 'awaiting_approval') continue
+    // Черновик менеджеру виден в карточке над лентой — в самой ленте не дублируем.
+    if (turn.trigger === 'manager_draft') continue
     turn.messagesPlanned.forEach((m, index) => {
       result.push({ kind: 'ghost', at: turn.createdAt, id: `${turn.id}:${index}`, text: m.text, label: TURN_OUTCOME_META[turn.outcome].label, turn })
     })

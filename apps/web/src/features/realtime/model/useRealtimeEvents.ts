@@ -3,15 +3,22 @@ import { useDispatch } from 'react-redux'
 import { connectRealtime, unauthorized } from '@/shared/api'
 import type { RealtimeEvent } from '@/shared/api'
 import { AI_CHAT_TAG, AI_OVERVIEW_TAG, AI_SETTINGS_TAG, AI_TURNS_TAG, aiAgentApi } from '@/entities/ai-agent'
+import { AI_DRAFT_TAG, draftsApi } from '@/entities/ai-draft'
 import { ALERT_TAG, alertsApi } from '@/entities/alert'
 import { CHAT_TAG, MESSAGE_TAG, chatsApi } from '@/entities/chat'
 
 type ChatTags = Parameters<typeof chatsApi.util.invalidateTags>[0]
 type AlertTags = Parameters<typeof alertsApi.util.invalidateTags>[0]
 type AgentTags = Parameters<typeof aiAgentApi.util.invalidateTags>[0]
+type DraftTags = Parameters<typeof draftsApi.util.invalidateTags>[0]
 
 /** Какие кэши RTK Query устарели после события. */
-export function tagsForEvent(event: RealtimeEvent): { chats: ChatTags; alerts: AlertTags; agent: AgentTags } {
+export function tagsForEvent(event: RealtimeEvent): {
+  chats: ChatTags
+  alerts: AlertTags
+  agent: AgentTags
+  drafts?: DraftTags
+} {
   switch (event.type) {
     case 'alert.created':
     case 'alert.updated':
@@ -38,12 +45,16 @@ export function tagsForEvent(event: RealtimeEvent): { chats: ChatTags; alerts: A
     case 'draft.created':
     case 'draft.updated':
       return {
-        chats: [],
+        chats: [{ type: CHAT_TAG, id: event.accountId }],
         alerts: [],
         agent: [
           { type: AI_CHAT_TAG, id: event.chatId },
           { type: AI_CHAT_TAG, id: event.accountId },
           { type: AI_OVERVIEW_TAG, id: event.accountId },
+        ],
+        drafts: [
+          { type: AI_DRAFT_TAG, id: event.accountId },
+          { type: AI_DRAFT_TAG, id: 'ALL' },
         ],
       }
     case 'message.created':
@@ -92,10 +103,11 @@ export function useRealtimeEvents(onEvent?: (event: RealtimeEvent) => void): { c
   useEffect(() => {
     const connection = connectRealtime(
       (event) => {
-        const { chats, alerts, agent } = tagsForEvent(event)
+        const { chats, alerts, agent, drafts } = tagsForEvent(event)
         if (chats.length > 0) dispatch(chatsApi.util.invalidateTags(chats))
         if (alerts.length > 0) dispatch(alertsApi.util.invalidateTags(alerts))
         if (agent.length > 0) dispatch(aiAgentApi.util.invalidateTags(agent))
+        if (drafts && drafts.length > 0) dispatch(draftsApi.util.invalidateTags(drafts))
         handlerRef.current?.(event)
       },
       setConnected,

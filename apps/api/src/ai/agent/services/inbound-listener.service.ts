@@ -1,7 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Subscription } from 'rxjs';
-import { IsNull, MoreThanOrEqual, Repository } from 'typeorm';
+import { In, IsNull, MoreThanOrEqual, Repository } from 'typeorm';
+import { RealtimeService } from '../../../realtime/realtime.service.js';
 import { TelegramChatEntity } from '../../../telegram/entities/telegram-chat.entity.js';
 import { TelegramMessageEntity } from '../../../telegram/entities/telegram-message.entity.js';
 import { TelegramEventsService } from '../../../telegram/services/telegram-events.service.js';
@@ -17,6 +18,7 @@ import { AiDraftEntity } from '../../entities/ai-draft.entity.js';
 import { AiJobWorker } from '../../services/ai-job-worker.service.js';
 import { AiJobsService } from '../../services/ai-jobs.service.js';
 import { AiSettingsService } from '../../services/ai-settings.service.js';
+import { OPEN_DRAFT_STATUSES, glueFinalText, shouldGlue } from '../drafts/draft-decision.js';
 import { shiftForNightWindow } from '../funnel/night-window.js';
 import { reengageAfterRead } from '../funnel/touch-planner.js';
 import { inboundRunAt, typingRunAt } from '../lib/debounce.js';
@@ -50,6 +52,7 @@ export class InboundListenerService implements OnModuleInit, OnModuleDestroy {
     private readonly jobs: AiJobsService,
     private readonly worker: AiJobWorker,
     private readonly outbound: OutboundService,
+    private readonly realtime: RealtimeService,
     private readonly config: AiConfig,
   ) {}
 
@@ -96,12 +99,8 @@ export class InboundListenerService implements OnModuleInit, OnModuleDestroy {
       await this.chatState.patch(chat.id, { nextTouchKind: null, nextTouchAt: null });
     }
     if (state.mode === 'off') return;
-    if (state.mode === 'manager') {
-      // Черновики для менеджера — этап 5; пока просто помечаем входящее как необработанное ходом.
-      await this.chatState.patch(chat.id, { lastClientMessageAt: now, autoMessagesSinceClient: 0 });
-      return;
-    }
 
+    // В режиме `manager` ход тоже ставится в очередь — но готовит не ответ, а черновик.
     const existing = await this.jobs.findForChat(chat.id, 'inbound');
     const batchStartedAt = existing?.status === 'queued' && typeof existing.payload.batchStartedAt === 'string' ? new Date(existing.payload.batchStartedAt) : now;
     const maxSec = state.stage === 'greeting' ? settings.timings.greetingDebounceMaxSec : settings.timings.debounceMaxSec;
@@ -170,9 +169,9 @@ export class InboundListenerService implements OnModuleInit, OnModuleDestroy {
     const row = await this.messages.findOne({ where: { chatId: chat.id, telegramMessageId } });
     if (!row || row.aiTurnId || this.outbound.wasSentByUs(chat.id, telegramMessageId)) return;
 
-    await this.chatState.patch(chat.id, { lastManagerMessageAt: new Date() });
-    // Висящий черновик заменён ответом человека.
-    await this.drafts.update({ chatId: chat.id, status: 'pending' }, { status: 'replaced', finalText: row.text, decidedAt: new Date(), decisionSource: 'telegram' });
+    const now = new Date();
+    await this.chatState.patch(chat.id, { lastManagerMessageAt: now });
+    await this.applyManagerReply(chat.id, row.id, row.text, now);
 
     if (state.mode === 'auto' || state.mode === 'supervised') {
       await this.jobs.cancelForChat(chat.id);
@@ -180,6 +179,48 @@ export class InboundListenerService implements OnModuleInit, OnModuleDestroy {
       await this.chatState.recordEvent(chat.accountId, chat.id, 'manager_took_over', { telegramMessageId });
       this.logger.log(`Чат ${chat.id}: менеджер написал сам — бот отступает`);
     }
+  }
+
+  /**
+   * Ответ менеджера из Telegram при висящем черновике: черновик «заменён», его
+   * текст — финальный (раздел 9.1 ТЗ). Несколько сообщений подряд в течение трёх
+   * минут — один ответ, чтобы обучающая тройка не рвалась на куски.
+   */
+  private async applyManagerReply(chatId: string, messageId: string, text: string, now: Date): Promise<void> {
+    const open = await this.drafts.findOne({
+      where: { chatId, status: In(OPEN_DRAFT_STATUSES) },
+      order: { createdAt: 'DESC' },
+    });
+    if (open) {
+      open.status = 'replaced';
+      open.finalText = text;
+      open.sentMessageIds = [messageId];
+      open.decidedAt = now;
+      open.decisionSource = 'telegram';
+      await this.drafts.save(open);
+      await this.publishDraft(open);
+      return;
+    }
+    const recent = await this.drafts.findOne({
+      where: { chatId, status: 'replaced', decisionSource: 'telegram' },
+      order: { decidedAt: 'DESC' },
+    });
+    if (!recent || !shouldGlue(recent.decidedAt, now)) return;
+    recent.finalText = glueFinalText(recent.finalText, text);
+    recent.sentMessageIds = [...recent.sentMessageIds, messageId];
+    recent.decidedAt = now;
+    await this.drafts.save(recent);
+    await this.publishDraft(recent);
+  }
+
+  private async publishDraft(draft: AiDraftEntity): Promise<void> {
+    await this.realtime.publishForAccount(draft.accountId, {
+      type: 'draft.updated',
+      accountId: draft.accountId,
+      chatId: draft.chatId,
+      draftId: draft.id,
+      status: draft.status,
+    });
   }
 }
 

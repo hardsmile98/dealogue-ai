@@ -7,11 +7,14 @@ import { TelegramModule } from '../telegram/telegram.module.js';
 import { AgentController } from './agent/agent.controller.js';
 import { ChatAiController } from './agent/chat-ai.controller.js';
 import { ComposerService } from './agent/composer/composer.service.js';
+import { DraftsController, DraftsQueueController } from './agent/drafts.controller.js';
 import { AgentJobsService } from './agent/jobs/agent-jobs.service.js';
+import { NotifyService } from './agent/jobs/notify.service.js';
 import { OutboundService } from './agent/outbound/outbound.service.js';
 import { AgentService } from './agent/services/agent.service.js';
 import { ChatAiService } from './agent/services/chat-ai.service.js';
 import { ChatStateService } from './agent/services/chat-state.service.js';
+import { DraftsService } from './agent/services/drafts.service.js';
 import { InboundListenerService } from './agent/services/inbound-listener.service.js';
 import { SandboxService } from './agent/services/sandbox.service.js';
 import { TurnContextService } from './agent/services/turn-context.service.js';
@@ -47,7 +50,8 @@ import { AlertsService } from './services/alerts.service.js';
  * Telegram про ИИ не знает.
  *
  * Слои: настройки и очередь (этап 1), библиотека (этап 2), ход агента —
- * Planner → Composer → Guard → Outbound, слушатель событий, песочница (этап 3).
+ * Planner → Composer → Guard → Outbound, слушатель событий, песочница (этап 3),
+ * касания по таймеру (этап 4), черновики и решения менеджера (этап 5).
  */
 @Module({
   imports: [
@@ -79,6 +83,8 @@ import { AlertsService } from './services/alerts.service.js';
     AttentionController,
     AlertsController,
     ChatAiController,
+    DraftsController,
+    DraftsQueueController,
     AgentController,
   ],
   providers: [
@@ -98,6 +104,8 @@ import { AlertsService } from './services/alerts.service.js';
     InboundListenerService,
     SandboxService,
     ChatAiService,
+    DraftsService,
+    NotifyService,
   ],
 })
 export class AiModule {}

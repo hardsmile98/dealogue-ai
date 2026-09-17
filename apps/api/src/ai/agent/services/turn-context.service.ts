@@ -32,6 +32,30 @@ export interface TurnContext {
   exhaustedBlockKinds: string[];
 }
 
+/**
+ * Что из библиотеки участвовало в ходе: нужно после отправки — для счётчиков,
+ * пометки «диагностика ушла» и выбора следующего касания. Отдельно от
+ * `TurnContext`, потому что подтверждённый черновик (этап 5) собирает то же
+ * самое из базы, а не из промпта.
+ */
+export interface TurnLibraryRefs {
+  exampleIds: string[];
+  /** id блоков-фраз, предложенных ходу. */
+  phraseBlockIds: string[];
+  /** id шаблонов диагностики, предложенных ходу. */
+  diagnosticIds: string[];
+  hasDiscountBlock: boolean;
+}
+
+export function refsOf(ctx: TurnContext): TurnLibraryRefs {
+  return {
+    exampleIds: ctx.examples.map((e) => e.id),
+    phraseBlockIds: ctx.blocks.filter((b) => b.source === 'phrase').map((b) => b.id),
+    diagnosticIds: ctx.blocks.filter((b) => b.source === 'diagnostic').map((b) => b.id),
+    hasDiscountBlock: ctx.hasDiscountBlock,
+  };
+}
+
 export interface LoadContextParams {
   accountId: string;
   stage: FunnelStage;

@@ -28,6 +28,13 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
 
   const onEvent = useCallback(
     (event: RealtimeEvent) => {
+      // Новый черновик — то же уведомление, что и на алерт: менеджера ждут в чате.
+      if (event.type === 'draft.created') {
+        const to = accountLinks.chat(event.accountId, event.chatId)
+        setToast({ key: Date.now(), title: 'Черновик ответа ждёт вас', severity: 'info', to })
+        showBrowserNotification('Dealogue: черновик ответа', 'Бот подготовил ответ клиенту — нужно ваше решение.', () => navigate(to))
+        return
+      }
       if (event.type !== 'alert.created') return
       const meta = ALERT_TYPE_META[event.alertType as keyof typeof ALERT_TYPE_META]
       if (!meta) return

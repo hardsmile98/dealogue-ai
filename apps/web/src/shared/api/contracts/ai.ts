@@ -418,19 +418,67 @@ export interface ChatAiSlotsDto {
   manualSlots: string[]
 }
 
+export type DraftKind = 'handoff' | 'supervised'
+
+export type DraftStatus =
+  | 'pending'
+  | 'pending_classification'
+  | 'sent_as_is'
+  | 'edited'
+  | 'replaced'
+  | 'dismissed'
+  | 'superseded'
+
+export type DecisionSource = 'web' | 'telegram'
+
 export interface DraftDto {
   id: string
+  accountId: string
   chatId: string
   turnId: string | null
-  kind: string
-  status: string
+  kind: DraftKind
+  status: DraftStatus
   clientText: string
   handoffReason: HandoffReason | null
   messages: TurnMessageDto[]
   rationale: string | null
   finalText: string | null
+  decisionSource: DecisionSource | null
   createdAt: string
   decidedAt: string | null
+}
+
+/** Строка очереди «Требуют внимания»: черновик плюс кто и где. */
+export interface DraftListItemDto extends DraftDto {
+  stage: FunnelStage | null
+  mode: ChatMode | null
+  chat: { peerName: string; peerUsername: string | null } | null
+  account: { displayName: string; phone: string } | null
+}
+
+export interface DraftsQuery {
+  /** Через запятую; `all` — любые. По умолчанию — открытые. */
+  status?: string
+  kind?: DraftKind
+  limit?: number
+  cursor?: string
+}
+
+export interface SendDraftRequest {
+  messages: string[]
+  /** Менеджер написал свой ответ, а не правил предложенный. */
+  own?: boolean
+}
+
+export interface DraftToExampleRequest {
+  kind: PhraseKind
+  title?: string
+  text: string
+}
+
+export interface DraftToNoteRequest {
+  text: string
+  scope?: string
 }
 
 export interface ChatAiStateDto {

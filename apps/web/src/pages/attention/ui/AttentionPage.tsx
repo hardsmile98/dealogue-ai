@@ -14,8 +14,9 @@ import {
   setMuted,
 } from '@/features/realtime'
 import { AttentionList } from '@/widgets/attention-list'
+import { DraftQueue } from '@/widgets/draft-queue'
 
-/** Раздел «Требуют внимания»: алерты ИИ-агента по всем аккаунтам. */
+/** Раздел «Требуют внимания»: очередь черновиков и алерты ИИ-агента по всем аккаунтам. */
 export function AttentionPage() {
   const [includeResolved, setIncludeResolved] = useState(false)
   const [muted, setMutedState] = useState(isMuted())
@@ -34,7 +35,7 @@ export function AttentionPage() {
     <>
       <PageHeader
         title="Требуют внимания"
-        subtitle="Клиенты, которых ИИ довёл до оплаты, чаты, где нужен человек, и ошибки ИИ."
+        subtitle="Черновики ответов, клиенты, которых ИИ довёл до оплаты, чаты, где нужен человек, и ошибки ИИ."
         actions={
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
             {notificationsSupported() && permission === 'default' && (
@@ -67,6 +68,7 @@ export function AttentionPage() {
           </Stack>
         }
       />
+      <DraftQueue />
       <AttentionList includeResolved={includeResolved} />
     </>
   )

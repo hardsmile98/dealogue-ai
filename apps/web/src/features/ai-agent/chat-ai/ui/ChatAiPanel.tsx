@@ -30,6 +30,7 @@ import {
   useResumeChatAiMutation,
 } from '@/entities/ai-agent'
 import { useGetCategoriesQuery } from '@/entities/ai-library'
+import { DraftCard } from '@/features/ai-agent/draft'
 
 interface ChatAiPanelProps {
   accountId: string
@@ -117,20 +118,7 @@ export function ChatAiPanel({ accountId, chatId }: ChatAiPanelProps) {
           {getApiErrorMessage(patchError, 'Не удалось изменить состояние')}
         </Alert>
       )}
-      {data.draft && (
-        <Alert severity={data.draft.kind === 'supervised' ? 'info' : 'warning'} sx={{ mt: 1 }}>
-          <strong>{data.draft.kind === 'supervised' ? 'Ход ждёт подтверждения.' : 'Черновик ответа.'}</strong>{' '}
-          {data.draft.rationale && <span>{data.draft.rationale} </span>}
-          {data.draft.messages.length > 0 && (
-            <Box component="span" sx={{ display: 'block', mt: 0.5, whiteSpace: 'pre-wrap', fontSize: 13 }}>
-              {data.draft.messages.map((m) => m.text).join('\n\n')}
-            </Box>
-          )}
-          <Box component="span" sx={{ display: 'block', mt: 0.5, fontSize: 12, color: 'text.secondary' }}>
-            Кнопки «Отправить / Править / Отклонить» появятся на этапе 5. Пока ответьте из поля ввода ниже — черновик закроется сам.
-          </Box>
-        </Alert>
-      )}
+      {data.draft && <DraftCard accountId={accountId} chatId={chatId} draft={data.draft} />}
 
       <ResumeDialog
         open={resumeOpen}

@@ -30,6 +30,8 @@ import { ComposerService } from '../composer/composer.service.js';
 import { PROMPT_VERSION, buildSystemPrompt, buildTurnPrompt } from '../composer/prompt-builder.js';
 import type { SystemPromptInput, TurnPromptInput } from '../composer/prompt-builder.js';
 import type { ComposerOutput } from '../composer/composer.schema.js';
+import { OPEN_DRAFT_STATUSES, isOpen } from '../drafts/draft-decision.js';
+import { managerDraftTask } from '../drafts/manager-draft.js';
 import { shiftForNightWindow } from '../funnel/night-window.js';
 import { planNextTouch, pickInterval } from '../funnel/touch-planner.js';
 import { expandMarkers, joinMessages, resolveBlocks } from '../guard/blocks.js';
@@ -42,8 +44,8 @@ import { OutboundInterruptedError, OutboundService } from '../outbound/outbound.
 import { plan, stageAfterTurn, stageForTouch } from '../planner/planner.js';
 import type { RecentTurnSummary } from '../planner/planner.js';
 import { ChatStateService, StaleStateError } from './chat-state.service.js';
-import { TurnContextService, toHistoryMessage } from './turn-context.service.js';
-import type { TurnContext } from './turn-context.service.js';
+import { TurnContextService, refsOf, toHistoryMessage } from './turn-context.service.js';
+import type { TurnContext, TurnLibraryRefs } from './turn-context.service.js';
 
 export interface RunTurnParams {
   accountId: string;
@@ -69,6 +71,27 @@ export interface GenerateParams {
   guard: Omit<GuardInput, 'messages' | 'unknownBlockKinds' | 'requiredBlockKinds' | 'allowedBlockKinds' | 'noQuestions'>;
   task: TurnTask;
   blocks: LibraryBlock[];
+}
+
+/** Что нужно, чтобы закрыть ход после отправки (или сухого прогона). */
+export interface FinishTurnParams {
+  chat: TelegramChatEntity;
+  state: AiChatStateEntity;
+  settings: AiAccountSettingsEntity;
+  refs: TurnLibraryRefs;
+  turn: AiTurnEntity;
+  /** Что реально ушло; пусто — сухой прогон, тогда считаем по `planned`. */
+  sent: TurnMessage[];
+  planned: TurnMessage[];
+  stageBefore: FunnelStage;
+  stageAfter: FunnelStage;
+  trigger: TurnTrigger;
+  touchKind: TouchKind | null;
+  now: Date;
+  extraPatch?: Partial<AiChatStateEntity>;
+  /** Клиент написал во время отправки — следующее касание не планируем. */
+  interrupted?: boolean;
+  rng?: Rng;
 }
 
 export interface GenerateResult {
@@ -163,16 +186,23 @@ export class AgentService {
     const handledId = newInbound.length > 0 ? newInbound[newInbound.length - 1].telegramMessageId : state.lastHandledMessageId;
     const stage: FunnelStage = touchKind && trigger !== 'inbound' ? stageForTouch(touchKind) : state.stage;
 
+    // Слоты, которые можно вынуть кодом до модели.
+    const slotPatch = this.codeSlots(state, batch, now);
+    Object.assign(state, slotPatch);
+
+    // Чат ведёт человек — бот только готовит черновик ответа (раздел 8.3 ТЗ).
+    // Проверяем до стоп-триггеров: передавать нечего, чат уже у менеджера.
+    if (state.mode === 'manager') {
+      return this.managerDraftTurn(params, settings, chat, state, batch, handledId, slotPatch, now, rng);
+    }
+
     // Лид ждал первого ответа слишком долго — отвечать «привет» через полдня странно.
     if (stage === 'greeting' && trigger === 'inbound' && !state.lastBotMessageAt && now.getTime() - batch[0].sentAt.getTime() > STALE_LEAD_MS) {
-      await this.chatState.apply(state, { lastHandledMessageId: handledId, lastClientMessageAt: batch[batch.length - 1].sentAt });
+      await this.chatState.apply(state, { ...slotPatch, lastHandledMessageId: handledId, lastClientMessageAt: batch[batch.length - 1].sentAt });
       await this.handoff(state, chat, 'stale_lead', 'Лид ждал первого ответа больше 6 часов', batch, [], null, null);
       return done('handoff', null, 'stale_lead');
     }
 
-    // Слоты, которые можно вынуть кодом до модели.
-    const slotPatch = this.codeSlots(state, batch, now);
-    Object.assign(state, slotPatch);
     if (state.isMinor) {
       await this.chatState.apply(state, { ...slotPatch, lastHandledMessageId: handledId });
       await this.handoff(state, chat, 'minor', `По дате рождения клиенту ${state.age ?? '<18'} лет`, batch, [], null, null);
@@ -249,18 +279,10 @@ export class AgentService {
     if (limit) return { kind: 'postpone', runAt: new Date(now.getTime() + LIMIT_POSTPONE_MS), reason: limit };
 
     const task = verdict.task;
-    const greetedToday = Boolean(state.lastGreetingAt && sameDay(state.lastGreetingAt, now));
-    const pastBotMessages = history.filter((m) => m.role === 'bot').map((m) => m.text);
 
     let gen: GenerateResult;
     try {
-      gen = await this.generate({
-        system: { persona: settings.persona, facts: ctx.facts, stages: ctx.stages, categories: ctx.categories },
-        turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, now },
-        guard: { sentBlockIds: state.sentBlockIds, exhaustedBlockKinds: ctx.exhaustedBlockKinds, allow: ctx.allow, pastBotMessages, clientLanguage: slots.language, greetedToday, config: settings.guard },
-        task,
-        blocks: ctx.blocks,
-      });
+      gen = await this.generate(this.generateParams({ settings, ctx, task, history, batch, slots, state, now }));
     } catch (error) {
       return this.onProviderError(error, params, settings, chat, state, batch, handledId, slotPatch, stage, task);
     }
@@ -304,8 +326,17 @@ export class AgentService {
     }
 
     // --- доставка ------------------------------------------------------------------
-    const after = this.stageAfter(state, stage, trigger, touchKind, gen, ctx, settings);
-    // В supervised черновик создаётся и в сухом прогоне — подтверждение (этап 5) учтёт dryRun само.
+    const after = this.stageAfter({
+      state,
+      stage,
+      trigger,
+      touchKind,
+      progress: gen.output.analysis.stageProgress,
+      requestKnown: Boolean(state.requestSummary || gen.output.analysis.slots?.requestSummary),
+      hasDiscountBlock: ctx.hasDiscountBlock,
+      settings,
+    });
+    // В supervised черновик создаётся и в сухом прогоне — подтверждение учитывает dryRun само.
     if (state.mode === 'supervised') {
       const turn = await this.turns.save(this.turns.create({ ...turnBase, stageAfter: stage, outcome: 'awaiting_approval' }));
       await this.chatState.apply(state, { ...basePatch, ...(trigger === 'touch' ? { nextTouchKind: null, nextTouchAt: null } : {}) });
@@ -325,7 +356,22 @@ export class AgentService {
     }
     if (settings.dryRun) {
       const turn = await this.turns.save(this.turns.create({ ...turnBase, stageAfter: after, outcome: 'dry_run' }));
-      await this.finishSent(chat, state, settings, ctx, gen, turn, [], basePatch, stage, after, trigger, touchKind, rng, now);
+      await this.finishTurn({
+        chat,
+        state,
+        settings,
+        refs: refsOf(ctx),
+        turn,
+        sent: [],
+        planned: gen.messages.map(toTurnMessage),
+        extraPatch: basePatch,
+        stageBefore: stage,
+        stageAfter: after,
+        trigger,
+        touchKind,
+        rng,
+        now,
+      });
       return done('dry_run', turn.id, `Сухой прогон: ${gen.messages.length} сообщ.`);
     }
     if (!this.outbound.isOnline(chat.accountId)) {
@@ -350,7 +396,22 @@ export class AgentService {
         },
         rng,
       });
-      await this.finishSent(chat, state, settings, ctx, gen, turn, result.sent, {}, stage, after, trigger, touchKind, rng, now, result.interrupted);
+      await this.finishTurn({
+        chat,
+        state,
+        settings,
+        refs: refsOf(ctx),
+        turn,
+        sent: result.sent,
+        planned: gen.messages.map(toTurnMessage),
+        stageBefore: stage,
+        stageAfter: after,
+        trigger,
+        touchKind,
+        rng,
+        now,
+        interrupted: result.interrupted,
+      });
       return done(result.interrupted ? 'cancelled' : 'sent', turn.id, result.interrupted ? 'Клиент написал во время отправки' : `Отправлено ${result.sent.length} сообщ.`);
     } catch (error) {
       if (error instanceof OutboundInterruptedError) {
@@ -457,6 +518,214 @@ export class AgentService {
   }
 
   // ---------------------------------------------------------------------------
+  // Черновики для менеджера
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Чат в режиме `manager`: бот не пишет клиенту, а предлагает человеку вариант
+   * ответа (раздел 8.3 ТЗ). Этап и таймеры не трогаем — воронку ведёт человек.
+   */
+  private async managerDraftTurn(
+    params: RunTurnParams,
+    settings: AiAccountSettingsEntity,
+    chat: TelegramChatEntity,
+    state: AiChatStateEntity,
+    batch: HistoryMessage[],
+    handledId: number,
+    slotPatch: Partial<AiChatStateEntity>,
+    now: Date,
+    rng: Rng,
+  ): Promise<TurnRunResult> {
+    if (params.trigger !== 'inbound' || batch.length === 0) return done('skip', null, 'Чат ведёт менеджер');
+    const patch: Partial<AiChatStateEntity> = {
+      ...slotPatch,
+      lastHandledMessageId: handledId,
+      lastClientMessageAt: batch[batch.length - 1].sentAt,
+      autoMessagesSinceClient: 0,
+    };
+
+    // Медиа бот не видит — черновика не будет, но входящее менеджер увидит в очереди.
+    const media = batch.find((m) => m.mediaKind && !m.text.trim());
+    if (media) {
+      await this.chatState.apply(state, patch);
+      await this.createDraft('handoff', 'pending', state, chat, batch, 'media', [], 'Клиент прислал вложение — бот его не видит', null);
+      return done('awaiting_approval', null, 'Черновика нет: медиа без текста');
+    }
+
+    const limit = await this.overLlmLimit(chat.accountId, settings, now);
+    if (limit) return { kind: 'postpone', runAt: new Date(now.getTime() + LIMIT_POSTPONE_MS), reason: limit };
+
+    const stage = state.stage;
+    const slots = snapshot(state);
+    const ctx = await this.context.load({
+      accountId: chat.accountId,
+      stage,
+      touchKind: null,
+      slots,
+      usedExampleIds: state.usedExampleIds,
+      sentBlockIds: state.sentBlockIds,
+      personaLinks: settings.persona.links,
+      rng,
+    });
+    const history = await this.context.loadHistory(chat.id, batch.map((m) => m.id));
+    const task = managerDraftTask(stage, ctx);
+
+    let gen: GenerateResult;
+    try {
+      gen = await this.generate(this.generateParams({ settings, ctx, task, history, batch, slots, state, now }));
+    } catch (error) {
+      const retryable = error instanceof LlmError ? error.retryable : true;
+      const lastAttempt = params.attempt ? params.attempt.current >= params.attempt.max : false;
+      if (retryable && !lastAttempt) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      await this.chatState.apply(state, patch);
+      // Без модели черновика нет — менеджер всё равно должен увидеть входящее.
+      await this.createDraft('handoff', 'pending_classification', state, chat, batch, state.handoffReason, [], `Модель недоступна: ${message}`, null);
+      await this.alerts.create({ accountId: chat.accountId, chatId: chat.id, type: 'ai_error', payload: { error: message, stage } });
+      return done('error', null, message);
+    }
+
+    const llmSlots = this.llmSlots(state, gen.output, now);
+    const turn = await this.turns.save(
+      this.turns.create({
+        accountId: chat.accountId,
+        chatId: chat.id,
+        trigger: 'manager_draft',
+        touchKind: null,
+        stageBefore: stage,
+        stageAfter: stage,
+        inputMessageIds: batch.map((m) => m.id),
+        promptVersion: PROMPT_VERSION,
+        model: gen.model,
+        analysis: gen.output.analysis as unknown as Record<string, unknown>,
+        messagesPlanned: gen.messages.map(toTurnMessage),
+        guardNotes: gen.guardNotes as unknown as Record<string, unknown>[],
+        tokensIn: gen.tokensIn,
+        tokensOut: gen.tokensOut,
+        durationMs: gen.durationMs,
+        outcome: 'awaiting_approval',
+      }),
+    );
+    await this.chatState.apply(state, { ...patch, ...llmSlots });
+    const escalation = gen.output.analysis.escalation;
+    await this.createDraft(
+      'handoff',
+      'pending',
+      state,
+      chat,
+      batch,
+      escalation?.reason ?? state.handoffReason,
+      gen.output.reply.send ? gen.messages : [],
+      escalation?.note ?? gen.output.reply.silentReason ?? gen.output.analysis.clientIntent ?? null,
+      turn.id,
+    );
+    return done('awaiting_approval', turn.id, 'Черновик для менеджера готов');
+  }
+
+  /**
+   * Переписать черновик заново: для хода под контролем — по задаче того же
+   * шага, для передачи — как ответ, который предложат менеджеру.
+   */
+  async regenerateDraft(draft: AiDraftEntity, rng: Rng = defaultRng): Promise<AiDraftEntity> {
+    const now = new Date();
+    const chat = await this.chats.findOne({ where: { id: draft.chatId } });
+    const state = await this.chatState.find(draft.chatId);
+    if (!chat || !state) throw new Error('Чат черновика не найден');
+    const settings = await this.settings.get(draft.accountId);
+    const turn = draft.turnId ? await this.turns.findOne({ where: { id: draft.turnId } }) : null;
+
+    const batchRows = draft.clientMessageIds.length > 0 ? await this.messages.find({ where: { id: In(draft.clientMessageIds) }, order: { telegramMessageId: 'ASC' } }) : [];
+    const batch = batchRows.map(toHistoryMessage);
+    const stage = turn?.stageBefore ?? state.stage;
+    const touchKind = turn?.touchKind ?? null;
+    const slots = snapshot(state);
+    const ctx = await this.context.load({
+      accountId: draft.accountId,
+      stage,
+      touchKind,
+      slots,
+      usedExampleIds: state.usedExampleIds,
+      sentBlockIds: state.sentBlockIds,
+      personaLinks: settings.persona.links,
+      rng,
+    });
+    const history = await this.context.loadHistory(chat.id, batch.map((m) => m.id));
+
+    let task = managerDraftTask(stage, ctx);
+    if (draft.kind === 'supervised') {
+      const verdict = plan({
+        trigger: turn?.trigger === 'touch' || turn?.trigger === 'manual' ? turn.trigger : 'inbound',
+        touchKind,
+        mode: 'auto',
+        stage,
+        playbook: ctx.playbook,
+        slots,
+        batch,
+        history,
+        isMinor: state.isMinor,
+        autoMessagesSinceClient: state.autoMessagesSinceClient,
+        remindersSent: state.remindersSent,
+        diagnosticsSentAt: state.diagnosticsSentAt,
+        diagnosticsReadAt: state.diagnosticsReadAt,
+        lastClientMessageAt: state.lastClientMessageAt,
+        limits: settings.limits,
+        blocks: ctx.blocks,
+        exhaustedBlockKinds: ctx.exhaustedBlockKinds,
+        recentTurns: await this.recentTurns(chat.id),
+        now,
+      });
+      if (verdict.kind === 'proceed') task = verdict.task;
+    }
+
+    const gen = await this.generate(this.generateParams({ settings, ctx, task, history, batch, slots, state, now }));
+    draft.draftMessages = gen.messages.map(toTurnMessage);
+    draft.draftRationale = gen.output.reply.send
+      ? (gen.output.analysis.clientIntent ?? draft.draftRationale)
+      : (gen.output.reply.silentReason ?? 'Модель считает, что отвечать сейчас не нужно');
+    await this.drafts.save(draft);
+    if (turn) {
+      turn.messagesPlanned = draft.draftMessages;
+      turn.analysis = gen.output.analysis as unknown as Record<string, unknown>;
+      turn.guardNotes = gen.guardNotes as unknown as Record<string, unknown>[];
+      turn.tokensIn += gen.tokensIn;
+      turn.tokensOut += gen.tokensOut;
+      turn.durationMs += gen.durationMs;
+      await this.turns.save(turn);
+    }
+    await this.realtime.publishForAccount(draft.accountId, { type: 'draft.updated', accountId: draft.accountId, chatId: draft.chatId, draftId: draft.id, status: draft.status });
+    return draft;
+  }
+
+  /** Параметры вызова модели для хода в этом чате — одинаковые у хода, черновика и регенерации. */
+  private generateParams(input: {
+    settings: AiAccountSettingsEntity;
+    ctx: TurnContext;
+    task: TurnTask;
+    history: HistoryMessage[];
+    batch: HistoryMessage[];
+    slots: SlotsSnapshot;
+    state: AiChatStateEntity;
+    now: Date;
+  }): GenerateParams {
+    const { settings, ctx, task, history, batch, slots, state, now } = input;
+    return {
+      system: { persona: settings.persona, facts: ctx.facts, stages: ctx.stages, categories: ctx.categories },
+      turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, now },
+      guard: {
+        sentBlockIds: state.sentBlockIds,
+        exhaustedBlockKinds: ctx.exhaustedBlockKinds,
+        allow: ctx.allow,
+        pastBotMessages: history.filter((m) => m.role === 'bot').map((m) => m.text),
+        clientLanguage: slots.language,
+        greetedToday: Boolean(state.lastGreetingAt && sameDay(state.lastGreetingAt, now)),
+        config: settings.guard,
+      },
+      task,
+      blocks: ctx.blocks,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // Передача менеджеру
   // ---------------------------------------------------------------------------
 
@@ -504,7 +773,7 @@ export class AgentService {
     turnId: string | null,
   ): Promise<AiDraftEntity> {
     // Новое входящее при висящем черновике — старый устаревает.
-    await this.drafts.update({ chatId: chat.id, status: 'pending' }, { status: 'superseded' });
+    await this.drafts.update({ chatId: chat.id, status: In(OPEN_DRAFT_STATUSES) }, { status: 'superseded', decidedAt: new Date() });
     const draft = await this.drafts.save(
       this.drafts.create({
         accountId: chat.accountId,
@@ -521,6 +790,16 @@ export class AgentService {
       }),
     );
     await this.realtime.publishForAccount(chat.accountId, { type: 'draft.created', accountId: chat.accountId, chatId: chat.id, draftId: draft.id });
+    // Уведомление в Telegram — отдельным job'ом: аккаунт может быть офлайн (раздел 7 ТЗ).
+    await this.jobs.enqueue({
+      type: 'notify',
+      accountId: chat.accountId,
+      chatId: chat.id,
+      runAt: new Date(),
+      dedupeKey: `notify:${draft.id}`,
+      payload: { draftId: draft.id },
+      maxAttempts: 3,
+    });
     return draft;
   }
 
@@ -627,7 +906,22 @@ export class AgentService {
       }
       // Дважды переносили — считаем касание выполненным и идём дальше по воронке.
       const after = stageAfterTurn(stage, 'touch', params.touchKind, 'stay', stageCtx(state, ctx));
-      await this.finishSent(chat, state, settings, ctx, gen, turn, [], { ...patch, touchPostponedCount: 0 }, stage, after, 'touch', params.touchKind, rng, now);
+      await this.finishTurn({
+        chat,
+        state,
+        settings,
+        refs: refsOf(ctx),
+        turn,
+        sent: [],
+        planned: [],
+        extraPatch: { ...patch, touchPostponedCount: 0 },
+        stageBefore: stage,
+        stageAfter: after,
+        trigger: 'touch',
+        touchKind: params.touchKind,
+        rng,
+        now,
+      });
       return done('silent', turn.id, 'Касание пропущено после двух переносов');
     }
     await this.chatState.apply(state, patch);
@@ -635,42 +929,37 @@ export class AgentService {
     return done('silent', turn.id, gen.output.reply.silentReason ?? 'Модель решила промолчать');
   }
 
-  private stageAfter(
-    state: AiChatStateEntity,
-    stage: FunnelStage,
-    trigger: TurnTrigger,
-    touchKind: TouchKind | null,
-    gen: GenerateResult,
-    ctx: TurnContext,
-    settings: AiAccountSettingsEntity,
-  ): FunnelStage {
-    let after = stageAfterTurn(stage, trigger, trigger === 'inbound' ? null : touchKind, gen.output.analysis.stageProgress, stageCtx(state, ctx));
+  /** Этап после хода: решение модели плюс структурные правила (раздел 5.2 ТЗ). */
+  stageAfter(params: {
+    state: AiChatStateEntity;
+    stage: FunnelStage;
+    trigger: TurnTrigger;
+    touchKind: TouchKind | null;
+    progress: string;
+    requestKnown: boolean;
+    hasDiscountBlock: boolean;
+    settings: AiAccountSettingsEntity;
+  }): FunnelStage {
+    const { state, stage, trigger, touchKind, settings } = params;
+    let after = stageAfterTurn(stage, trigger, trigger === 'inbound' ? null : touchKind, params.progress, {
+      birthKnown: Boolean(state.birthDate || state.birthDateText),
+      requestKnown: params.requestKnown,
+      hasDiscountBlock: params.hasDiscountBlock,
+    });
     if (trigger !== 'inbound' && touchKind === 'reminder' && state.remindersSent + 1 >= settings.timings.maxReminders) after = 'closed_silent';
     return after;
   }
 
   /** Общее завершение хода после отправки (или сухого прогона): состояние, счётчики, таймеры, события. */
-  private async finishSent(
-    chat: TelegramChatEntity,
-    state: AiChatStateEntity,
-    settings: AiAccountSettingsEntity,
-    ctx: TurnContext,
-    gen: GenerateResult,
-    turn: AiTurnEntity,
-    sent: TurnMessage[],
-    extraPatch: Partial<AiChatStateEntity>,
-    stageBefore: FunnelStage,
-    stageAfter: FunnelStage,
-    trigger: TurnTrigger,
-    touchKind: TouchKind | null,
-    rng: Rng,
-    now: Date,
-    interrupted = false,
-  ): Promise<void> {
+  async finishTurn(params: FinishTurnParams): Promise<void> {
+    const { chat, state, settings, refs, turn, sent, planned, stageBefore, stageAfter, trigger, touchKind, now } = params;
+    const rng = params.rng ?? defaultRng;
+    const extraPatch = params.extraPatch ?? {};
+    const interrupted = params.interrupted ?? false;
     const isTouch = trigger === 'touch' || (trigger === 'manual' && touchKind !== null);
-    const delivered = sent.length > 0 ? sent : gen.messages.map(toTurnMessage);
+    const delivered = sent.length > 0 ? sent : planned;
     const blockIds = delivered.map((m) => m.blockId).filter((id): id is string => Boolean(id));
-    const sentDiagnostic = blockIds.length > 0 ? ctx.blocks.find((b) => b.kind === 'diagnostics' && blockIds.includes(b.id)) ?? null : null;
+    const sentDiagnosticId = refs.diagnosticIds.find((id) => blockIds.includes(id)) ?? null;
     const greeted = delivered.some((m) => startsWithGreeting(m.text));
 
     const patch: Partial<AiChatStateEntity> = {
@@ -680,9 +969,9 @@ export class AgentService {
       lastBotMessageAt: now,
       autoMessagesSinceClient: isTouch ? state.autoMessagesSinceClient : (extraPatch.autoMessagesSinceClient ?? state.autoMessagesSinceClient) + 1,
       sentBlockIds: [...new Set([...state.sentBlockIds, ...blockIds])],
-      usedExampleIds: [...new Set([...state.usedExampleIds, ...ctx.examples.map((e) => e.id)])].slice(-200),
+      usedExampleIds: [...new Set([...state.usedExampleIds, ...refs.exampleIds])].slice(-200),
       ...(greeted ? { lastGreetingAt: now } : {}),
-      ...(sentDiagnostic ? { diagnosticsTemplateId: sentDiagnostic.id, diagnosticsSentAt: now, diagnosticsReadAt: null } : {}),
+      ...(sentDiagnosticId ? { diagnosticsTemplateId: sentDiagnosticId, diagnosticsSentAt: now, diagnosticsReadAt: null } : {}),
       ...(isTouch && touchKind === 'reminder' ? { remindersSent: state.remindersSent + 1 } : {}),
       ...(stageAfter === 'closed_silent' ? { closedAt: now } : {}),
       touchPostponedCount: 0,
@@ -699,7 +988,7 @@ export class AgentService {
           remindersSent: patch.remindersSent ?? state.remindersSent,
           lastIntervalHours: state.lastIntervalHours ? Number(state.lastIntervalHours) : null,
           diagnosticsReadAt: state.diagnosticsReadAt,
-          hasDiscountBlock: ctx.hasDiscountBlock,
+          hasDiscountBlock: refs.hasDiscountBlock,
           timings: settings.timings,
           now,
           rng,
@@ -719,7 +1008,7 @@ export class AgentService {
     } else {
       await this.jobs.cancel('touch', chat.accountId, chat.id);
     }
-    await this.bumpCounters(ctx, blockIds);
+    await this.bumpCounters(refs, blockIds);
     if (sent.length > 0) await this.turns.update(turn.id, { messagesSent: sent });
     await this.chatState.publishFunnel(state);
     await this.realtime.publishForAccount(chat.accountId, { type: 'turn.sent', accountId: chat.accountId, chatId: chat.id, turnId: turn.id });
@@ -738,24 +1027,38 @@ export class AgentService {
    */
   async superviseTimeout(accountId: string, chatId: string, draftId: string, kind: TouchKind, rng: Rng = defaultRng): Promise<string> {
     const draft = await this.drafts.findOne({ where: { id: draftId, chatId } });
-    if (!draft || draft.status !== 'pending') return 'Черновик уже решён';
+    if (!draft || !isOpen(draft.status)) return 'Черновик уже решён';
     const state = await this.chatState.find(chatId);
     if (!state || state.mode !== 'supervised') return 'Чат больше не в режиме supervised';
-    const settings = await this.settings.get(accountId);
     await this.drafts.update(draft.id, { status: 'superseded', decidedAt: new Date() });
     await this.realtime.publishForAccount(accountId, { type: 'draft.updated', accountId, chatId, draftId: draft.id, status: 'superseded' });
-    const now = new Date();
-    const hours = pickInterval({ timings: settings.timings, lastIntervalHours: state.lastIntervalHours ? Number(state.lastIntervalHours) : null, rng });
-    const at = await this.scheduleTouch(state, kind, new Date(now.getTime() + hours * 3_600_000), settings, rng);
-    await this.chatState.apply(state, { nextTouchKind: kind, nextTouchAt: at, lastIntervalHours: String(hours) });
-    await this.chatState.recordEvent(accountId, chatId, 'touch_scheduled', { kind, at: at.toISOString(), reason: 'supervise_timeout', draftId });
-    await this.chatState.publishFunnel(state);
+    const at = await this.postponeTouch(state, kind, 'supervise_timeout', { draftId }, rng);
     return `Касание ${kind} перенесено на ${at.toISOString()}`;
   }
 
-  private async bumpCounters(ctx: TurnContext, blockIds: string[]): Promise<void> {
-    const phraseIds = [...ctx.examples.map((e) => e.id), ...ctx.blocks.filter((b) => b.source === 'phrase' && blockIds.includes(b.id)).map((b) => b.id)];
-    const diagnosticIds = ctx.blocks.filter((b) => b.source === 'diagnostic' && blockIds.includes(b.id)).map((b) => b.id);
+  /**
+   * Касание не состоялось (таймаут подтверждения или менеджер отклонил ход) —
+   * переносим его на новый интервал, чтобы воронка не замирала.
+   */
+  async postponeTouch(
+    state: AiChatStateEntity,
+    kind: TouchKind,
+    reason: string,
+    extra: Record<string, unknown> = {},
+    rng: Rng = defaultRng,
+  ): Promise<Date> {
+    const settings = await this.settings.get(state.accountId);
+    const hours = pickInterval({ timings: settings.timings, lastIntervalHours: state.lastIntervalHours ? Number(state.lastIntervalHours) : null, rng });
+    const at = await this.scheduleTouch(state, kind, new Date(Date.now() + hours * 3_600_000), settings, rng);
+    await this.chatState.apply(state, { nextTouchKind: kind, nextTouchAt: at, lastIntervalHours: String(hours) });
+    await this.chatState.recordEvent(state.accountId, state.chatId, 'touch_scheduled', { kind, at: at.toISOString(), reason, ...extra });
+    await this.chatState.publishFunnel(state);
+    return at;
+  }
+
+  private async bumpCounters(refs: TurnLibraryRefs, blockIds: string[]): Promise<void> {
+    const phraseIds = [...refs.exampleIds, ...refs.phraseBlockIds.filter((id) => blockIds.includes(id))];
+    const diagnosticIds = refs.diagnosticIds.filter((id) => blockIds.includes(id));
     if (phraseIds.length > 0) await this.phrases.increment({ id: In(phraseIds) }, 'sentCount', 1).catch(() => undefined);
     if (diagnosticIds.length > 0) await this.diagnostics.increment({ id: In(diagnosticIds) }, 'sentCount', 1).catch(() => undefined);
   }

@@ -1,4 +1,16 @@
-import type { ChatMode, FunnelStage, Gender, HandoffReason, TouchKind, TurnOutcome, TurnRating, TurnTrigger } from '../domain/types.js';
+import type {
+  ChatMode,
+  DecisionSource,
+  DraftKind,
+  DraftStatus,
+  FunnelStage,
+  Gender,
+  HandoffReason,
+  TouchKind,
+  TurnOutcome,
+  TurnRating,
+  TurnTrigger,
+} from '../domain/types.js';
 import type { AiChatStateEntity } from '../entities/ai-chat-state.entity.js';
 import type { AiDraftEntity } from '../entities/ai-draft.entity.js';
 import type { AiTurnEntity, TurnMessage } from '../entities/ai-turn.entity.js';
@@ -56,17 +68,27 @@ export interface ChatAiSummaryDto {
 
 export interface DraftDto {
   id: string;
+  accountId: string;
   chatId: string;
   turnId: string | null;
-  kind: string;
-  status: string;
+  kind: DraftKind;
+  status: DraftStatus;
   clientText: string;
   handoffReason: HandoffReason | null;
   messages: TurnMessage[];
   rationale: string | null;
   finalText: string | null;
+  decisionSource: DecisionSource | null;
   createdAt: string;
   decidedAt: string | null;
+}
+
+/** Строка очереди «Требуют внимания»: черновик плюс кто и где (раздел 12.3 ТЗ). */
+export interface DraftListItemDto extends DraftDto {
+  stage: FunnelStage | null;
+  mode: ChatMode | null;
+  chat: { peerName: string; peerUsername: string | null } | null;
+  account: { displayName: string; phone: string } | null;
 }
 
 export interface TurnDto {
@@ -156,6 +178,7 @@ export function toChatAiSummaryDto(row: AiChatStateEntity, hasPendingDraft: bool
 export function toDraftDto(row: AiDraftEntity): DraftDto {
   return {
     id: row.id,
+    accountId: row.accountId,
     chatId: row.chatId,
     turnId: row.turnId,
     kind: row.kind,
@@ -165,8 +188,24 @@ export function toDraftDto(row: AiDraftEntity): DraftDto {
     messages: row.draftMessages,
     rationale: row.draftRationale,
     finalText: row.finalText,
+    decisionSource: row.decisionSource,
     createdAt: row.createdAt.toISOString(),
     decidedAt: iso(row.decidedAt),
+  };
+}
+
+export function toDraftListItemDto(
+  row: AiDraftEntity,
+  state: { stage: FunnelStage; mode: ChatMode } | null,
+  chat: { peerName: string; peerUsername: string | null } | null,
+  account: { displayName: string; phone: string } | null,
+): DraftListItemDto {
+  return {
+    ...toDraftDto(row),
+    stage: state?.stage ?? null,
+    mode: state?.mode ?? null,
+    chat,
+    account,
   };
 }
 

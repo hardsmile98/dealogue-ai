@@ -16,7 +16,8 @@ import { betweenMessagesMs, readingPauseMs, typingMs } from './timing.js';
 export interface SendTurnParams {
   accountId: string;
   chat: TelegramChatEntity;
-  turnId: string;
+  /** null — сообщение от человека (подтверждённый черновик передачи). */
+  turnId: string | null;
   messages: ComposedMessage[];
   /** С какого сообщения продолжать (после сбоя посередине). */
   startIndex?: number;
