@@ -32,7 +32,6 @@ import type { SystemPromptInput, TurnPromptInput } from '../composer/prompt-buil
 import type { ComposerOutput } from '../composer/composer.schema.js';
 import { OPEN_DRAFT_STATUSES, isOpen } from '../drafts/draft-decision.js';
 import { managerDraftTask } from '../drafts/manager-draft.js';
-import { shiftForNightWindow } from '../funnel/night-window.js';
 import { planNextTouch, pickInterval } from '../funnel/touch-planner.js';
 import { expandMarkers, joinMessages, resolveBlocks } from '../guard/blocks.js';
 import { describeViolations, runGuard } from '../guard/guard.js';
@@ -937,7 +936,7 @@ export class AgentService {
         const wanted = shortKinds.includes(params.touchKind)
           ? new Date(now.getTime() + settings.timings.diagnosticsDelayMin * 60_000)
           : new Date(now.getTime() + pickInterval({ timings: settings.timings, lastIntervalHours: state.lastIntervalHours ? Number(state.lastIntervalHours) : null, rng }) * 3_600_000);
-        const at = await this.scheduleTouch(state, params.touchKind, wanted, settings, rng);
+        const at = await this.scheduleTouch(state, params.touchKind, wanted);
         Object.assign(patch, { touchPostponedCount: postponed, nextTouchKind: params.touchKind, nextTouchAt: at });
         await this.chatState.apply(state, patch);
         await this.chatState.recordEvent(chat.accountId, chat.id, 'touch_scheduled', { kind: params.touchKind, at: at.toISOString(), postponed });
@@ -1032,8 +1031,7 @@ export class AgentService {
           now,
           rng,
         });
-    // Ночное окно может сдвинуть касание на утро — в состояние пишем фактическое время.
-    const touchAt = nextTouch ? await this.scheduleTouch(state, nextTouch.kind, nextTouch.at, settings, rng) : null;
+    const touchAt = nextTouch ? await this.scheduleTouch(state, nextTouch.kind, nextTouch.at) : null;
     patch.nextTouchKind = nextTouch?.kind ?? null;
     patch.nextTouchAt = touchAt;
     if (nextTouch?.intervalHours) patch.lastIntervalHours = String(nextTouch.intervalHours);
@@ -1053,11 +1051,10 @@ export class AgentService {
     await this.realtime.publishForAccount(chat.accountId, { type: 'turn.sent', accountId: chat.accountId, chatId: chat.id, turnId: turn.id });
   }
 
-  /** Ставит касание в очередь с учётом ночного окна; возвращает фактическое время. */
-  async scheduleTouch(state: AiChatStateEntity, kind: TouchKind, at: Date, settings: AiAccountSettingsEntity, rng: Rng): Promise<Date> {
-    const runAt = shiftForNightWindow(at, settings.nightWindow, rng);
-    await this.jobs.enqueue({ type: 'touch', accountId: state.accountId, chatId: state.chatId, runAt, payload: { kind } });
-    return runAt;
+  /** Ставит касание в очередь на указанное время; возвращает его же. */
+  async scheduleTouch(state: AiChatStateEntity, kind: TouchKind, at: Date): Promise<Date> {
+    await this.jobs.enqueue({ type: 'touch', accountId: state.accountId, chatId: state.chatId, runAt: at, payload: { kind } });
+    return at;
   }
 
   /**
@@ -1088,7 +1085,7 @@ export class AgentService {
   ): Promise<Date> {
     const settings = await this.settings.get(state.accountId);
     const hours = pickInterval({ timings: settings.timings, lastIntervalHours: state.lastIntervalHours ? Number(state.lastIntervalHours) : null, rng });
-    const at = await this.scheduleTouch(state, kind, new Date(Date.now() + hours * 3_600_000), settings, rng);
+    const at = await this.scheduleTouch(state, kind, new Date(Date.now() + hours * 3_600_000));
     await this.chatState.apply(state, { nextTouchKind: kind, nextTouchAt: at, lastIntervalHours: String(hours) });
     await this.chatState.recordEvent(state.accountId, state.chatId, 'touch_scheduled', { kind, at: at.toISOString(), reason, ...extra });
     await this.chatState.publishFunnel(state);

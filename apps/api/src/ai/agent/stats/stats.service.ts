@@ -35,7 +35,7 @@ const LIBRARY_LIMIT = 30;
 /**
  * Статистика агента (раздел 14 ТЗ): job `stats` раз в час складывает сырые
  * счётчики дня в `ai_stats_daily`, страницы читают уже посчитанное. День
- * считается в таймзоне аккаунта (та же, что у ночного окна).
+ * считается в таймзоне аккаунта (`tz` в настройках).
  */
 @Injectable()
 export class StatsService implements OnModuleInit {
@@ -292,7 +292,7 @@ export class StatsService implements OnModuleInit {
 
   private async tzOf(accountId: string): Promise<string> {
     const settings = await this.settings.get(accountId);
-    return settings.nightWindow.tz || 'UTC';
+    return settings.tz || 'UTC';
   }
 }
 

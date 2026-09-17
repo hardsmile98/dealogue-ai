@@ -81,7 +81,6 @@ export type {
   LibraryOverviewDto,
   LibrarySource,
   LimitsDto,
-  NightWindowDto,
   NoteDto,
   NoteInput,
   PersonaDto,

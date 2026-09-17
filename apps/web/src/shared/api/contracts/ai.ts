@@ -129,13 +129,6 @@ export interface GuardDto {
   confidenceThreshold: number
 }
 
-export interface NightWindowDto {
-  enabled: boolean
-  from: string
-  to: string
-  tz: string
-}
-
 export interface AiSettingsDto {
   accountId: string
   enabled: boolean
@@ -146,7 +139,8 @@ export interface AiSettingsDto {
   timings: TimingsDto
   limits: LimitsDto
   guard: GuardDto
-  nightWindow: NightWindowDto
+  /** IANA-зона аккаунта: в ней считаются дневные метрики. */
+  tz: string
   markRead: boolean
   notifyTelegram: boolean
   handoffPeer: string | null
@@ -163,7 +157,7 @@ export interface UpdateAiSettingsRequest {
   timings?: Partial<TimingsDto>
   limits?: Partial<LimitsDto>
   guard?: Partial<GuardDto>
-  nightWindow?: Partial<NightWindowDto>
+  tz?: string
   markRead?: boolean
   notifyTelegram?: boolean
   handoffPeer?: string | null

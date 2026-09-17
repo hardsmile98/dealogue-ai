@@ -211,12 +211,3 @@ export interface GuardConfig {
   confidenceThreshold: number;
 }
 
-export interface NightWindowConfig {
-  enabled: boolean;
-  /** «01:00» */
-  from: string;
-  /** «08:00» */
-  to: string;
-  /** IANA-зона. */
-  tz: string;
-}

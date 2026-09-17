@@ -5,8 +5,6 @@ import { z } from 'zod';
  * с текущими настройками, пропущенное не трогается.
  */
 
-const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
-
 export const personaSchema = z.object({
   name: z.string().max(64),
   gender: z.enum(['f', 'm']),
@@ -49,13 +47,6 @@ export const guardSchema = z.object({
   confidenceThreshold: z.number().min(0).max(1),
 });
 
-export const nightWindowSchema = z.object({
-  enabled: z.boolean(),
-  from: z.string().regex(timeRe, 'Ожидается ЧЧ:ММ'),
-  to: z.string().regex(timeRe, 'Ожидается ЧЧ:ММ'),
-  tz: z.string().min(1).max(64),
-});
-
 export const updateSettingsSchema = z
   .object({
     enabled: z.boolean(),
@@ -66,7 +57,7 @@ export const updateSettingsSchema = z
     timings: timingsSchema.partial(),
     limits: limitsSchema.partial(),
     guard: guardSchema.partial(),
-    nightWindow: nightWindowSchema.partial(),
+    tz: z.string().min(1).max(64),
     markRead: z.boolean(),
     notifyTelegram: z.boolean(),
     handoffPeer: z.string().max(128).nullable(),

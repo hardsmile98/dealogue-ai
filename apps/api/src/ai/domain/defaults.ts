@@ -1,7 +1,6 @@
 import type {
   GuardConfig,
   LimitsConfig,
-  NightWindowConfig,
   PersonaConfig,
   TimingsConfig,
 } from './types.js';
@@ -63,12 +62,8 @@ export const DEFAULT_GUARD: GuardConfig = {
   confidenceThreshold: 0.5,
 };
 
-export const DEFAULT_NIGHT_WINDOW: NightWindowConfig = {
-  enabled: false,
-  from: '01:00',
-  to: '08:00',
-  tz: 'Europe/Moscow',
-};
+/** Таймзона аккаунта: в ней считаются дневные метрики. */
+export const DEFAULT_TZ = 'Europe/Moscow';
 
 /** Мягкое слияние: недостающие ключи берутся из дефолта, лишние отбрасываются. */
 export function withDefaults<T extends object>(defaults: T, value: Partial<T> | null | undefined): T {

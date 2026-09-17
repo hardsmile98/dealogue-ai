@@ -6,9 +6,9 @@ import { AiConfig } from '../ai.config.js';
 import {
   DEFAULT_GUARD,
   DEFAULT_LIMITS,
-  DEFAULT_NIGHT_WINDOW,
   DEFAULT_PERSONA,
   DEFAULT_TIMINGS,
+  DEFAULT_TZ,
   withDefaults,
 } from '../domain/defaults.js';
 import type { UpdateSettingsInput } from '../dto/ai-settings.schema.js';
@@ -39,7 +39,7 @@ export class AiSettingsService {
           timings: DEFAULT_TIMINGS,
           limits: DEFAULT_LIMITS,
           guard: DEFAULT_GUARD,
-          nightWindow: DEFAULT_NIGHT_WINDOW,
+          tz: DEFAULT_TZ,
         }),
       );
       return this.normalize(created);
@@ -62,11 +62,11 @@ export class AiSettingsService {
     if (input.markRead !== undefined) row.markRead = input.markRead;
     if (input.notifyTelegram !== undefined) row.notifyTelegram = input.notifyTelegram;
     if (input.handoffPeer !== undefined) row.handoffPeer = input.handoffPeer?.trim() || null;
+    if (input.tz !== undefined) row.tz = input.tz.trim() || DEFAULT_TZ;
     if (input.persona) row.persona = withDefaults(row.persona, input.persona);
     if (input.timings) row.timings = withDefaults(row.timings, input.timings);
     if (input.limits) row.limits = withDefaults(row.limits, input.limits);
     if (input.guard) row.guard = withDefaults(row.guard, input.guard);
-    if (input.nightWindow) row.nightWindow = withDefaults(row.nightWindow, input.nightWindow);
 
     this.assertConsistent(row);
     const saved = await this.settings.save(row);
@@ -91,7 +91,7 @@ export class AiSettingsService {
     row.timings = withDefaults(DEFAULT_TIMINGS, row.timings);
     row.limits = withDefaults(DEFAULT_LIMITS, row.limits);
     row.guard = withDefaults(DEFAULT_GUARD, row.guard);
-    row.nightWindow = withDefaults(DEFAULT_NIGHT_WINDOW, row.nightWindow);
+    row.tz = row.tz || DEFAULT_TZ;
     return row;
   }
 

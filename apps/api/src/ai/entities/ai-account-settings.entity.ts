@@ -10,7 +10,6 @@ import type {
   ChatMode,
   GuardConfig,
   LimitsConfig,
-  NightWindowConfig,
   PersonaConfig,
   TimingsConfig,
 } from '../domain/types.js';
@@ -53,8 +52,9 @@ export class AiAccountSettingsEntity {
   @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
   guard: GuardConfig;
 
-  @Column({ name: 'night_window', type: 'jsonb', default: () => "'{}'::jsonb" })
-  nightWindow: NightWindowConfig;
+  /** IANA-зона аккаунта: в ней считаются дневные метрики. */
+  @Column({ type: 'varchar', length: 64, default: 'Europe/Moscow' })
+  tz: string;
 
   /** Отмечать входящие прочитанными перед ответом. */
   @Column({ name: 'mark_read', type: 'boolean', default: true })

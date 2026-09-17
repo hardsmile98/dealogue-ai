@@ -2,7 +2,6 @@ import type {
   ChatMode,
   GuardConfig,
   LimitsConfig,
-  NightWindowConfig,
   PersonaConfig,
   TimingsConfig,
 } from './domain/types.js';
@@ -24,7 +23,7 @@ export interface AiSettingsDto {
   timings: TimingsConfig;
   limits: LimitsConfig;
   guard: GuardConfig;
-  nightWindow: NightWindowConfig;
+  tz: string;
   markRead: boolean;
   notifyTelegram: boolean;
   handoffPeer: string | null;
@@ -64,7 +63,7 @@ export function toSettingsDto(row: AiAccountSettingsEntity): AiSettingsDto {
     timings: row.timings,
     limits: row.limits,
     guard: row.guard,
-    nightWindow: row.nightWindow,
+    tz: row.tz,
     markRead: row.markRead,
     notifyTelegram: row.notifyTelegram,
     handoffPeer: row.handoffPeer,

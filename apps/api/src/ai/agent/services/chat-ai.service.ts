@@ -16,7 +16,6 @@ import { AiSettingsService } from '../../services/ai-settings.service.js';
 import { AlertsService } from '../../services/alerts.service.js';
 import { toChatAiStateDto, toChatAiSummaryDto, toTurnDto } from '../agent.dto.js';
 import type { AiOverviewDto, ChatAiStateDto, ChatAiSummaryDto, TurnDto } from '../agent.dto.js';
-import { shiftForNightWindow } from '../funnel/night-window.js';
 import { planNextTouch } from '../funnel/touch-planner.js';
 import { ageFrom } from '../lib/slots.js';
 import { defaultRng } from '../lib/random.js';
@@ -156,7 +155,7 @@ export class ChatAiService {
       });
       const kind = next?.kind ?? firstTouchFor(stage);
       if (kind) {
-        const at = input.when === 'now' || !next ? new Date() : shiftForNightWindow(next.at, settings.nightWindow, defaultRng);
+        const at = input.when === 'now' || !next ? new Date() : next.at;
         await this.chatState.apply(state, { nextTouchKind: kind, nextTouchAt: at, ...(next?.intervalHours ? { lastIntervalHours: String(next.intervalHours) } : {}) });
         await this.jobs.enqueue({ type: 'touch', accountId: chat.accountId, chatId: chat.id, runAt: at, payload: { kind } });
         await this.chatState.recordEvent(chat.accountId, chat.id, 'touch_scheduled', { kind, at: at.toISOString(), byUserId });

@@ -20,7 +20,6 @@ import type {
   AiSettingsDto,
   GuardDto,
   LimitsDto,
-  NightWindowDto,
   PersonaDto,
   TimingsDto,
   UpdateAiSettingsRequest,
@@ -45,6 +44,7 @@ interface FormState {
   markRead: boolean
   notifyTelegram: boolean
   handoffPeer: string
+  tz: string
   persona: Omit<PersonaDto, 'links'> & { linksText: string }
   timings: TimingsDto
   limits: LimitsDto
@@ -52,7 +52,6 @@ interface FormState {
     botAdmissionText: string
     promiseText: string
   }
-  nightWindow: NightWindowDto
 }
 
 function toForm(dto: AiSettingsDto): FormState {
@@ -64,6 +63,7 @@ function toForm(dto: AiSettingsDto): FormState {
     markRead: dto.markRead,
     notifyTelegram: dto.notifyTelegram,
     handoffPeer: dto.handoffPeer ?? '',
+    tz: dto.tz,
     persona: {
       name: dto.persona.name,
       gender: dto.persona.gender,
@@ -82,7 +82,6 @@ function toForm(dto: AiSettingsDto): FormState {
       botAdmissionText: dto.guard.botAdmissionPhrases.join('\n'),
       promiseText: dto.guard.promisePhrases.join('\n'),
     },
-    nightWindow: { ...dto.nightWindow },
   }
 }
 
@@ -104,6 +103,7 @@ function toPatch(form: FormState): UpdateAiSettingsRequest {
     markRead: form.markRead,
     notifyTelegram: form.notifyTelegram,
     handoffPeer: form.handoffPeer.trim() || null,
+    tz: form.tz.trim(),
     persona: {
       ...persona,
       links: lines(linksText).map((line) => {
@@ -118,7 +118,6 @@ function toPatch(form: FormState): UpdateAiSettingsRequest {
       botAdmissionPhrases: lines(botAdmissionText),
       promisePhrases: lines(promiseText),
     },
-    nightWindow: form.nightWindow,
   }
 }
 
@@ -174,7 +173,7 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
 
   const patch = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
-  const patchNested = <K extends 'persona' | 'timings' | 'limits' | 'guard' | 'nightWindow'>(
+  const patchNested = <K extends 'persona' | 'timings' | 'limits' | 'guard'>(
     key: K,
     value: Partial<FormState[K]>,
   ) => setForm((prev) => ({ ...prev, [key]: { ...prev[key], ...value } }))
@@ -403,41 +402,6 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
         </Grid>
       </Section>
 
-      <Section title="Ночное окно" subtitle="Касания в этот промежуток сдвигаются на утро. Первый ответ лиду — всегда сразу.">
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' } }}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={form.nightWindow.enabled}
-                onChange={(e) => patchNested('nightWindow', { enabled: e.target.checked })}
-              />
-            }
-            label="Включено"
-          />
-          <TextField
-            size="small"
-            label="С"
-            value={form.nightWindow.from}
-            onChange={(e) => patchNested('nightWindow', { from: e.target.value })}
-            sx={{ width: 100 }}
-          />
-          <TextField
-            size="small"
-            label="До"
-            value={form.nightWindow.to}
-            onChange={(e) => patchNested('nightWindow', { to: e.target.value })}
-            sx={{ width: 100 }}
-          />
-          <TextField
-            size="small"
-            label="Часовой пояс"
-            value={form.nightWindow.tz}
-            onChange={(e) => patchNested('nightWindow', { tz: e.target.value })}
-            sx={{ width: 220 }}
-          />
-        </Stack>
-      </Section>
-
       <Section title="Уведомления и мелочи">
         <Stack spacing={1}>
           <FormControlLabel
@@ -456,6 +420,14 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
             helperText="@username или телефон; пусто — в «Избранное» аккаунта."
             value={form.handoffPeer}
             onChange={(e) => patch('handoffPeer', e.target.value)}
+            sx={{ maxWidth: 420 }}
+          />
+          <TextField
+            size="small"
+            label="Часовой пояс"
+            helperText="IANA-зона: в ней считается статистика по дням."
+            value={form.tz}
+            onChange={(e) => patch('tz', e.target.value)}
             sx={{ maxWidth: 420 }}
           />
         </Stack>

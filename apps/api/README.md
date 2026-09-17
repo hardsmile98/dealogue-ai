@@ -319,8 +319,6 @@ await queryRunner.query(
 
 Этап 4 (касания) сделан:
 
-- ночное окно (`agent/funnel/night-window.ts`): касание, попадающее в тихие
-  часы по таймзоне аккаунта, уходит на 0–2 ч после окна; выключено по умолчанию;
 - перенос касания при `send: false` (до двух раз), затем шаг считается сделанным;
 - `supervised`: ход-касание создаёт черновик даже в сухом прогоне; если
   менеджер не подтвердил за `superviseTimeoutHours`, черновик устаревает и
@@ -439,7 +437,7 @@ await queryRunner.query(
 
 | Метод | Путь | Что |
 |---|---|---|
-| GET/PUT | `/telegram/accounts/:id/ai/settings` | настройки аккаунта (включение, dry-run, персона, таймеры, лимиты, guard, ночное окно) |
+| GET/PUT | `/telegram/accounts/:id/ai/settings` | настройки аккаунта (включение, dry-run, персона, таймеры, лимиты, guard, таймзона) |
 | GET | `/telegram/accounts/:id/ai/overview` · `…/ai/chats` | обзор агента; сводка режим/этап/касание по чатам |
 | POST | `/telegram/accounts/:id/ai/sandbox` | песочница: ход без отправки |
 | GET/PATCH | `/telegram/accounts/:id/chats/:chatId/ai` | состояние чата; режим, слоты, заметка |
