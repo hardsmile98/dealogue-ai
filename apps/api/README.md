@@ -276,8 +276,22 @@ await queryRunner.query(
   (`POST /telegram/accounts/:id/chats/:chatId/messages`);
 - настройки аккаунта (`GET/PUT …/ai/settings`) с валидацией zod.
 
-Ход агента (Planner → Composer → Guard → Outbound), библиотека, черновики и
-статистика — следующие этапы; бот пока ничего не отправляет.
+Этап 2 (библиотека) сделан:
+
+- `src/ai/library` — категории запросов, образцы и блоки (`ai_phrases`), факты
+  об услугах, диагностики, плейбуки этапов, заметки менеджера; CRUD под
+  `/telegram/accounts/:id/ai/{categories,phrases,facts,diagnostics,playbooks,notes}`;
+- стандартная библиотека собирается из `docs/source/*.xlsx` скриптом
+  `npm run ai:seed:build` в `src/ai/library/seed/library-seed.ts` (коммитится;
+  API xlsx в рантайме не читает) и загружается в аккаунт через
+  `POST …/ai/library/seed` (идемпотентно по ключам, `mode: replace` перезаписывает);
+- `POST …/ai/library/copy-from/:sourceAccountId` копирует библиотеку между
+  аккаунтами владельца, `POST …/ai/library/preview-split` показывает разбиение
+  текста на сообщения, `GET …/ai/library/overview` — полноту (чего не хватает
+  для плейбуков).
+
+Ход агента (Planner → Composer → Guard → Outbound), черновики и статистика —
+следующие этапы; бот пока ничего не отправляет.
 
 ### Как устроено (целевая архитектура)
 

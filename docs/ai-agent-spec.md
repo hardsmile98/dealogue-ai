@@ -778,9 +778,13 @@ SSE (`realtime.types.ts`): добавляются `draft.created`, `draft.update
 
 ## 13. Импорт из таблиц (сид)
 
-Скрипт `apps/api/src/ai/library/seed/import-xlsx.ts` (`npm run ai:seed -- --account <id>
-[--replace]`) читает `docs/source/*.xlsx`; идемпотентен по `key`/`title`; доступен из UI
-кнопкой «Загрузить стандартную библиотеку».
+Реализация (этап 2): скрипт `apps/api/scripts/build-library-seed.mjs`
+(`npm run ai:seed:build`) читает `docs/source/*.xlsx` и генерирует
+`apps/api/src/ai/library/seed/library-seed.ts`, который коммитится — API xlsx в
+рантайме не читает. В аккаунт библиотека загружается `POST …/ai/library/seed`
+(кнопка «Загрузить стандартную библиотеку» в UI); идемпотентно по `key` для
+категорий, фактов и диагностик и по паре `kind` + `title` для фраз; `mode: replace`
+перезаписывает тексты.
 
 ### 13.1. `funnel.xlsx`, лист «воронка ру»
 
@@ -793,7 +797,7 @@ SSE (`realtime.types.ts`): добавляются `draft.created`, `draft.update
 | R9C6 | block `links`; ссылки → факты `link.instagram`, `link.telegram` | R9C5 → example `diag_closing` без блока ссылок |
 | R9C2–R9C4, R26C3, R26C4, R34C2 | example `quick_reply` | видео и практика, только для менеджера |
 | R12C2–R12C4 + 6 формулировок из `docs/new-ai-agent.md` п. 5 | example `reengage` | |
-| R13C2 | example `reengage`, `conditions.requiresRequest = false` | |
+| R13C2 | example `offer`, `conditions.requiresRequest = false` | связка перед предложением после игнора диагностики (в v1.0 была `reengage`) |
 | R14C2 | example `objection` («сразу про деньги») | |
 | R16C2–R16C9 | example `offer` | title из R15; факты `service.*` извлекаются из R16C9 (три варианта, сроки, форматы) |
 | R16C10 | block `price` (включён); цены → факты `price.*` | |

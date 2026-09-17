@@ -22,6 +22,8 @@ import { AiPlaybookEntity } from './entities/ai-playbook.entity.js';
 import { AiStatsDailyEntity } from './entities/ai-stats-daily.entity.js';
 import { AiTurnEntity } from './entities/ai-turn.entity.js';
 import { AlertEntity } from './entities/alert.entity.js';
+import { AiLibraryController } from './library/library.controller.js';
+import { AiLibraryService } from './library/library.service.js';
 import { LlmProviderFactory } from './llm/llm-provider.factory.js';
 import { AiJobWorker } from './services/ai-job-worker.service.js';
 import { AiJobsService } from './services/ai-jobs.service.js';
@@ -58,7 +60,22 @@ import { AlertsService } from './services/alerts.service.js';
       AlertEntity,
     ]),
   ],
-  controllers: [HealthController, AiSettingsController, AiController, AttentionController, AlertsController],
-  providers: [AiConfig, LlmProviderFactory, AiJobsService, AiJobWorker, AiSettingsService, AlertsService],
+  controllers: [
+    HealthController,
+    AiSettingsController,
+    AiController,
+    AiLibraryController,
+    AttentionController,
+    AlertsController,
+  ],
+  providers: [
+    AiConfig,
+    LlmProviderFactory,
+    AiJobsService,
+    AiJobWorker,
+    AiSettingsService,
+    AiLibraryService,
+    AlertsService,
+  ],
 })
 export class AiModule {}
