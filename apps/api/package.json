@@ -20,8 +20,7 @@
     "migration:show": "tsx ./node_modules/typeorm/cli.js migration:show -d ./src/database/data-source.ts",
     "migration:create": "tsx ./node_modules/typeorm/cli.js migration:create",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "ai:seed:build": "node scripts/build-library-seed.mjs"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -55,7 +54,6 @@
     "tsx": "^4.23.13",
     "typescript": "^6.0.2",
     "vite": "^8.2.2",
-    "vitest": "^5.0.0",
-    "xlsx": "^0.18.5"
+    "vitest": "^5.0.0"
   }
 }

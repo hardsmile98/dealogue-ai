@@ -1,6 +1,6 @@
 import type { FactGroup, FunnelStage, Gender, PhraseConditions, PhraseKind, PhraseUsage } from '../../domain/types.js';
 
-/** Форма стандартной библиотеки (генерируется из docs/source/*.xlsx). */
+/** Форма стандартной библиотеки ИИ-агента по умолчанию. */
 
 export interface SeedCategory {
   key: string;
