@@ -71,6 +71,11 @@ export class AgentJobsService implements OnModuleInit {
     const kind = job.payload.kind as TouchKind | undefined;
     const manual = job.payload.manual === true;
     const resume = resumeOf(job.payload);
+    if (job.payload.superviseTimeout === true && kind && typeof job.payload.draftId === 'string') {
+      const detail = await this.agent.superviseTimeout(job.accountId, job.chatId, job.payload.draftId, kind);
+      this.logger.log(`Чат ${job.chatId}: таймаут подтверждения — ${detail}`);
+      return { kind: 'done' };
+    }
     if (!kind && !resume && !manual) return { kind: 'done' };
 
     const result = await this.agent.runTurn({

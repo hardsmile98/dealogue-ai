@@ -20,6 +20,8 @@ export interface GuardInput {
   messages: ComposedMessage[];
   /** Маркеры, для которых блока не нашлось. */
   unknownBlockKinds: string[];
+  /** Виды блоков, уже отправленные в чате (маркер → «не повторяй»). */
+  exhaustedBlockKinds?: string[];
   requiredBlockKinds: string[];
   allowedBlockKinds: string[];
   /** Блоки, которые в этом чате уже уходили (id). */
@@ -69,7 +71,11 @@ export function runGuard(input: GuardInput): GuardResult {
 
   // --- блоки ------------------------------------------------------------------
   for (const kind of input.unknownBlockKinds) {
-    violations.push({ check: 'block_unknown', messageIndex: null, detail: `Блока «${kind}» нет в библиотеке — не используй этот маркер` });
+    if (input.exhaustedBlockKinds?.includes(kind)) {
+      violations.push({ check: 'block_already_sent', messageIndex: null, detail: `Блок «${kind}» уже отправлялся в этом чате — не вставляй его снова, при необходимости сошлись на него словами` });
+    } else {
+      violations.push({ check: 'block_unknown', messageIndex: null, detail: `Блока «${kind}» нет в библиотеке — не используй этот маркер` });
+    }
   }
   const allowed = new Set([...input.requiredBlockKinds, ...input.allowedBlockKinds]);
   const presentKinds = new Set<string>();

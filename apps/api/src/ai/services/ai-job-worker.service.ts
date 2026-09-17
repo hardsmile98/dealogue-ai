@@ -173,16 +173,16 @@ export class AiJobWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Пока job выполнялся, пришёл новый enqueue — ставим его заново. Пометка
-   * `requeueAt` и новый payload лежат в базе, а не в объекте, который мы
-   * держим с момента claim, поэтому перечитываем строку.
+   * Пока job выполнялся, пришёл новый enqueue — ставим его заново с тем
+   * payload, который просили (`requeuePayload`), а не со старым. Пометки
+   * лежат в базе, а не в объекте с момента claim, поэтому перечитываем строку.
    */
   private async requeueIfAsked(job: AiJobEntity): Promise<void> {
     const fresh = await this.jobs.findLatestById(job.id);
     const requeueAt = fresh?.payload?.requeueAt;
     if (typeof requeueAt !== 'string') return;
-    const { requeueAt: _at, cancelled: _cancelled, resumeTurnId: _turn, resumeIndex: _index, delayed: _delayed, ...payload } =
-      fresh?.payload ?? {};
+    const requested = fresh?.payload?.requeuePayload;
+    const payload = requested && typeof requested === 'object' && !Array.isArray(requested) ? (requested as Record<string, unknown>) : {};
     await this.jobs.enqueue({
       type: job.type,
       accountId: job.accountId,

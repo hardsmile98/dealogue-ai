@@ -137,3 +137,14 @@ describe('этапы', () => {
     expect(stageForTouch('offer_question')).toBe('offer');
   });
 });
+
+describe('уже отправленные блоки', () => {
+  it('не требуются и не разрешаются повторно, пропуска library_incomplete нет', () => {
+    const verdict = plan(input({ stage: 'price', playbook: { ...playbook, stage: 'price', requiredBlockKinds: ['price'], allowedBlockKinds: ['price'] }, exhaustedBlockKinds: ['price'] }))
+    expect(verdict.kind).toBe('proceed')
+    if (verdict.kind === 'proceed') {
+      expect(verdict.task.requiredBlockKinds).toEqual([])
+      expect(verdict.task.allowedBlockKinds).toEqual([])
+    }
+  })
+})

@@ -30,6 +30,7 @@ import { ComposerService } from '../composer/composer.service.js';
 import { PROMPT_VERSION, buildSystemPrompt, buildTurnPrompt } from '../composer/prompt-builder.js';
 import type { SystemPromptInput, TurnPromptInput } from '../composer/prompt-builder.js';
 import type { ComposerOutput } from '../composer/composer.schema.js';
+import { shiftForNightWindow } from '../funnel/night-window.js';
 import { planNextTouch, pickInterval } from '../funnel/touch-planner.js';
 import { expandMarkers, joinMessages, resolveBlocks } from '../guard/blocks.js';
 import { describeViolations, runGuard } from '../guard/guard.js';
@@ -209,6 +210,7 @@ export class AgentService {
       lastClientMessageAt: state.lastClientMessageAt,
       limits: settings.limits,
       blocks: ctx.blocks,
+      exhaustedBlockKinds: ctx.exhaustedBlockKinds,
       recentTurns,
       now,
     });
@@ -255,7 +257,7 @@ export class AgentService {
       gen = await this.generate({
         system: { persona: settings.persona, facts: ctx.facts, stages: ctx.stages, categories: ctx.categories },
         turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, now },
-        guard: { sentBlockIds: state.sentBlockIds, allow: ctx.allow, pastBotMessages, clientLanguage: slots.language, greetedToday, config: settings.guard },
+        guard: { sentBlockIds: state.sentBlockIds, exhaustedBlockKinds: ctx.exhaustedBlockKinds, allow: ctx.allow, pastBotMessages, clientLanguage: slots.language, greetedToday, config: settings.guard },
         task,
         blocks: ctx.blocks,
       });
@@ -303,16 +305,28 @@ export class AgentService {
 
     // --- доставка ------------------------------------------------------------------
     const after = this.stageAfter(state, stage, trigger, touchKind, gen, ctx, settings);
+    // В supervised черновик создаётся и в сухом прогоне — подтверждение (этап 5) учтёт dryRun само.
+    if (state.mode === 'supervised') {
+      const turn = await this.turns.save(this.turns.create({ ...turnBase, stageAfter: stage, outcome: 'awaiting_approval' }));
+      await this.chatState.apply(state, { ...basePatch, ...(trigger === 'touch' ? { nextTouchKind: null, nextTouchAt: null } : {}) });
+      const draft = await this.createDraft('supervised', 'pending', state, chat, batch, null, gen.messages, gen.output.analysis.clientIntent, turn.id);
+      if (trigger === 'touch' && touchKind) {
+        // Менеджер не подтвердит вовремя — касание уйдёт на следующий интервал.
+        const deadline = new Date(now.getTime() + settings.timings.superviseTimeoutHours * 3_600_000);
+        await this.jobs.enqueue({
+          type: 'touch',
+          accountId: chat.accountId,
+          chatId: chat.id,
+          runAt: deadline,
+          payload: { kind: touchKind, superviseTimeout: true, draftId: draft.id },
+        });
+      }
+      return done('awaiting_approval', turn.id, 'Ход ждёт подтверждения менеджера');
+    }
     if (settings.dryRun) {
       const turn = await this.turns.save(this.turns.create({ ...turnBase, stageAfter: after, outcome: 'dry_run' }));
       await this.finishSent(chat, state, settings, ctx, gen, turn, [], basePatch, stage, after, trigger, touchKind, rng, now);
       return done('dry_run', turn.id, `Сухой прогон: ${gen.messages.length} сообщ.`);
-    }
-    if (state.mode === 'supervised') {
-      const turn = await this.turns.save(this.turns.create({ ...turnBase, stageAfter: stage, outcome: 'awaiting_approval' }));
-      await this.chatState.apply(state, { ...basePatch, ...(trigger === 'touch' ? { nextTouchKind: null, nextTouchAt: null } : {}) });
-      await this.createDraft('supervised', 'pending', state, chat, batch, null, gen.messages, gen.output.analysis.clientIntent, turn.id);
-      return done('awaiting_approval', turn.id, 'Ход ждёт подтверждения менеджера');
     }
     if (!this.outbound.isOnline(chat.accountId)) {
       return { kind: 'postpone', runAt: new Date(now.getTime() + 60_000), reason: 'Аккаунт не подключён к Telegram' };
@@ -602,12 +616,12 @@ export class AgentService {
       const postponed = state.touchPostponedCount + 1;
       if (postponed <= 2) {
         const shortKinds: TouchKind[] = ['birth_nudge', 'diagnostics', 'reengage'];
-        const at = shortKinds.includes(params.touchKind)
+        const wanted = shortKinds.includes(params.touchKind)
           ? new Date(now.getTime() + settings.timings.diagnosticsDelayMin * 60_000)
           : new Date(now.getTime() + pickInterval({ timings: settings.timings, lastIntervalHours: state.lastIntervalHours ? Number(state.lastIntervalHours) : null, rng }) * 3_600_000);
+        const at = await this.scheduleTouch(state, params.touchKind, wanted, settings, rng);
         Object.assign(patch, { touchPostponedCount: postponed, nextTouchKind: params.touchKind, nextTouchAt: at });
         await this.chatState.apply(state, patch);
-        await this.scheduleTouch(state, params.touchKind, at);
         await this.chatState.recordEvent(chat.accountId, chat.id, 'touch_scheduled', { kind: params.touchKind, at: at.toISOString(), postponed });
         return done('silent', turn.id, `Касание перенесено: ${gen.output.reply.silentReason ?? ''}`);
       }
@@ -690,17 +704,18 @@ export class AgentService {
           now,
           rng,
         });
+    // Ночное окно может сдвинуть касание на утро — в состояние пишем фактическое время.
+    const touchAt = nextTouch ? await this.scheduleTouch(state, nextTouch.kind, nextTouch.at, settings, rng) : null;
     patch.nextTouchKind = nextTouch?.kind ?? null;
-    patch.nextTouchAt = nextTouch?.at ?? null;
+    patch.nextTouchAt = touchAt;
     if (nextTouch?.intervalHours) patch.lastIntervalHours = String(nextTouch.intervalHours);
 
     await this.chatState.apply(state, patch);
     if (stageBefore !== stageAfter) {
       await this.chatState.recordEvent(chat.accountId, chat.id, 'stage_changed', { from: stageBefore, to: stageAfter, turnId: turn.id });
     }
-    if (nextTouch) {
-      await this.scheduleTouch(state, nextTouch.kind, nextTouch.at);
-      await this.chatState.recordEvent(chat.accountId, chat.id, 'touch_scheduled', { kind: nextTouch.kind, at: nextTouch.at.toISOString(), turnId: turn.id });
+    if (nextTouch && touchAt) {
+      await this.chatState.recordEvent(chat.accountId, chat.id, 'touch_scheduled', { kind: nextTouch.kind, at: touchAt.toISOString(), turnId: turn.id });
     } else {
       await this.jobs.cancel('touch', chat.accountId, chat.id);
     }
@@ -710,8 +725,32 @@ export class AgentService {
     await this.realtime.publishForAccount(chat.accountId, { type: 'turn.sent', accountId: chat.accountId, chatId: chat.id, turnId: turn.id });
   }
 
-  async scheduleTouch(state: AiChatStateEntity, kind: TouchKind, at: Date): Promise<void> {
-    await this.jobs.enqueue({ type: 'touch', accountId: state.accountId, chatId: state.chatId, runAt: at, payload: { kind } });
+  /** Ставит касание в очередь с учётом ночного окна; возвращает фактическое время. */
+  async scheduleTouch(state: AiChatStateEntity, kind: TouchKind, at: Date, settings: AiAccountSettingsEntity, rng: Rng): Promise<Date> {
+    const runAt = shiftForNightWindow(at, settings.nightWindow, rng);
+    await this.jobs.enqueue({ type: 'touch', accountId: state.accountId, chatId: state.chatId, runAt, payload: { kind } });
+    return runAt;
+  }
+
+  /**
+   * Менеджер не подтвердил ход-касание в supervised за отведённое время:
+   * черновик устаревает, касание переносится на следующий интервал (раздел 8.4 ТЗ).
+   */
+  async superviseTimeout(accountId: string, chatId: string, draftId: string, kind: TouchKind, rng: Rng = defaultRng): Promise<string> {
+    const draft = await this.drafts.findOne({ where: { id: draftId, chatId } });
+    if (!draft || draft.status !== 'pending') return 'Черновик уже решён';
+    const state = await this.chatState.find(chatId);
+    if (!state || state.mode !== 'supervised') return 'Чат больше не в режиме supervised';
+    const settings = await this.settings.get(accountId);
+    await this.drafts.update(draft.id, { status: 'superseded', decidedAt: new Date() });
+    await this.realtime.publishForAccount(accountId, { type: 'draft.updated', accountId, chatId, draftId: draft.id, status: 'superseded' });
+    const now = new Date();
+    const hours = pickInterval({ timings: settings.timings, lastIntervalHours: state.lastIntervalHours ? Number(state.lastIntervalHours) : null, rng });
+    const at = await this.scheduleTouch(state, kind, new Date(now.getTime() + hours * 3_600_000), settings, rng);
+    await this.chatState.apply(state, { nextTouchKind: kind, nextTouchAt: at, lastIntervalHours: String(hours) });
+    await this.chatState.recordEvent(accountId, chatId, 'touch_scheduled', { kind, at: at.toISOString(), reason: 'supervise_timeout', draftId });
+    await this.chatState.publishFunnel(state);
+    return `Касание ${kind} перенесено на ${at.toISOString()}`;
   }
 
   private async bumpCounters(ctx: TurnContext, blockIds: string[]): Promise<void> {

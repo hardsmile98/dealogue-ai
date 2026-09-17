@@ -151,6 +151,7 @@ export class SandboxService {
       lastClientMessageAt: history.filter((m) => m.role === 'client').at(-1)?.sentAt ?? null,
       limits: settings.limits,
       blocks: ctx.blocks,
+      exhaustedBlockKinds: ctx.exhaustedBlockKinds,
       recentTurns: [],
       now,
     });
@@ -180,6 +181,7 @@ export class SandboxService {
       turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, now },
       guard: {
         sentBlockIds,
+        exhaustedBlockKinds: ctx.exhaustedBlockKinds,
         allow: ctx.allow,
         pastBotMessages: history.filter((m) => m.role === 'bot').map((m) => m.text),
         clientLanguage: slots.language,

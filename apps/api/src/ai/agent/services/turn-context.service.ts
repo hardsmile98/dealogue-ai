@@ -28,6 +28,8 @@ export interface TurnContext {
   /** Есть ли в библиотеке тексты на английском — иначе английский лид уходит менеджеру. */
   hasEnglishTexts: boolean;
   hasDiscountBlock: boolean;
+  /** Виды блоков, все варианты которых в этом чате уже отправлены. */
+  exhaustedBlockKinds: string[];
 }
 
 export interface LoadContextParams {
@@ -116,10 +118,16 @@ export class TurnContextService {
     // --- блоки ---------------------------------------------------------------
     const blockKinds = new Set<string>([...playbook.requiredBlockKinds, ...playbook.allowedBlockKinds]);
     const blocks: LibraryBlock[] = [];
+    const exhaustedBlockKinds: string[] = [];
     for (const kind of blockKinds) {
       const pool = phrases.filter((p) => p.usage === 'block' && p.kind === kind && fits(p));
       const fresh = pool.filter((p) => !params.sentBlockIds.includes(p.id));
-      const picked = pickWeighted(params.rng, rankSpecific(fresh.length > 0 ? fresh : pool));
+      // Блок в чате уже уходил — второй раз не предлагаем (цены и ссылки не повторяют).
+      if (pool.length > 0 && fresh.length === 0) {
+        exhaustedBlockKinds.push(kind);
+        continue;
+      }
+      const picked = pickWeighted(params.rng, rankSpecific(fresh));
       if (picked) blocks.push({ kind, id: picked.id, title: picked.title || kind, text: picked.text, source: 'phrase' });
     }
     if (params.touchKind === 'diagnostics' || stage === 'diagnostics') {
@@ -147,6 +155,7 @@ export class TurnContextService {
       allow: buildAllowlists(facts, params.personaLinks, blocks),
       hasEnglishTexts,
       hasDiscountBlock,
+      exhaustedBlockKinds,
     };
   }
 

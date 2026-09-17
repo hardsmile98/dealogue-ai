@@ -36,6 +36,8 @@ export interface PlannerInput {
   /** Блоки, доступные для этого хода (уже с выбранной диагностикой). */
   blocks: LibraryBlock[];
   recentTurns: RecentTurnSummary[];
+  /** Блоки, которые в этом чате уже уходили, — повторно не обязательны и не разрешены. */
+  exhaustedBlockKinds?: string[];
   now: Date;
 }
 
@@ -72,7 +74,8 @@ export function plan(input: PlannerInput): PlannerVerdict {
     }
   }
 
-  const allowed = new Set<string>([...required, ...input.playbook.allowedBlockKinds]);
+  const exhausted = new Set(input.exhaustedBlockKinds ?? []);
+  const allowed = new Set<string>([...required, ...input.playbook.allowedBlockKinds].filter((kind) => !exhausted.has(kind)));
   if (input.touchKind === 'diagnostics' || input.stage === 'diagnostics') allowed.add('diagnostics');
 
   return {
@@ -92,7 +95,8 @@ export function plan(input: PlannerInput): PlannerVerdict {
 
 /** Обязательные блоки хода: плейбук плюс диагностика для касания диагностики. */
 function requiredBlocks(input: PlannerInput): string[] {
-  const kinds = new Set<string>(input.playbook.requiredBlockKinds);
+  const exhausted = new Set(input.exhaustedBlockKinds ?? []);
+  const kinds = new Set<string>(input.playbook.requiredBlockKinds.filter((kind) => !exhausted.has(kind)));
   if (input.touchKind === 'diagnostics' || (input.stage === 'diagnostics' && input.trigger !== 'inbound')) {
     kinds.add('diagnostics');
   }

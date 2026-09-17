@@ -17,6 +17,7 @@ import { AiDraftEntity } from '../../entities/ai-draft.entity.js';
 import { AiJobWorker } from '../../services/ai-job-worker.service.js';
 import { AiJobsService } from '../../services/ai-jobs.service.js';
 import { AiSettingsService } from '../../services/ai-settings.service.js';
+import { shiftForNightWindow } from '../funnel/night-window.js';
 import { reengageAfterRead } from '../funnel/touch-planner.js';
 import { inboundRunAt, typingRunAt } from '../lib/debounce.js';
 import { defaultRng } from '../lib/random.js';
@@ -144,7 +145,7 @@ export class InboundListenerService implements OnModuleInit, OnModuleDestroy {
     const readAt = new Date();
     const patch: Partial<AiChatStateEntity> = { diagnosticsReadAt: readAt };
     if (state.nextTouchKind === 'reengage' && (state.mode === 'auto' || state.mode === 'supervised')) {
-      const at = reengageAfterRead(readAt, settings.timings, defaultRng);
+      const at = shiftForNightWindow(reengageAfterRead(readAt, settings.timings, defaultRng), settings.nightWindow, defaultRng);
       if (!state.nextTouchAt || at < state.nextTouchAt) {
         patch.nextTouchAt = at;
         await this.jobs.enqueue({ type: 'touch', accountId: state.accountId, chatId: state.chatId, runAt: at, payload: { kind: 'reengage' } });
