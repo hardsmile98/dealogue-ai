@@ -4,31 +4,37 @@ import { AuthModule } from '../auth/auth.module.js';
 import { HealthController } from '../health/health.controller.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
 import { TelegramModule } from '../telegram/telegram.module.js';
-import { AiChatController } from './ai-chat.controller.js';
+import { AiController, AiSettingsController } from './ai-settings.controller.js';
 import { AiConfig } from './ai.config.js';
-import { AiAccountController, AiController } from './ai.controller.js';
 import { AlertsController } from './alerts.controller.js';
-import { AiAgentSettingsEntity } from './entities/ai-agent-settings.entity.js';
-import { AiExchangeEntity } from './entities/ai-exchange.entity.js';
+import { AttentionController } from './attention.controller.js';
+import { AiAccountSettingsEntity } from './entities/ai-account-settings.entity.js';
+import { AiCategoryEntity } from './entities/ai-category.entity.js';
+import { AiChatStateEntity } from './entities/ai-chat-state.entity.js';
+import { AiDiagnosticEntity } from './entities/ai-diagnostic.entity.js';
+import { AiDraftEntity } from './entities/ai-draft.entity.js';
+import { AiEventEntity } from './entities/ai-event.entity.js';
+import { AiFactEntity } from './entities/ai-fact.entity.js';
 import { AiJobEntity } from './entities/ai-job.entity.js';
-import { AiRunEntity } from './entities/ai-run.entity.js';
-import { AiStyleProfileEntity } from './entities/ai-style-profile.entity.js';
+import { AiNoteEntity } from './entities/ai-note.entity.js';
+import { AiPhraseEntity } from './entities/ai-phrase.entity.js';
+import { AiPlaybookEntity } from './entities/ai-playbook.entity.js';
+import { AiStatsDailyEntity } from './entities/ai-stats-daily.entity.js';
+import { AiTurnEntity } from './entities/ai-turn.entity.js';
 import { AlertEntity } from './entities/alert.entity.js';
-import { ExchangeIndexerService } from './learning/exchange-indexer.service.js';
-import { ExchangeRetrieverService } from './learning/exchange-retriever.service.js';
-import { HistoryImportService } from './learning/history-import.service.js';
-import { StyleLearningService } from './learning/style-learning.service.js';
 import { LlmProviderFactory } from './llm/llm-provider.factory.js';
-import { AiAgentService } from './services/ai-agent.service.js';
 import { AiJobWorker } from './services/ai-job-worker.service.js';
 import { AiJobsService } from './services/ai-jobs.service.js';
 import { AiSettingsService } from './services/ai-settings.service.js';
 import { AlertsService } from './services/alerts.service.js';
-import { HandoffService } from './services/handoff.service.js';
 
 /**
- * ИИ-агент продаж. Зависит от TelegramModule (события, отправка, доступ к
- * чатам), сам наружу ничего не экспортирует — Telegram про ИИ не знает.
+ * ИИ-агент воронки (docs/ai-agent-spec.md). Зависит от TelegramModule
+ * (события, отправка, доступ к чатам), сам наружу ничего не экспортирует —
+ * Telegram про ИИ не знает.
+ *
+ * Этап 1: фундамент — сущности, настройки, очередь, алерты. Ход агента,
+ * библиотека и черновики добавляются следующими этапами.
  */
 @Module({
   imports: [
@@ -36,28 +42,23 @@ import { HandoffService } from './services/handoff.service.js';
     TelegramModule,
     RealtimeModule,
     TypeOrmModule.forFeature([
-      AiAgentSettingsEntity,
-      AiStyleProfileEntity,
-      AiExchangeEntity,
+      AiAccountSettingsEntity,
+      AiChatStateEntity,
+      AiTurnEntity,
+      AiEventEntity,
+      AiPlaybookEntity,
+      AiPhraseEntity,
+      AiFactEntity,
+      AiDiagnosticEntity,
+      AiCategoryEntity,
+      AiDraftEntity,
+      AiNoteEntity,
+      AiStatsDailyEntity,
       AiJobEntity,
-      AiRunEntity,
       AlertEntity,
     ]),
   ],
-  controllers: [HealthController, AiAccountController, AiController, AiChatController, AlertsController],
-  providers: [
-    AiConfig,
-    LlmProviderFactory,
-    AiJobsService,
-    AiJobWorker,
-    AiSettingsService,
-    ExchangeIndexerService,
-    ExchangeRetrieverService,
-    HistoryImportService,
-    StyleLearningService,
-    AlertsService,
-    HandoffService,
-    AiAgentService,
-  ],
+  controllers: [HealthController, AiSettingsController, AiController, AttentionController, AlertsController],
+  providers: [AiConfig, LlmProviderFactory, AiJobsService, AiJobWorker, AiSettingsService, AlertsService],
 })
 export class AiModule {}

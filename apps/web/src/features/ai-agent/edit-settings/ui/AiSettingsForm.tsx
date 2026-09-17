@@ -1,510 +1,497 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import type { ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
-import Divider from '@mui/material/Divider'
+import Card from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
+import Chip from '@mui/material/Chip'
 import FormControlLabel from '@mui/material/FormControlLabel'
-import InputAdornment from '@mui/material/InputAdornment'
+import Grid from '@mui/material/Grid'
 import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import { formatRelative, getApiErrorMessage } from '@/shared/lib'
-import type { AiSettingsDto, UpdateAiSettingsRequest, WorkingHoursDto } from '@/shared/api'
-import type { SxStyles } from '@/shared/types'
+import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined'
+import { getApiErrorMessage } from '@/shared/lib'
+import type {
+  AiSettingsDto,
+  GuardDto,
+  LimitsDto,
+  NightWindowDto,
+  PersonaDto,
+  TimingsDto,
+  UpdateAiSettingsRequest,
+} from '@/shared/api'
 import {
-  WEEKDAY_LABELS,
-  useGetAiProvidersQuery,
+  CHAT_MODE_META,
+  useGetAiHealthQuery,
   useGetAiSettingsQuery,
   useUpdateAiSettingsMutation,
 } from '@/entities/ai-agent'
-import { FollowupsEditor, PairListEditor, StagesEditor, StringListEditor } from './editors'
 
 interface AiSettingsFormProps {
   accountId: string
 }
 
-type FormState = Omit<AiSettingsDto, 'accountId' | 'updatedAt'>
-
-const DEFAULT_HOURS: WorkingHoursDto = {
-  tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow',
-  days: [1, 2, 3, 4, 5],
-  from: '09:00',
-  to: '21:00',
+/** Редактируемая копия настроек: ссылки и списки фраз — как многострочный текст. */
+interface FormState {
+  enabled: boolean
+  dryRun: boolean
+  defaultChatMode: 'auto' | 'supervised'
+  assistantForExistingChats: boolean
+  markRead: boolean
+  notifyTelegram: boolean
+  handoffPeer: string
+  persona: Omit<PersonaDto, 'links'> & { linksText: string }
+  timings: TimingsDto
+  limits: LimitsDto
+  guard: Omit<GuardDto, 'botAdmissionPhrases' | 'promisePhrases'> & {
+    botAdmissionText: string
+    promiseText: string
+  }
+  nightWindow: NightWindowDto
 }
 
-function toForm(settings: AiSettingsDto): FormState {
-  const { accountId: _a, updatedAt: _u, ...rest } = settings
-  return rest
+function toForm(dto: AiSettingsDto): FormState {
+  return {
+    enabled: dto.enabled,
+    dryRun: dto.dryRun,
+    defaultChatMode: dto.defaultChatMode === 'supervised' ? 'supervised' : 'auto',
+    assistantForExistingChats: dto.assistantForExistingChats,
+    markRead: dto.markRead,
+    notifyTelegram: dto.notifyTelegram,
+    handoffPeer: dto.handoffPeer ?? '',
+    persona: {
+      name: dto.persona.name,
+      gender: dto.persona.gender,
+      bio: dto.persona.bio,
+      tone: dto.persona.tone,
+      habits: dto.persona.habits,
+      city: dto.persona.city,
+      language: dto.persona.language,
+      linksText: dto.persona.links.map((link) => `${link.title} | ${link.url}`).join('\n'),
+    },
+    timings: { ...dto.timings },
+    limits: { ...dto.limits },
+    guard: {
+      similarityThreshold: dto.guard.similarityThreshold,
+      confidenceThreshold: dto.guard.confidenceThreshold,
+      botAdmissionText: dto.guard.botAdmissionPhrases.join('\n'),
+      promiseText: dto.guard.promisePhrases.join('\n'),
+    },
+    nightWindow: { ...dto.nightWindow },
+  }
 }
 
-/** Все настройки ИИ-агента аккаунта: общее, скрипт, поведение, передача, дожимы. */
+function lines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function toPatch(form: FormState): UpdateAiSettingsRequest {
+  const { linksText, ...persona } = form.persona
+  const { botAdmissionText, promiseText, ...guard } = form.guard
+  return {
+    enabled: form.enabled,
+    dryRun: form.dryRun,
+    defaultChatMode: form.defaultChatMode,
+    assistantForExistingChats: form.assistantForExistingChats,
+    markRead: form.markRead,
+    notifyTelegram: form.notifyTelegram,
+    handoffPeer: form.handoffPeer.trim() || null,
+    persona: {
+      ...persona,
+      links: lines(linksText).map((line) => {
+        const [title, url] = line.split('|').map((part) => part.trim())
+        return url ? { title, url } : { title, url: title }
+      }),
+    },
+    timings: form.timings,
+    limits: form.limits,
+    guard: {
+      ...guard,
+      botAdmissionPhrases: lines(botAdmissionText),
+      promisePhrases: lines(promiseText),
+    },
+    nightWindow: form.nightWindow,
+  }
+}
+
+const TIMING_FIELDS: { key: keyof TimingsDto; label: string; hint: string }[] = [
+  { key: 'debounceSec', label: 'Окно тишины, с', hint: 'сколько ждать после последнего сообщения клиента' },
+  { key: 'debounceMaxSec', label: 'Максимум ожидания пачки, с', hint: 'от первого сообщения пачки' },
+  { key: 'greetingDebounceMaxSec', label: 'Максимум ожидания на приветствии, с', hint: 'чтобы уложиться в 5 минут' },
+  { key: 'firstReplyDelayMinSec', label: 'Первый ответ: от, с', hint: 'человеческая задержка' },
+  { key: 'firstReplyDelayMaxSec', label: 'Первый ответ: до, с', hint: '' },
+  { key: 'birthNudgeAfterMin', label: 'Напомнить про дату через, мин', hint: 'если клиент молчит' },
+  { key: 'diagnosticsDelayMin', label: 'Диагностика через, мин', hint: 'после подтверждения запроса' },
+  { key: 'reengageAfterReadMin', label: 'Вопрос-возврат после прочтения, мин', hint: '' },
+  { key: 'reengageIfUnreadHours', label: 'Вопрос-возврат, если не прочитано, ч', hint: '' },
+  { key: 'touchIntervalMinHours', label: 'Интервал касаний: от, ч', hint: '' },
+  { key: 'touchIntervalMaxHours', label: 'Интервал касаний: до, ч', hint: '' },
+  { key: 'maxReminders', label: 'Напоминаний после скидки', hint: '' },
+  { key: 'superviseTimeoutHours', label: 'Ожидание подтверждения (supervised), ч', hint: '' },
+]
+
+const LIMIT_FIELDS: { key: keyof LimitsDto; label: string }[] = [
+  { key: 'llmCallsPerHour', label: 'Вызовов модели в час' },
+  { key: 'llmCallsPerDay', label: 'Вызовов модели в сутки' },
+  { key: 'botMessagesPerHour', label: 'Сообщений бота в час' },
+  { key: 'botMessagesPerChatPerDay', label: 'Сообщений бота в чат за сутки' },
+  { key: 'autoMessagesWithoutReply', label: 'Сообщений подряд без ответа клиента' },
+]
+
+/** Настройки ИИ-агента аккаунта: включение, персона, таймеры, лимиты, guard, уведомления. */
 export function AiSettingsForm({ accountId }: AiSettingsFormProps) {
-  const { data: settings, isLoading, error } = useGetAiSettingsQuery(accountId)
+  const { data, isLoading, error } = useGetAiSettingsQuery(accountId, { skip: accountId === '' })
 
-  if (error) return <Alert severity="error">{getApiErrorMessage(error, 'Не удалось загрузить настройки')}</Alert>
-  if (isLoading || !settings) return <Skeleton variant="rounded" height={320} sx={{ borderRadius: 3 }} />
+  if (error) {
+    return <Alert severity="error">{getApiErrorMessage(error, 'Не удалось загрузить настройки ИИ')}</Alert>
+  }
+  if (isLoading || !data) {
+    return (
+      <Stack spacing={2}>
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} variant="rounded" height={160} sx={{ borderRadius: 3 }} />
+        ))}
+      </Stack>
+    )
+  }
 
-  // Пересобираем форму, когда с сервера пришла новая версия (после сохранения).
-  return <SettingsFormInner key={settings.updatedAt} accountId={accountId} settings={settings} />
+  // key по updatedAt: после сохранения форма пересоздаётся из свежих данных.
+  return <SettingsEditor key={data.updatedAt} accountId={accountId} data={data} />
 }
 
-function SettingsFormInner({ accountId, settings }: { accountId: string; settings: AiSettingsDto }) {
-  const { data: providers } = useGetAiProvidersQuery()
-  const [save, { isLoading: saving }] = useUpdateAiSettingsMutation()
-  const [form, setForm] = useState<FormState>(() => toForm(settings))
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const [savedAt, setSavedAt] = useState<number | null>(null)
-
-  const dirty = useMemo(() => JSON.stringify(toForm(settings)) !== JSON.stringify(form), [settings, form])
+function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettingsDto }) {
+  const { data: health } = useGetAiHealthQuery()
+  const [update, { isLoading: saving, error: saveError, isSuccess }] = useUpdateAiSettingsMutation()
+  const [form, setForm] = useState<FormState>(() => toForm(data))
 
   const patch = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
-  const patchScript = <K extends keyof FormState['script']>(key: K, value: FormState['script'][K]) =>
-    setForm((prev) => ({ ...prev, script: { ...prev.script, [key]: value } }))
+  const patchNested = <K extends 'persona' | 'timings' | 'limits' | 'guard' | 'nightWindow'>(
+    key: K,
+    value: Partial<FormState[K]>,
+  ) => setForm((prev) => ({ ...prev, [key]: { ...prev[key], ...value } }))
 
-  const submit = async () => {
-    setSaveError(null)
-    try {
-      const body: UpdateAiSettingsRequest = {
-        ...form,
-        script: {
-          ...form.script,
-          facts: clean(form.script.facts),
-          forbidden: clean(form.script.forbidden),
-          pinnedStyleExamples: clean(form.script.pinnedStyleExamples),
-          stages: form.script.stages.map((s) => ({ ...s, templates: clean(s.templates) })),
-          faq: form.script.faq.filter((f) => f.q.trim() && f.a.trim()),
-          objections: form.script.objections.filter((o) => o.objection.trim() && o.answer.trim()),
-        },
-      }
-      await save({ accountId, patch: body }).unwrap()
-      setSavedAt(Date.now())
-    } catch (caught) {
-      setSaveError(getApiErrorMessage(caught))
-    }
+  const submit = () => {
+    void update({ accountId, patch: toPatch(form) })
   }
 
-  const selectedProvider = providers?.providers.find((p) => p.name === (form.provider ?? ''))
-  const models = selectedProvider?.models ?? []
-  const providerConfigured = form.provider ? (selectedProvider?.configured ?? true) : true
-
   return (
-    <Stack spacing={3}>
-      <Section title="Общее">
-        <FormControlLabel
-          control={<Switch checked={form.enabled} onChange={(e) => patch('enabled', e.target.checked)} />}
-          label="ИИ разрешён на этом аккаунте"
-        />
-        <Typography variant="body2" color="text.secondary">
-          Даже с включённым флагом ИИ отвечает только в тех чатах, где его включили вручную. Переписка этих чатов
-          отправляется провайдеру ИИ (DeepSeek — зарубежный сервис).
-        </Typography>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+    <Stack spacing={2.5} component="form" onSubmit={(event) => { event.preventDefault(); submit() }}>
+      {form.dryRun && (
+        <Alert severity="info" icon={<ScienceOutlinedIcon fontSize="inherit" />}>
+          <strong>Сухой прогон.</strong> Бот проходит весь цикл и пишет в журнал, что отправил бы, но в Telegram
+          ничего не уходит. Выключите, когда убедитесь, что ходы уместны.
+        </Alert>
+      )}
+      {health && !health.ready && (
+        <Alert severity="warning">
+          Провайдер {health.provider} не готов: {health.enabled ? 'нет ключа в .env' : 'AI_ENABLED=false'}. Бот не
+          будет делать ходов.
+        </Alert>
+      )}
+
+      <Section title="Включение">
+        <Stack spacing={1}>
+          <FormControlLabel
+            control={<Switch checked={form.enabled} onChange={(e) => patch('enabled', e.target.checked)} />}
+            label="Бот включён на аккаунте"
+          />
+          <FormControlLabel
+            control={<Switch checked={form.dryRun} onChange={(e) => patch('dryRun', e.target.checked)} />}
+            label="Сухой прогон (ничего не отправлять)"
+          />
           <TextField
             select
-            label="Провайдер"
-            value={form.provider ?? ''}
-            onChange={(e) => patch('provider', e.target.value || null)}
             size="small"
-            sx={{ minWidth: 220 }}
-            helperText={!providerConfigured ? 'Ключ этого провайдера не задан в .env' : 'Пусто — из настроек сервера'}
-            error={!providerConfigured}
+            label="Режим для новых диалогов"
+            value={form.defaultChatMode}
+            onChange={(e) => patch('defaultChatMode', e.target.value as 'auto' | 'supervised')}
+            helperText={CHAT_MODE_META[form.defaultChatMode].description}
+            sx={{ maxWidth: 420 }}
           >
-            <MenuItem value="">По умолчанию ({providers?.providers.find((p) => p.isDefault)?.name ?? '—'})</MenuItem>
-            {providers?.providers.map((p) => (
-              <MenuItem key={p.name} value={p.name}>
-                {p.name}
-                {!p.configured && ' (ключ не задан)'}
-              </MenuItem>
-            ))}
+            <MenuItem value="auto">{CHAT_MODE_META.auto.label}</MenuItem>
+            <MenuItem value="supervised">{CHAT_MODE_META.supervised.label}</MenuItem>
           </TextField>
-          <TextField
-            select={models.length > 0}
-            label="Модель"
-            value={form.model ?? ''}
-            onChange={(e) => patch('model', e.target.value || null)}
-            size="small"
-            sx={{ minWidth: 220 }}
-            helperText={`Пусто — ${providers?.defaultModel ?? 'по умолчанию'}`}
-          >
-            {models.length > 0 && <MenuItem value="">По умолчанию</MenuItem>}
-            {models.map((m) => (
-              <MenuItem key={m} value={m}>
-                {m}
-              </MenuItem>
-            ))}
-          </TextField>
-        </Stack>
-        <FormControlLabel
-          control={<Switch checked={form.useLearnedStyle} onChange={(e) => patch('useLearnedStyle', e.target.checked)} />}
-          label="Использовать выученный из истории стиль и похожие прошлые ответы"
-        />
-        <TextField
-          label="Сколько похожих прошлых ответов подмешивать"
-          type="number"
-          value={form.retrievalExamples}
-          onChange={(e) => patch('retrievalExamples', Number(e.target.value))}
-          size="small"
-          slotProps={{ htmlInput: { min: 0, max: 20 } }}
-          sx={{ maxWidth: 320 }}
-          disabled={!form.useLearnedStyle}
-        />
-      </Section>
-
-      <Section title="Скрипт продаж" subtitle="Имеет приоритет над тем, что ИИ вывел из истории.">
-        <TextField
-          label="От чьего лица и что продаём"
-          value={form.script.persona}
-          onChange={(e) => patchScript('persona', e.target.value)}
-          multiline
-          minRows={2}
-          fullWidth
-          placeholder="Менеджер Анна, онлайн-школа английского для взрослых"
-        />
-        <TextField
-          label="Тон (уточнение к выученному стилю)"
-          value={form.script.tone}
-          onChange={(e) => patchScript('tone', e.target.value)}
-          multiline
-          fullWidth
-        />
-        <Typography sx={{ fontWeight: 600 }}>Этапы воронки</Typography>
-        <StagesEditor value={form.script.stages} onChange={(stages) => patchScript('stages', stages)} />
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-          <TextField
-            select
-            label="Этап передачи менеджеру"
-            value={form.script.handoffStageKey}
-            onChange={(e) => patchScript('handoffStageKey', e.target.value)}
-            size="small"
-            sx={{ minWidth: 260 }}
-          >
-            {form.script.stages.map((s) => (
-              <MenuItem key={s.key} value={s.key}>
-                {s.name} ({s.key})
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            label="Что писать клиенту при передаче"
-            value={form.script.handoffTemplate}
-            onChange={(e) => patchScript('handoffTemplate', e.target.value)}
-            size="small"
-            fullWidth
-            multiline
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.assistantForExistingChats}
+                onChange={(e) => patch('assistantForExistingChats', e.target.checked)}
+              />
+            }
+            label="В старых чатах готовить черновики менеджеру (иначе бот их не трогает)"
           />
         </Stack>
-        <StringListEditor
-          label="Факты о продукте и условиях"
-          helper="Единственный источник цен, сроков и ссылок для ИИ. Чего здесь нет — он не обещает."
-          value={form.script.facts}
-          onChange={(facts) => patchScript('facts', facts)}
-          rows={5}
-        />
-        <PairListEditor
-          title="Частые вопросы"
-          value={form.script.faq}
-          onChange={(faq) => patchScript('faq', faq)}
-          leftKey="q"
-          rightKey="a"
-          leftLabel="Вопрос клиента"
-          rightLabel="Ответ"
-          empty={{ q: '', a: '' }}
-        />
-        <PairListEditor
-          title="Возражения"
-          value={form.script.objections}
-          onChange={(objections) => patchScript('objections', objections)}
-          leftKey="objection"
-          rightKey="answer"
-          leftLabel="Возражение"
-          rightLabel="Как отрабатываем"
-          empty={{ objection: '', answer: '' }}
-        />
-        <StringListEditor
-          label="Запрещено"
-          helper="Темы и формулировки, которых ИИ должен избегать"
-          value={form.script.forbidden}
-          onChange={(forbidden) => patchScript('forbidden', forbidden)}
-          rows={3}
-        />
-        <StringListEditor
-          label="Ручные примеры стиля"
-          helper="Фразы, которые точно должны звучать как менеджер — идут первыми среди примеров"
-          value={form.script.pinnedStyleExamples}
-          onChange={(v) => patchScript('pinnedStyleExamples', v)}
-          rows={3}
-        />
       </Section>
 
-      <Section title="Поведение">
-        <Box sx={styles.fieldGrid}>
-          <NumberField
-            label="Пауза после сообщения клиента"
-            unit="сек"
-            helper="Ждём, не допишет ли клиент ещё"
-            value={form.debounceSec}
-            min={5}
-            max={600}
-            onChange={(v) => patch('debounceSec', v)}
-          />
-          <NumberField
-            label="Потолок задержки ответа"
-            unit="сек"
-            helper="Сама задержка — из выученного времени реакции менеджера"
-            value={form.replyDelayCapSec}
-            min={15}
-            max={3600}
-            onChange={(v) => patch('replyDelayCapSec', v)}
-          />
-          <NumberField
-            label="Сообщений истории в контексте"
-            unit="шт."
-            helper="Сколько последних сообщений видит модель"
-            value={form.contextMessages}
-            min={4}
-            max={100}
-            onChange={(v) => patch('contextMessages', v)}
-          />
-          <NumberField
-            label="Лимит сообщений ИИ в чате"
-            unit="шт."
-            helper="После него ИИ останавливается и зовёт менеджера"
-            value={form.maxAiMessagesPerChat}
-            min={1}
-            max={500}
-            onChange={(v) => patch('maxAiMessagesPerChat', v)}
-          />
-          <NumberField
-            label="Лимит сообщений ИИ в день"
-            unit="шт."
-            helper="На весь аккаунт, включая дожимы"
-            value={form.maxAiMessagesPerDay}
-            min={1}
-            max={5000}
-            onChange={(v) => patch('maxAiMessagesPerDay', v)}
-          />
-        </Box>
-        <FormControlLabel
-          control={<Switch checked={form.markRead} onChange={(e) => patch('markRead', e.target.checked)} />}
-          label="Отмечать сообщения прочитанными перед ответом"
-        />
-        <Divider />
-        <FormControlLabel
-          control={
-            <Switch
-              checked={form.workingHours !== null}
-              onChange={(e) => patch('workingHours', e.target.checked ? DEFAULT_HOURS : null)}
+      <Section title="Персона" subtitle="От чьего лица пишет бот. Тексты библиотеки должны совпадать по полу.">
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Имя"
+              value={form.persona.name}
+              onChange={(e) => patchNested('persona', { name: e.target.value })}
             />
-          }
-          label="Рабочие часы вручную (иначе — из выученной активности менеджера)"
-        />
-        {form.workingHours && (
-          <Stack spacing={1.5}>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          </Grid>
+          <Grid size={{ xs: 6, sm: 3 }}>
+            <TextField
+              select
+              fullWidth
+              size="small"
+              label="Пол"
+              value={form.persona.gender}
+              onChange={(e) => patchNested('persona', { gender: e.target.value as 'f' | 'm' })}
+            >
+              <MenuItem value="m">мужской</MenuItem>
+              <MenuItem value="f">женский</MenuItem>
+            </TextField>
+          </Grid>
+          <Grid size={{ xs: 6, sm: 3 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Язык"
+              value={form.persona.language}
+              onChange={(e) => patchNested('persona', { language: e.target.value })}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Город"
+              value={form.persona.city}
+              onChange={(e) => patchNested('persona', { city: e.target.value })}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Тон"
+              value={form.persona.tone}
+              onChange={(e) => patchNested('persona', { tone: e.target.value })}
+            />
+          </Grid>
+          <Grid size={12}>
+            <TextField
+              fullWidth
+              multiline
+              minRows={3}
+              size="small"
+              label="Биография"
+              helperText="Кто вы, откуда, чем занимаетесь — так, как рассказали бы клиенту."
+              value={form.persona.bio}
+              onChange={(e) => patchNested('persona', { bio: e.target.value })}
+            />
+          </Grid>
+          <Grid size={12}>
+            <TextField
+              fullWidth
+              multiline
+              minRows={2}
+              size="small"
+              label="Привычки письма"
+              helperText="Эмодзи, скобочки, обращение на «вы», типичные обороты."
+              value={form.persona.habits}
+              onChange={(e) => patchNested('persona', { habits: e.target.value })}
+            />
+          </Grid>
+          <Grid size={12}>
+            <TextField
+              fullWidth
+              multiline
+              minRows={2}
+              size="small"
+              label="Ссылки"
+              helperText="По одной на строку: «Instagram | https://…». Только эти ссылки бот может называть."
+              value={form.persona.linksText}
+              onChange={(e) => patchNested('persona', { linksText: e.target.value })}
+            />
+          </Grid>
+        </Grid>
+      </Section>
+
+      <Section title="Таймеры" subtitle="Интервалы воронки. Касания получают случайный разброс автоматически.">
+        <Grid container spacing={2}>
+          {TIMING_FIELDS.map((field) => (
+            <Grid key={field.key} size={{ xs: 12, sm: 6, md: 4 }}>
               <TextField
-                label="Часовой пояс"
-                value={form.workingHours.tz}
-                onChange={(e) => patch('workingHours', { ...form.workingHours!, tz: e.target.value })}
+                fullWidth
                 size="small"
+                type="number"
+                label={field.label}
+                helperText={field.hint || undefined}
+                value={form.timings[field.key]}
+                onChange={(e) => patchNested('timings', { [field.key]: Number(e.target.value) })}
               />
+            </Grid>
+          ))}
+        </Grid>
+      </Section>
+
+      <Section title="Лимиты и проверки">
+        <Grid container spacing={2}>
+          {LIMIT_FIELDS.map((field) => (
+            <Grid key={field.key} size={{ xs: 12, sm: 6, md: 4 }}>
               <TextField
-                label="С"
-                type="time"
-                value={form.workingHours.from}
-                onChange={(e) => patch('workingHours', { ...form.workingHours!, from: e.target.value })}
+                fullWidth
                 size="small"
+                type="number"
+                label={field.label}
+                value={form.limits[field.key]}
+                onChange={(e) => patchNested('limits', { [field.key]: Number(e.target.value) })}
               />
-              <TextField
-                label="До"
-                type="time"
-                value={form.workingHours.to}
-                onChange={(e) => patch('workingHours', { ...form.workingHours!, to: e.target.value })}
-                size="small"
+            </Grid>
+          ))}
+          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+            <TextField
+              fullWidth
+              size="small"
+              type="number"
+              label="Порог похожести на уже сказанное (0–1)"
+              slotProps={{ htmlInput: { step: 0.05, min: 0.3, max: 1 } }}
+              value={form.guard.similarityThreshold}
+              onChange={(e) => patchNested('guard', { similarityThreshold: Number(e.target.value) })}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+            <TextField
+              fullWidth
+              size="small"
+              type="number"
+              label="Минимальная уверенность модели (0–1)"
+              slotProps={{ htmlInput: { step: 0.05, min: 0, max: 1 } }}
+              value={form.guard.confidenceThreshold}
+              onChange={(e) => patchNested('guard', { confidenceThreshold: Number(e.target.value) })}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <TextField
+              fullWidth
+              multiline
+              minRows={4}
+              size="small"
+              label="Стоп-фразы: признания «я бот»"
+              helperText="По одной на строку. Ответ с такой фразой переписывается."
+              value={form.guard.botAdmissionText}
+              onChange={(e) => patchNested('guard', { botAdmissionText: e.target.value })}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <TextField
+              fullWidth
+              multiline
+              minRows={4}
+              size="small"
+              label="Стоп-фразы: обещания результата"
+              helperText="По одной на строку."
+              value={form.guard.promiseText}
+              onChange={(e) => patchNested('guard', { promiseText: e.target.value })}
+            />
+          </Grid>
+        </Grid>
+      </Section>
+
+      <Section title="Ночное окно" subtitle="Касания в этот промежуток сдвигаются на утро. Первый ответ лиду — всегда сразу.">
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' } }}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.nightWindow.enabled}
+                onChange={(e) => patchNested('nightWindow', { enabled: e.target.checked })}
               />
-            </Stack>
-            <Stack direction="row" spacing={0} sx={{ flexWrap: 'wrap' }}>
-              {WEEKDAY_LABELS.map((label, i) => {
-                const day = i + 1
-                const checked = form.workingHours!.days.includes(day)
-                return (
-                  <FormControlLabel
-                    key={day}
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={checked}
-                        onChange={(e) => {
-                          const days = e.target.checked
-                            ? [...form.workingHours!.days, day].sort()
-                            : form.workingHours!.days.filter((d) => d !== day)
-                          patch('workingHours', { ...form.workingHours!, days })
-                        }}
-                      />
-                    }
-                    label={label}
-                  />
-                )
-              })}
-            </Stack>
-          </Stack>
+            }
+            label="Включено"
+          />
+          <TextField
+            size="small"
+            label="С"
+            value={form.nightWindow.from}
+            onChange={(e) => patchNested('nightWindow', { from: e.target.value })}
+            sx={{ width: 100 }}
+          />
+          <TextField
+            size="small"
+            label="До"
+            value={form.nightWindow.to}
+            onChange={(e) => patchNested('nightWindow', { to: e.target.value })}
+            sx={{ width: 100 }}
+          />
+          <TextField
+            size="small"
+            label="Часовой пояс"
+            value={form.nightWindow.tz}
+            onChange={(e) => patchNested('nightWindow', { tz: e.target.value })}
+            sx={{ width: 220 }}
+          />
+        </Stack>
+      </Section>
+
+      <Section title="Уведомления и мелочи">
+        <Stack spacing={1}>
+          <FormControlLabel
+            control={<Switch checked={form.markRead} onChange={(e) => patch('markRead', e.target.checked)} />}
+            label="Отмечать входящие прочитанными перед ответом"
+          />
+          <FormControlLabel
+            control={
+              <Switch checked={form.notifyTelegram} onChange={(e) => patch('notifyTelegram', e.target.checked)} />
+            }
+            label="Дублировать передачи и черновики в Telegram"
+          />
+          <TextField
+            size="small"
+            label="Кому слать уведомления"
+            helperText="@username или телефон; пусто — в «Избранное» аккаунта."
+            value={form.handoffPeer}
+            onChange={(e) => patch('handoffPeer', e.target.value)}
+            sx={{ maxWidth: 420 }}
+          />
+        </Stack>
+      </Section>
+
+      {saveError && <Alert severity="error">{getApiErrorMessage(saveError, 'Не удалось сохранить')}</Alert>}
+
+      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+        <Button type="submit" variant="contained" loading={saving}>
+          Сохранить
+        </Button>
+        {isSuccess && !saving && <Chip size="small" color="success" variant="outlined" label="Сохранено" />}
+        {data && (
+          <Typography variant="caption" color="text.secondary">
+            Обновлено {new Date(data.updatedAt).toLocaleString('ru-RU')}
+          </Typography>
         )}
-      </Section>
-
-      <Section title="Передача менеджеру">
-        <FormControlLabel
-          control={<Switch checked={form.pauseOnHandoff} onChange={(e) => patch('pauseOnHandoff', e.target.checked)} />}
-          label="Останавливать ИИ в чате, когда клиент готов к оплате"
-        />
-        <FormControlLabel
-          control={<Switch checked={form.notifyTelegram} onChange={(e) => patch('notifyTelegram', e.target.checked)} />}
-          label="Присылать уведомление в Telegram"
-        />
-        <TextField
-          label="Кому слать уведомления"
-          value={form.handoffPeer ?? ''}
-          onChange={(e) => patch('handoffPeer', e.target.value || null)}
-          size="small"
-          helperText="@username или телефон. Пусто — в «Избранное» этого аккаунта."
-          sx={{ maxWidth: 360 }}
-          disabled={!form.notifyTelegram}
-        />
-      </Section>
-
-      <Section title="Дожимы" subtitle="Если клиент замолчал после нашего ответа, ИИ напомнит о себе по шагам.">
-        <FormControlLabel
-          control={<Switch checked={form.followupsEnabled} onChange={(e) => patch('followupsEnabled', e.target.checked)} />}
-          label="Дожимать молчащих клиентов"
-        />
-        <FollowupsEditor value={form.followups} onChange={(followups) => patch('followups', followups)} />
-        <Typography variant="body2" color="text.secondary">
-          Серия сбрасывается, как только клиент ответит; останавливается, если он просит не писать, или по кнопке в чате.
-        </Typography>
-      </Section>
-
-      {saveError && <Alert severity="error">{saveError}</Alert>}
-
-      <Paper elevation={dirty ? 6 : 0} sx={[styles.actionBar, dirty && styles.actionBarDirty]}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
-          {dirty ? (
-            <>
-              <EditOutlinedIcon fontSize="small" color="primary" />
-              <Typography sx={styles.actionStatus}>Есть несохранённые изменения</Typography>
-            </>
-          ) : (
-            <>
-              <CheckCircleOutlinedIcon fontSize="small" color="success" />
-              <Typography sx={styles.actionStatus}>
-                {savedAt ? 'Сохранено' : `Сохранено ${formatRelative(settings.updatedAt)}`}
-              </Typography>
-            </>
-          )}
-        </Stack>
-        <Stack direction="row" spacing={1}>
-          <Button variant="outlined" disabled={!dirty || saving} onClick={() => setForm(toForm(settings))}>
-            Отменить
-          </Button>
-          <Button variant="contained" disabled={!dirty} loading={saving} onClick={() => void submit()}>
-            Сохранить
-          </Button>
-        </Stack>
-      </Paper>
+      </Stack>
     </Stack>
   )
 }
 
-const styles = {
-  fieldGrid: {
-    display: 'grid',
-    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' },
-    gap: 2,
-    alignItems: 'start',
-  },
-  actionBar: {
-    position: 'sticky',
-    bottom: 16,
-    zIndex: 2,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 2,
-    flexWrap: 'wrap',
-    px: 2.5,
-    py: 1.5,
-    borderRadius: 3,
-    border: '1px solid',
-    borderColor: 'divider',
-    bgcolor: 'background.paper',
-    transition: 'box-shadow 160ms ease, border-color 160ms ease',
-  },
-  actionBarDirty: {
-    borderColor: 'primary.main',
-  },
-  actionStatus: {
-    fontSize: 14,
-    fontWeight: 500,
-    color: 'text.secondary',
-    whiteSpace: 'nowrap',
-  },
-} satisfies SxStyles
-
-function clean(items: string[]): string[] {
-  return items.map((s) => s.trim()).filter(Boolean)
-}
-
-function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, borderRadius: 3 }}>
-      <Typography variant="h6" sx={{ mb: subtitle ? 0.5 : 2 }}>
-        {title}
-      </Typography>
-      {subtitle && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {subtitle}
-        </Typography>
-      )}
-      <Stack spacing={2}>{children}</Stack>
-    </Paper>
-  )
-}
-
-function NumberField({
-  label,
-  unit,
-  helper,
-  value,
-  min,
-  max,
-  onChange,
-}: {
-  label: string
-  unit?: string
-  helper?: string
-  value: number
-  min: number
-  max: number
-  onChange: (value: number) => void
-}) {
-  return (
-    <TextField
-      label={label}
-      type="number"
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      size="small"
-      fullWidth
-      helperText={helper}
-      slotProps={{
-        htmlInput: { min, max },
-        input: unit ? { endAdornment: <InputAdornment position="end">{unit}</InputAdornment> } : undefined,
-      }}
-    />
+    <Card variant="outlined" sx={{ borderRadius: 3 }}>
+      <CardContent>
+        <Box sx={{ mb: 2 }}>
+          <Typography sx={{ fontWeight: 700 }}>{title}</Typography>
+          {subtitle && (
+            <Typography variant="body2" color="text.secondary">
+              {subtitle}
+            </Typography>
+          )}
+        </Box>
+        {children}
+      </CardContent>
+    </Card>
   )
 }

@@ -16,7 +16,7 @@ import {
 } from '../client/telegram-client.factory.js';
 import { TelegramAccountEntity } from '../entities/telegram-account.entity.js';
 import type { TelegramAccountStatus } from '../entities/telegram-account.entity.js';
-import type { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
+import { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
 import { SessionCrypto } from '../lib/session-crypto.js';
 import {
   TelegramUnavailableError,
@@ -81,6 +81,8 @@ interface LiveAccount {
   client: TelegramClient;
   handler: (event: NewMessageEvent) => void;
   stateHandler: (update: UpdateConnectionState) => void;
+  /** Сырые апдейты: прочтение наших сообщений и «печатает…». */
+  rawHandler: (update: Api.TypeUpdate) => void;
   resyncTimer: NodeJS.Timeout | null;
   syncing: Promise<void> | null;
   syncMode: SyncMode | null;
@@ -141,6 +143,8 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     private readonly events: TelegramEventsService,
     @InjectRepository(TelegramAccountEntity)
     private readonly accounts: Repository<TelegramAccountEntity>,
+    @InjectRepository(TelegramChatEntity)
+    private readonly chats: Repository<TelegramChatEntity>,
   ) {
     this.crypto = new SessionCrypto(
       config.sessionSecret || 'telegram-disabled',
@@ -267,6 +271,10 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
         live.stateHandler as never,
         new events.Raw({ types: [UpdateConnectionState] }),
       );
+      live.client.removeEventHandler(
+        live.rawHandler as never,
+        new events.Raw({ types: [Tl.UpdateReadHistoryOutbox, Tl.UpdateUserTyping] }),
+      );
     } catch {
       // Обработчики уже сняты вместе с клиентом.
     }
@@ -312,6 +320,7 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       client,
       handler: () => undefined,
       stateHandler: () => undefined,
+      rawHandler: () => undefined,
       resyncTimer: null,
       syncing: null,
       syncMode: null,
@@ -329,12 +338,19 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       void this.onNewMessage(live, event);
     };
     live.stateHandler = (update) => this.onConnectionState(live, update);
+    live.rawHandler = (update) => {
+      void this.onRawUpdate(live, update);
+    };
     this.live.set(account.id, live);
 
     client.addEventHandler(live.handler, new events.NewMessage({}));
     client.addEventHandler(
       live.stateHandler as never,
       new events.Raw({ types: [UpdateConnectionState] }),
+    );
+    client.addEventHandler(
+      live.rawHandler as never,
+      new events.Raw({ types: [Tl.UpdateReadHistoryOutbox, Tl.UpdateUserTyping] }),
     );
     client.onError = async (error: Error) => {
       if (isAuthLost(error)) {
@@ -491,6 +507,33 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     const text = `Аккаунт ${live.label}: соединение ${previous} → ${state} (в прошлом состоянии ${formatDuration(heldFor)})`;
     if (state === 'connected') this.logger.log(text);
     else this.logger.warn(text);
+  }
+
+  /**
+   * Сырые апдейты, которые teleproto не заворачивает в события:
+   * - UpdateReadHistoryOutbox — собеседник прочитал наши сообщения до max_id;
+   * - UpdateUserTyping — собеседник печатает (в базу не пишем, только шина).
+   */
+  private async onRawUpdate(live: LiveAccount, update: Api.TypeUpdate): Promise<void> {
+    if (live.stopped) return;
+    try {
+      if (update instanceof Tl.UpdateUserTyping) {
+        this.events.emit({ kind: 'typing', accountId: live.id, peerId: update.userId.toString() });
+        return;
+      }
+      if (update instanceof Tl.UpdateReadHistoryOutbox) {
+        if (!(update.peer instanceof Tl.PeerUser)) return;
+        const peerId = update.peer.userId.toString();
+        const chat = await this.chats.findOne({ where: { accountId: live.id, peerId } });
+        if (!chat) return;
+        const changed = await this.ingest.applyReadOutbox(chat, update.maxId);
+        if (!changed) return;
+        this.logger.debug(`Аккаунт ${live.label}: ${chat.peerName} прочитал до #${update.maxId}`);
+        this.events.emit({ kind: 'read', accountId: live.id, chat, maxId: update.maxId });
+      }
+    } catch (error) {
+      this.logger.warn(`Аккаунт ${live.label}: сырой апдейт не обработан — ${describeError(error)}`);
+    }
   }
 
   private async onNewMessage(

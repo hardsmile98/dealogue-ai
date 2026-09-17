@@ -1,7 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { AiConfig, OPENAI_COMPATIBLE_PRESETS } from '../ai.config.js';
 import type { AiProviderName } from '../ai.config.js';
-import { AnthropicProvider } from './anthropic.provider.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import type { LlmProvider } from './llm-provider.interface.js';
 import { MockProvider } from './mock.provider.js';
@@ -18,8 +17,8 @@ export class LlmProviderFactory {
 
   constructor(private readonly config: AiConfig) {}
 
-  /** Провайдер аккаунта: из настроек или из env. Бросает 503, если не настроен. */
-  resolve(name: string | null | undefined): { provider: LlmProvider; breaker: CircuitBreaker; name: AiProviderName } {
+  /** Провайдер из env. Бросает 503, если не настроен. */
+  resolve(name?: string | null): { provider: LlmProvider; breaker: CircuitBreaker; name: AiProviderName } {
     const resolved = (name ?? this.config.provider) as AiProviderName;
     if (!this.config.isProviderConfigured(resolved)) {
       throw new ServiceUnavailableException(
@@ -48,7 +47,7 @@ export class LlmProviderFactory {
 
   /** Для /ai/providers и /health. */
   describe(): { name: AiProviderName; models: string[]; configured: boolean; breaker: CircuitBreaker['state'] }[] {
-    return (['deepseek', 'openai', 'anthropic', 'mock'] as AiProviderName[]).map((name) => ({
+    return (['deepseek', 'openai', 'mock'] as AiProviderName[]).map((name) => ({
       name,
       models: modelsFor(name),
       configured: this.config.isProviderConfigured(name),
@@ -76,10 +75,7 @@ export class LlmProviderFactory {
           httpProxy: this.config.httpProxy,
           supportsJsonSchema: true,
         });
-      case 'anthropic':
-        return new AnthropicProvider(this.config.anthropicApiKey);
       case 'mock':
-        return new MockProvider();
       default:
         return new MockProvider();
     }
@@ -92,8 +88,6 @@ function modelsFor(name: AiProviderName): string[] {
       return OPENAI_COMPATIBLE_PRESETS.deepseek.models;
     case 'openai':
       return OPENAI_COMPATIBLE_PRESETS.openai.models;
-    case 'anthropic':
-      return ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'];
     case 'mock':
       return ['mock'];
     default:

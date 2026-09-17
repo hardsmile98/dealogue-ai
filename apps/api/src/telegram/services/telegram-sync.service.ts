@@ -21,6 +21,8 @@ interface DialogLike {
   isUser: boolean;
   entity?: unknown;
   message?: Api.Message;
+  /** Сырой Api.Dialog — оттуда берём, до какого id собеседник прочитал наши сообщения. */
+  dialog?: { readOutboxMaxId?: number };
 }
 
 /** Итог прохода синхронизации — для логов рантайма. */
@@ -114,6 +116,12 @@ export class TelegramSyncService {
         await this.syncDialog(accountId, client, user, chat);
         caughtUp += 1;
         continue;
+      }
+
+      // Прочтения, пропущенные за время офлайна, — из самого диалога.
+      const readMax = dialog.dialog?.readOutboxMaxId ?? 0;
+      if (readMax > chat.readOutboxMaxId) {
+        await this.ingest.applyReadOutbox(chat, readMax);
       }
 
       const newestId = dialog.message?.id ?? 0;

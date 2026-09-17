@@ -13,6 +13,21 @@ export interface TelegramMessageEvent {
   direction: MessageDirection;
 }
 
+/** Собеседник прочитал наши исходящие до maxId включительно (read_at уже проставлен). */
+export interface TelegramReadEvent {
+  kind: 'read';
+  accountId: string;
+  chat: TelegramChatEntity;
+  maxId: number;
+}
+
+/** Собеседник печатает — в базу не пишется, нужно для продления дебаунса. */
+export interface TelegramTypingEvent {
+  kind: 'typing';
+  accountId: string;
+  peerId: string;
+}
+
 /** Клиент аккаунта поднят и готов принимать/отправлять сообщения. */
 export interface TelegramAccountLiveEvent {
   kind: 'account-live';
@@ -27,6 +42,8 @@ export interface TelegramAccountStoppedEvent {
 
 export type TelegramLiveEvent =
   | TelegramMessageEvent
+  | TelegramReadEvent
+  | TelegramTypingEvent
   | TelegramAccountLiveEvent
   | TelegramAccountStoppedEvent;
 

@@ -7,7 +7,14 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type AiJobType = 'reply' | 'followup' | 'digest' | 'import';
+/**
+ * Типы заданий (раздел 6.14 ТЗ):
+ * - `inbound` — обработка пачки входящих после дебаунса (повторный enqueue сдвигает run_at);
+ * - `touch` — запланированное касание воронки;
+ * - `notify` — уведомление менеджеру в Telegram;
+ * - `stats` — пересчёт статистики аккаунта.
+ */
+export type AiJobType = 'inbound' | 'touch' | 'notify' | 'stats';
 export type AiJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
 /**
@@ -30,7 +37,7 @@ export class AiJobEntity {
   @Column({ type: 'varchar', length: 16 })
   type: AiJobType;
 
-  /** `reply:{chatId}`, `followup:{chatId}`, `digest:{accountId}`, `import:{accountId}` — один активный job на ключ. */
+  /** `inbound:{chatId}`, `touch:{chatId}`, `notify:{draftId}`, `stats:{accountId}` — один активный job на ключ. */
   @Column({ name: 'dedupe_key', type: 'varchar', length: 64 })
   dedupeKey: string;
 

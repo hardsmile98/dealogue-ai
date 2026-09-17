@@ -5,6 +5,7 @@ import type { Api } from 'teleproto';
 import { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
 import type { MessageDirection } from '../entities/telegram-chat.entity.js';
 import { TelegramMessageEntity } from '../entities/telegram-message.entity.js';
+import type { MediaKind } from '../entities/telegram-message.entity.js';
 import { TelegramDialogStartsService } from './telegram-dialog-starts.service.js';
 
 export interface StoreMessagesOptions {
@@ -23,6 +24,37 @@ export function displayNameOf(user: Api.User): string {
   return `Пользователь ${user.id.toString()}`;
 }
 
+/** Вид вложения по медиа сообщения; null — текст без вложений. */
+export function mediaKindOf(media: Api.TypeMessageMedia | undefined): MediaKind | null {
+  if (!media) return null;
+  switch (media.className) {
+    case 'MessageMediaPhoto':
+      return 'photo';
+    case 'MessageMediaDocument': {
+      const document = (media as Api.MessageMediaDocument).document;
+      const attributes =
+        document && document.className === 'Document'
+          ? (document as Api.Document).attributes
+          : [];
+      for (const attribute of attributes) {
+        if (attribute.className === 'DocumentAttributeSticker') return 'sticker';
+        if (attribute.className === 'DocumentAttributeAudio') {
+          return (attribute as Api.DocumentAttributeAudio).voice ? 'voice' : 'audio';
+        }
+        if (attribute.className === 'DocumentAttributeVideo') {
+          return (attribute as Api.DocumentAttributeVideo).roundMessage ? 'video_note' : 'video';
+        }
+      }
+      return 'document';
+    }
+    case 'MessageMediaWebPage':
+      // Превью ссылки — это всё ещё текст.
+      return null;
+    default:
+      return 'other';
+  }
+}
+
 /** Подпись для сообщения без текста. */
 export function describeMedia(media: Api.TypeMessageMedia | undefined): string {
   if (!media) return '[Сообщение]';
@@ -38,25 +70,20 @@ export function describeMedia(media: Api.TypeMessageMedia | undefined): string {
     case 'MessageMediaPoll':
       return '[Опрос]';
     case 'MessageMediaDocument': {
-      const document = (media as Api.MessageMediaDocument).document;
-      const attributes =
-        document && document.className === 'Document'
-          ? (document as Api.Document).attributes
-          : [];
-      for (const attribute of attributes) {
-        if (attribute.className === 'DocumentAttributeSticker') return '[Стикер]';
-        if (attribute.className === 'DocumentAttributeAudio') {
-          return (attribute as Api.DocumentAttributeAudio).voice
-            ? '[Голосовое сообщение]'
-            : '[Аудио]';
-        }
-        if (attribute.className === 'DocumentAttributeVideo') {
-          return (attribute as Api.DocumentAttributeVideo).roundMessage
-            ? '[Видеосообщение]'
-            : '[Видео]';
-        }
+      switch (mediaKindOf(media)) {
+        case 'sticker':
+          return '[Стикер]';
+        case 'voice':
+          return '[Голосовое сообщение]';
+        case 'audio':
+          return '[Аудио]';
+        case 'video_note':
+          return '[Видеосообщение]';
+        case 'video':
+          return '[Видео]';
+        default:
+          return '[Файл]';
       }
-      return '[Файл]';
     }
     default:
       return '[Вложение]';
@@ -139,13 +166,20 @@ export class TelegramIngestService {
     items: Api.Message[],
     options: StoreMessagesOptions = {},
   ): Promise<void> {
-    const rows = items.map((message) => ({
-      chatId: chat.id,
-      telegramMessageId: message.id,
-      direction: messageDirection(message),
-      text: messageText(message),
-      sentAt: new Date(message.date * 1000),
-    }));
+    const readMax = chat.readOutboxMaxId;
+    const rows = items.map((message) => {
+      const direction = messageDirection(message);
+      return {
+        chatId: chat.id,
+        telegramMessageId: message.id,
+        direction,
+        text: messageText(message),
+        mediaKind: mediaKindOf(message.media),
+        sentAt: new Date(message.date * 1000),
+        // Догруженное исходящее, которое собеседник уже прочитал, — сразу с отметкой.
+        readAt: direction === 'out' && message.id <= readMax ? new Date() : null,
+      };
+    });
 
     if (rows.length > 0) {
       await this.messages
@@ -158,6 +192,64 @@ export class TelegramIngestService {
     }
 
     await this.refreshAggregates(chat, options);
+  }
+
+  /**
+   * Исходящее, которое отправили мы сами (бот или менеджер из веба):
+   * пишем сразу, не дожидаясь эха от Telegram. Эхо потом попадёт в ON CONFLICT.
+   */
+  async storeOwnOutgoing(
+    chat: TelegramChatEntity,
+    message: Api.Message,
+    aiTurnId: string | null,
+  ): Promise<TelegramMessageEntity> {
+    await this.messages
+      .createQueryBuilder()
+      .insert()
+      .into(TelegramMessageEntity)
+      .values({
+        chatId: chat.id,
+        telegramMessageId: message.id,
+        direction: 'out',
+        text: messageText(message),
+        mediaKind: mediaKindOf(message.media),
+        sentAt: new Date(message.date * 1000),
+        readAt: null,
+        aiTurnId,
+      })
+      .orIgnore()
+      .execute();
+    await this.refreshAggregates(chat, {});
+    const row = await this.messages.findOne({ where: { chatId: chat.id, telegramMessageId: message.id } });
+    if (!row) throw new Error(`Не удалось сохранить исходящее #${message.id}`);
+    if (row.aiTurnId !== aiTurnId) {
+      // Эхо успело записаться раньше нас — проставляем автора.
+      row.aiTurnId = aiTurnId;
+      await this.messages.save(row);
+    }
+    return row;
+  }
+
+  /**
+   * Собеседник прочитал наши сообщения до `maxId`: отмечаем исходящие и
+   * запоминаем границу на чате. Возвращает true, если что-то изменилось.
+   */
+  async applyReadOutbox(chat: TelegramChatEntity, maxId: number): Promise<boolean> {
+    if (maxId <= chat.readOutboxMaxId) return false;
+    const now = new Date();
+    await this.messages
+      .createQueryBuilder()
+      .update(TelegramMessageEntity)
+      .set({ readAt: now })
+      .where('chat_id = :chatId AND direction = :direction AND telegram_message_id <= :maxId AND read_at IS NULL', {
+        chatId: chat.id,
+        direction: 'out',
+        maxId,
+      })
+      .execute();
+    chat.readOutboxMaxId = maxId;
+    await this.chats.update(chat.id, { readOutboxMaxId: maxId });
+    return true;
   }
 
   /** Пересчитывает «последнее сообщение», счётчик и, если передано, первое сообщение. */

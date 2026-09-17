@@ -186,6 +186,24 @@ export const chatPanelStyles = {
     gap: 1,
     '& svg': { fontSize: 16 },
   },
+  composer: {
+    px: 2,
+    pt: 1.25,
+    pb: 1,
+    bgcolor: 'background.paper',
+    borderTop: '1px solid',
+    borderColor: 'divider',
+  },
+  composerRow: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 1,
+  },
+  composerHint: {
+    mt: 0.5,
+    fontSize: 11,
+    color: 'text.secondary',
+  },
   threadEmpty: {
     flexGrow: 1,
     display: 'grid',

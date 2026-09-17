@@ -2,41 +2,46 @@ import { useEffect, useRef, useState } from 'react'
 import { useDispatch } from 'react-redux'
 import { connectRealtime, unauthorized } from '@/shared/api'
 import type { RealtimeEvent } from '@/shared/api'
-import { AI_LEARNING_TAG, AI_RUNS_TAG, aiAgentApi } from '@/entities/ai-agent'
+import { AI_SETTINGS_TAG, aiAgentApi } from '@/entities/ai-agent'
 import { ALERT_TAG, alertsApi } from '@/entities/alert'
-import { CHAT_TAG, MESSAGE_TAG } from '@/entities/chat'
+import { CHAT_TAG, MESSAGE_TAG, chatsApi } from '@/entities/chat'
 
-type AgentTags = Parameters<typeof aiAgentApi.util.invalidateTags>[0]
+type ChatTags = Parameters<typeof chatsApi.util.invalidateTags>[0]
 type AlertTags = Parameters<typeof alertsApi.util.invalidateTags>[0]
+type AgentTags = Parameters<typeof aiAgentApi.util.invalidateTags>[0]
 
 /** Какие кэши RTK Query устарели после события. */
-export function tagsForEvent(event: RealtimeEvent): { agent: AgentTags; alerts: AlertTags } {
+export function tagsForEvent(event: RealtimeEvent): { chats: ChatTags; alerts: AlertTags; agent: AgentTags } {
   switch (event.type) {
     case 'alert.created':
     case 'alert.updated':
       return {
-        agent: [{ type: CHAT_TAG, id: event.accountId }],
+        chats: [{ type: CHAT_TAG, id: event.accountId }],
         alerts: [
           { type: ALERT_TAG, id: 'LIST' },
           { type: ALERT_TAG, id: 'COUNT' },
         ],
+        agent: [],
       }
     case 'chat.updated':
-      return { agent: [{ type: CHAT_TAG, id: event.accountId }], alerts: [] }
+    case 'funnel.updated':
+      return { chats: [{ type: CHAT_TAG, id: event.accountId }], alerts: [], agent: [] }
     case 'message.created':
+    case 'turn.sent':
       return {
-        agent: [
+        chats: [
           { type: MESSAGE_TAG, id: event.chatId },
           { type: CHAT_TAG, id: event.accountId },
         ],
         alerts: [],
+        agent: [],
       }
-    case 'ai.run':
-      return { agent: [{ type: AI_RUNS_TAG, id: event.chatId }], alerts: [] }
-    case 'learning.progress':
-      return { agent: [{ type: AI_LEARNING_TAG, id: event.accountId }], alerts: [] }
+    case 'message.read':
+      return { chats: [{ type: MESSAGE_TAG, id: event.chatId }], alerts: [], agent: [] }
+    case 'settings.updated':
+      return { chats: [], alerts: [], agent: [{ type: AI_SETTINGS_TAG, id: event.accountId }] }
     default:
-      return { agent: [], alerts: [] }
+      return { chats: [], alerts: [], agent: [] }
   }
 }
 
@@ -55,9 +60,10 @@ export function useRealtimeEvents(onEvent?: (event: RealtimeEvent) => void): { c
   useEffect(() => {
     const connection = connectRealtime(
       (event) => {
-        const { agent, alerts } = tagsForEvent(event)
-        if (agent.length > 0) dispatch(aiAgentApi.util.invalidateTags(agent))
+        const { chats, alerts, agent } = tagsForEvent(event)
+        if (chats.length > 0) dispatch(chatsApi.util.invalidateTags(chats))
         if (alerts.length > 0) dispatch(alertsApi.util.invalidateTags(alerts))
+        if (agent.length > 0) dispatch(aiAgentApi.util.invalidateTags(agent))
         handlerRef.current?.(event)
       },
       setConnected,

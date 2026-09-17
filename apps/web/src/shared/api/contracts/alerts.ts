@@ -1,15 +1,24 @@
 /** Зеркало AlertDto из apps/api/src/ai/ai.types.ts. */
 
-export type AlertType = 'ready_to_pay' | 'needs_human' | 'ai_error'
+export type AlertType =
+  | 'handoff'
+  | 'minor'
+  | 'media'
+  | 'stale_lead'
+  | 'library_incomplete'
+  | 'ai_error'
+  | 'anomaly'
 export type AlertStatus = 'open' | 'acknowledged' | 'resolved'
 
 export interface AlertPayloadDto {
+  /** Причина передачи менеджеру (для handoff). */
   reason?: string
   stage?: string | null
-  confidence?: number
   lastClientText?: string
-  aiRunId?: string
+  draftId?: string
+  turnId?: string
   error?: string
+  detail?: string
 }
 
 export interface AlertDto {

@@ -49,6 +49,23 @@ export const messageBubbleStyles = {
     color: 'primary.main',
     '& svg': { fontSize: 12 },
   },
+  mediaTag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    mr: 0.5,
+    verticalAlign: 'middle',
+    color: 'text.secondary',
+    '& svg': { fontSize: 14 },
+  },
+  readMark: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    color: 'text.disabled',
+    '& svg': { fontSize: 14 },
+  },
+  readMarkRead: {
+    color: 'primary.main',
+  },
   firstBadge: {
     mb: 0.75,
     display: 'flex',

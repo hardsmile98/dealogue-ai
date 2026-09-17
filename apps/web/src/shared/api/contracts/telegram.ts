@@ -29,11 +29,30 @@ export interface TelegramAccountDto {
 
 export type MessageDirection = 'in' | 'out'
 
+/** Вид вложения; null — обычный текст. */
+export type MediaKind = 'photo' | 'voice' | 'video' | 'video_note' | 'audio' | 'document' | 'sticker' | 'other'
+
 export interface ChatPeerDto {
   id: string
   name: string
   username: string | null
   phone: string | null
+}
+
+/** Причина пометки «требует внимания» — тип открытого алерта. */
+export type AttentionReason =
+  | 'handoff'
+  | 'minor'
+  | 'media'
+  | 'stale_lead'
+  | 'library_incomplete'
+  | 'ai_error'
+  | 'anomaly'
+
+export interface ChatAttentionDto {
+  needed: boolean
+  reason: AttentionReason | null
+  at: string | null
 }
 
 export interface ChatDto {
@@ -50,43 +69,30 @@ export interface ChatDto {
   firstMessageAt: string
   /** Код, вычлененный из первого входящего сообщения («Код: 5» → "5"), или null. */
   leadCode: string | null
-  ai: ChatAiStateDto
+  /** До какого id собеседник прочитал наши сообщения. */
+  readOutboxMaxId: number
   attention: ChatAttentionDto
-}
-
-/** Почему ИИ в чате остановлен (null — работает или выключен вручную). */
-export type AiPausedReason = 'manual_reply' | 'handoff' | 'needs_human' | 'limit' | 'error'
-
-export type AttentionReason = 'ready_to_pay' | 'needs_human' | 'ai_error'
-
-export interface ChatAiStateDto {
-  enabled: boolean
-  /** Ключ текущего этапа воронки по мнению ИИ. */
-  stage: string | null
-  pausedReason: AiPausedReason | null
-  pausedAt: string | null
-  /** Сколько сообщений ИИ отправил с момента последнего включения. */
-  messagesCount: number
-  lastReplyAt: string | null
-  /** Сколько дожимов уже отправлено в текущей серии молчания клиента. */
-  followupStep: number
-  followupNextAt: string | null
-}
-
-export interface ChatAttentionDto {
-  needed: boolean
-  reason: AttentionReason | null
-  at: string | null
 }
 
 export interface MessageDto {
   id: string
   chatId: string
+  telegramMessageId: number
   direction: MessageDirection
   text: string
+  mediaKind: MediaKind | null
   sentAt: string
-  /** Сообщение отправил ИИ, а не человек. */
-  byAi: boolean
+  /** Когда собеседник прочитал наше исходящее. */
+  readAt: string | null
+  /** Сообщение отправил бот (ход ИИ-агента), а не человек. */
+  byBot: boolean
+  aiTurnId: string | null
+}
+
+export interface SendMessageRequest {
+  accountId: string
+  chatId: string
+  text: string
 }
 
 export interface DailyStatsDto {
@@ -129,6 +135,11 @@ export interface AccountStatsQuery {
 
 export interface ChatsQuery {
   accountId: string
+}
+
+export interface ChatQuery {
+  accountId: string
+  chatId: string
 }
 
 // --- Подключение аккаунта (MTProto-логин пользователя) -----------------

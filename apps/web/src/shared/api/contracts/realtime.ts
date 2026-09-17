@@ -5,17 +5,20 @@ export type RealtimeEvent =
   | { type: 'alert.updated'; accountId: string; chatId: string | null; alertId: string; status: string }
   | { type: 'chat.updated'; accountId: string; chatId: string }
   | { type: 'message.created'; accountId: string; chatId: string }
-  | { type: 'ai.run'; accountId: string; chatId: string; status: string }
+  /** Собеседник прочитал наши сообщения до maxId включительно. */
+  | { type: 'message.read'; accountId: string; chatId: string; maxId: number }
+  | { type: 'settings.updated'; accountId: string }
+  | { type: 'draft.created'; accountId: string; chatId: string; draftId: string }
+  | { type: 'draft.updated'; accountId: string; chatId: string; draftId: string; status: string }
   | {
-      type: 'learning.progress'
+      type: 'funnel.updated'
       accountId: string
-      job: 'import' | 'digest'
-      status: 'running' | 'done' | 'error' | 'cancelled'
-      done: number
-      total: number
-      stage?: string
-      error?: string
+      chatId: string
+      stage: string
+      mode: string
+      nextTouchAt: string | null
     }
+  | { type: 'turn.sent'; accountId: string; chatId: string; turnId: string }
 
 export interface RealtimeTicketResponse {
   ticket: string

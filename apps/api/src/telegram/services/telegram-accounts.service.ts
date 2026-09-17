@@ -27,10 +27,15 @@ import type {
   TelegramAccountDto,
 } from '../telegram.types.js';
 import { TelegramDialogStartsService } from './telegram-dialog-starts.service.js';
+import { TelegramEventsService } from './telegram-events.service.js';
+import { TelegramIngestService } from './telegram-ingest.service.js';
+import { TelegramOutboundService } from './telegram-outbound.service.js';
 import { TelegramRuntimeService } from './telegram-runtime.service.js';
 
 const MAX_PERIOD_DAYS = 366;
 const CHATS_LIMIT = 500;
+/** Лимит Telegram на одно сообщение. */
+const MESSAGE_MAX_LENGTH = 4096;
 
 /** Чтение для контроллера: список, карточка, удаление, чаты, сообщения, статистика. */
 @Injectable()
@@ -39,6 +44,9 @@ export class TelegramAccountsService {
     private readonly config: TelegramConfig,
     private readonly runtime: TelegramRuntimeService,
     private readonly dialogStarts: TelegramDialogStartsService,
+    private readonly outbound: TelegramOutboundService,
+    private readonly ingest: TelegramIngestService,
+    private readonly events: TelegramEventsService,
     @InjectRepository(TelegramAccountEntity)
     private readonly accounts: Repository<TelegramAccountEntity>,
     @InjectRepository(TelegramChatEntity)
@@ -84,6 +92,27 @@ export class TelegramAccountsService {
       order: { sentAt: 'ASC', telegramMessageId: 'ASC' },
     });
     return rows.map(toMessageDto);
+  }
+
+  /**
+   * Сообщение от менеджера из веб-интерфейса. Пишется в базу сразу как
+   * ручное (без ai_turn_id) и публикуется в шину как обычное исходящее —
+   * ИИ-агент реагирует на него так же, как на ответ из самого Telegram.
+   */
+  async sendMessage(userId: string, accountId: string, chatId: string, rawText: string): Promise<MessageDto> {
+    const { account, chat } = await this.requireChat(userId, accountId, chatId);
+    const text = rawText.trim();
+    if (!text) throw new BadRequestException('Пустое сообщение');
+    if (text.length > MESSAGE_MAX_LENGTH) {
+      throw new BadRequestException(`Сообщение длиннее ${MESSAGE_MAX_LENGTH} символов`);
+    }
+    if (!this.outbound.isOnline(account.id)) {
+      throw new ServiceUnavailableException('Аккаунт не подключён к Telegram');
+    }
+    const sent = await this.outbound.sendText(account.id, chat, text);
+    const row = await this.ingest.storeOwnOutgoing(chat, sent, null);
+    this.events.emit({ kind: 'message', accountId: account.id, chat, message: sent, direction: 'out' });
+    return toMessageDto(row);
   }
 
   async stats(

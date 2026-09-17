@@ -3,12 +3,11 @@ import type {
   TelegramAccountStatus,
 } from './entities/telegram-account.entity.js';
 import type {
-  AiPausedReason,
   AttentionReason,
   MessageDirection,
   TelegramChatEntity,
 } from './entities/telegram-chat.entity.js';
-import type { TelegramMessageEntity } from './entities/telegram-message.entity.js';
+import type { MediaKind, TelegramMessageEntity } from './entities/telegram-message.entity.js';
 
 /**
  * Формы ответов — зеркало контракта фронтенда
@@ -44,19 +43,9 @@ export interface ChatDto {
   messagesCount: number;
   firstMessageAt: string;
   leadCode: string | null;
-  ai: ChatAiStateDto;
+  /** До какого id собеседник прочитал наши сообщения. */
+  readOutboxMaxId: number;
   attention: ChatAttentionDto;
-}
-
-export interface ChatAiStateDto {
-  enabled: boolean;
-  stage: string | null;
-  pausedReason: AiPausedReason | null;
-  pausedAt: string | null;
-  messagesCount: number;
-  lastReplyAt: string | null;
-  followupStep: number;
-  followupNextAt: string | null;
 }
 
 export interface ChatAttentionDto {
@@ -68,11 +57,16 @@ export interface ChatAttentionDto {
 export interface MessageDto {
   id: string;
   chatId: string;
+  telegramMessageId: number;
   direction: MessageDirection;
   text: string;
+  mediaKind: MediaKind | null;
   sentAt: string;
-  /** Сообщение отправил ИИ (а не человек). */
-  byAi: boolean;
+  /** Когда собеседник прочитал наше исходящее. */
+  readAt: string | null;
+  /** Сообщение отправил бот (ход ИИ-агента), а не человек. */
+  byBot: boolean;
+  aiTurnId: string | null;
 }
 
 export interface DailyStatsDto {
@@ -147,16 +141,7 @@ export function toChatDto(chat: TelegramChatEntity): ChatDto {
     messagesCount: chat.messagesCount,
     firstMessageAt: (chat.firstMessageAt ?? lastAt).toISOString(),
     leadCode: chat.leadCode,
-    ai: {
-      enabled: chat.aiEnabled,
-      stage: chat.aiStage,
-      pausedReason: chat.aiPausedReason,
-      pausedAt: chat.aiPausedAt?.toISOString() ?? null,
-      messagesCount: chat.aiMessagesCount,
-      lastReplyAt: chat.aiLastReplyAt?.toISOString() ?? null,
-      followupStep: chat.aiFollowupStep,
-      followupNextAt: chat.aiFollowupNextAt?.toISOString() ?? null,
-    },
+    readOutboxMaxId: chat.readOutboxMaxId,
     attention: {
       needed: chat.needsAttention,
       reason: chat.attentionReason,
@@ -169,9 +154,13 @@ export function toMessageDto(message: TelegramMessageEntity): MessageDto {
   return {
     id: message.id,
     chatId: message.chatId,
+    telegramMessageId: message.telegramMessageId,
     direction: message.direction,
     text: message.text,
+    mediaKind: message.mediaKind ?? null,
     sentAt: message.sentAt.toISOString(),
-    byAi: message.aiRunId !== null && message.aiRunId !== undefined,
+    readAt: message.readAt?.toISOString() ?? null,
+    byBot: message.aiTurnId !== null && message.aiTurnId !== undefined,
+    aiTurnId: message.aiTurnId ?? null,
   };
 }

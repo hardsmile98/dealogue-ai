@@ -1,67 +1,36 @@
-import type { AiPausedReason, AttentionReason, PhraseIntent } from '@/shared/api'
+import type { ChatMode, FunnelStage } from '@/shared/api'
 
-export interface ReasonMeta {
+export interface ModeMeta {
   label: string
   description: string
-  color: 'default' | 'warning' | 'error' | 'info' | 'success'
+  color: 'default' | 'primary' | 'warning' | 'info' | 'success'
 }
 
-/** Почему ИИ в чате остановлен — подпись для переключателя. */
-export const AI_PAUSED_REASON_META: Record<AiPausedReason, ReasonMeta> = {
-  manual_reply: {
-    label: 'менеджер ответил вручную',
-    description: 'ИИ выключился, потому что в чат написали из Telegram. Включите снова, когда захотите вернуть его.',
+export const CHAT_MODE_META: Record<ChatMode, ModeMeta> = {
+  off: { label: 'Бот выключен', description: 'Бот ничего не делает в этом чате.', color: 'default' },
+  auto: { label: 'Бот ведёт диалог', description: 'Бот отвечает и делает касания сам.', color: 'primary' },
+  supervised: {
+    label: 'Под контролем',
+    description: 'Бот сочиняет каждый ход, но отправляет только после подтверждения менеджера.',
     color: 'info',
   },
-  handoff: {
-    label: 'клиент готов к оплате',
-    description: 'ИИ передал клиента менеджеру и остановился.',
-    color: 'success',
-  },
-  needs_human: {
-    label: 'нужен менеджер',
-    description: 'ИИ не смог ответить сам и попросил подключиться.',
+  manager: {
+    label: 'Ведёт менеджер',
+    description: 'Пишет только человек; бот готовит черновики.',
     color: 'warning',
   },
-  limit: {
-    label: 'достигнут лимит сообщений',
-    description: 'ИИ отправил максимум сообщений в этом чате. Включите снова, чтобы продолжить.',
-    color: 'warning',
-  },
-  error: {
-    label: 'ошибка ИИ',
-    description: 'Несколько попыток ответить закончились ошибкой провайдера.',
-    color: 'error',
-  },
 }
 
-export const ATTENTION_REASON_META: Record<AttentionReason, ReasonMeta> = {
-  ready_to_pay: { label: 'Готов к оплате', description: 'Клиент готов оформлять — подключитесь и закройте сделку.', color: 'success' },
-  needs_human: { label: 'Нужен менеджер', description: 'ИИ попросил подключить человека.', color: 'warning' },
-  ai_error: { label: 'Ошибка ИИ', description: 'ИИ не смог ответить из-за ошибки провайдера.', color: 'error' },
-}
-
-export const PHRASE_INTENT_LABELS: Record<PhraseIntent, string> = {
-  greeting: 'Приветствие',
-  qualify: 'Выяснение потребности',
-  price: 'Цена и условия',
-  materials: 'Материалы',
-  call_offer: 'Предложение созвона',
-  objection: 'Возражения',
-  close: 'Закрытие',
-  payment: 'Оплата',
-  followup: 'Напоминание',
-  other: 'Прочее',
-}
-
-export const WEEKDAY_LABELS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
-
-/** Секунды → «2 мин», «1 ч 20 мин». */
-export function formatDurationSec(sec: number): string {
-  if (sec < 60) return `${Math.round(sec)} с`
-  const minutes = Math.round(sec / 60)
-  if (minutes < 60) return `${minutes} мин`
-  const hours = Math.floor(minutes / 60)
-  const rest = minutes % 60
-  return rest > 0 ? `${hours} ч ${rest} мин` : `${hours} ч`
+export const FUNNEL_STAGE_META: Record<FunnelStage, { label: string; short: string }> = {
+  greeting: { label: 'Приветствие', short: 'привет' },
+  collect_birth: { label: 'Дата и место рождения', short: 'дата' },
+  collect_request: { label: 'Выясняем запрос', short: 'запрос' },
+  ack_request: { label: 'Ссылки и ожидание диагностики', short: 'ожидание' },
+  diagnostics: { label: 'Диагностика', short: 'диагностика' },
+  post_diagnostics: { label: 'После диагностики', short: 'после диагн.' },
+  offer: { label: 'Предложение', short: 'предложение' },
+  price: { label: 'Цены', short: 'цены' },
+  discount: { label: 'Скидка', short: 'скидка' },
+  reminders: { label: 'Напоминания', short: 'напоминания' },
+  closed_silent: { label: 'Воронка завершена', short: 'завершена' },
 }

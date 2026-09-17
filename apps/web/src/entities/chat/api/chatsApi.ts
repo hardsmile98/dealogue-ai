@@ -1,5 +1,5 @@
 import { baseApi } from '@/shared/api'
-import type { ChatsQuery } from '@/shared/api'
+import type { ChatDto, ChatQuery, ChatsQuery, SendMessageRequest } from '@/shared/api'
 import type { Chat, Message, MessagesQuery } from '../model/types'
 
 export const CHAT_TAG = 'Chat' as const
@@ -20,7 +20,42 @@ export const chatsApi = baseApi
         }),
         providesTags: (_result, _error, { chatId }) => [{ type: MESSAGE_TAG, id: chatId }],
       }),
+
+      /** Сообщение клиенту от менеджера из веб-интерфейса. */
+      sendMessage: build.mutation<Message, SendMessageRequest>({
+        query: ({ accountId, chatId, text }) => ({
+          url: `/telegram/accounts/${accountId}/chats/${chatId}/messages`,
+          method: 'POST',
+          body: { text },
+        }),
+        invalidatesTags: (_result, _error, { accountId, chatId }) => [
+          { type: MESSAGE_TAG, id: chatId },
+          { type: CHAT_TAG, id: accountId },
+        ],
+      }),
+
+      /** Менеджер открыл чат с пометкой — открытые алерты считаются увиденными. */
+      markAttentionSeen: build.mutation<{ ok: true }, ChatQuery>({
+        query: ({ accountId, chatId }) => ({
+          url: `/telegram/accounts/${accountId}/chats/${chatId}/attention/seen`,
+          method: 'POST',
+        }),
+      }),
+
+      clearAttention: build.mutation<ChatDto, ChatQuery>({
+        query: ({ accountId, chatId }) => ({
+          url: `/telegram/accounts/${accountId}/chats/${chatId}/attention/clear`,
+          method: 'POST',
+        }),
+        invalidatesTags: (_result, _error, { accountId }) => [{ type: CHAT_TAG, id: accountId }],
+      }),
     }),
   })
 
-export const { useGetChatsQuery, useGetMessagesQuery } = chatsApi
+export const {
+  useGetChatsQuery,
+  useGetMessagesQuery,
+  useSendMessageMutation,
+  useMarkAttentionSeenMutation,
+  useClearAttentionMutation,
+} = chatsApi

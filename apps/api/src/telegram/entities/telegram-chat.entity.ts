@@ -9,10 +9,15 @@ import {
 
 export type MessageDirection = 'in' | 'out';
 
-/** Почему ИИ в чате остановлен (null — работает или выключен вручную). */
-export type AiPausedReason = 'manual_reply' | 'handoff' | 'needs_human' | 'limit' | 'error';
-
-export type AttentionReason = 'ready_to_pay' | 'needs_human' | 'ai_error';
+/** Причина пометки «требует внимания» — тип открытого алерта (см. ai/entities/alert.entity.ts). */
+export type AttentionReason =
+  | 'handoff'
+  | 'minor'
+  | 'media'
+  | 'stale_lead'
+  | 'library_incomplete'
+  | 'ai_error'
+  | 'anomaly';
 
 /** Личный диалог аккаунта с одним собеседником. */
 @Entity({ name: 'telegram_chats' })
@@ -73,50 +78,15 @@ export class TelegramChatEntity {
   @Column({ name: 'history_synced', type: 'boolean', default: false })
   historySynced: boolean;
 
-  /** Вся история диалога выгружена до конца (для обучения ИИ). */
-  @Column({ name: 'deep_history_synced', type: 'boolean', default: false })
-  deepHistorySynced: boolean;
-
   /** access hash собеседника — чтобы писать ему после перезапуска без прогрева кэша. */
   @Column({ name: 'peer_access_hash', type: 'varchar', length: 32, nullable: true })
   peerAccessHash: string | null;
 
-  // --- ИИ-агент -------------------------------------------------------------
+  /** До какого id (включительно) собеседник прочитал наши исходящие. */
+  @Column({ name: 'read_outbox_max_id', type: 'integer', default: 0 })
+  readOutboxMaxId: number;
 
-  /** ИИ отвечает в этом чате (включается вручную). */
-  @Column({ name: 'ai_enabled', type: 'boolean', default: false })
-  aiEnabled: boolean;
-
-  /** Текущий этап воронки по мнению ИИ (ключ из скрипта). */
-  @Column({ name: 'ai_stage', type: 'varchar', length: 32, nullable: true })
-  aiStage: string | null;
-
-  @Column({ name: 'ai_paused_reason', type: 'varchar', length: 32, nullable: true })
-  aiPausedReason: AiPausedReason | null;
-
-  @Column({ name: 'ai_paused_at', type: 'timestamptz', nullable: true })
-  aiPausedAt: Date | null;
-
-  /** Сколько сообщений ИИ отправил с момента последнего включения. */
-  @Column({ name: 'ai_messages_count', type: 'integer', default: 0 })
-  aiMessagesCount: number;
-
-  @Column({ name: 'ai_last_reply_at', type: 'timestamptz', nullable: true })
-  aiLastReplyAt: Date | null;
-
-  /** С какого момента клиент молчит после нашего ответа (для дожимов). */
-  @Column({ name: 'ai_silence_since', type: 'timestamptz', nullable: true })
-  aiSilenceSince: Date | null;
-
-  /** Сколько дожимов уже отправлено в текущей серии молчания. */
-  @Column({ name: 'ai_followup_step', type: 'integer', default: 0 })
-  aiFollowupStep: number;
-
-  /** Когда запланирован следующий дожим (null — серии нет). */
-  @Column({ name: 'ai_followup_next_at', type: 'timestamptz', nullable: true })
-  aiFollowupNextAt: Date | null;
-
-  /** Чат требует внимания менеджера (готов к оплате, нужен человек, ошибка). */
+  /** Чат требует внимания менеджера — есть незакрытый алерт. */
   @Column({ name: 'needs_attention', type: 'boolean', default: false })
   needsAttention: boolean;
 

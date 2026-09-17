@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-export type AiProviderName = 'deepseek' | 'openai' | 'anthropic' | 'mock';
+export type AiProviderName = 'deepseek' | 'openai' | 'mock';
 
-const PROVIDER_NAMES: AiProviderName[] = ['deepseek', 'openai', 'anthropic', 'mock'];
+const PROVIDER_NAMES: AiProviderName[] = ['deepseek', 'openai', 'mock'];
 
 /** Предустановки OpenAI-совместимых провайдеров. */
 export const OPENAI_COMPATIBLE_PRESETS: Record<
@@ -24,12 +24,10 @@ export const OPENAI_COMPATIBLE_PRESETS: Record<
   },
 };
 
-export const ANTHROPIC_MODELS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'];
-
 /**
  * Настройки ИИ-агента из env. Читаются один раз. Без ключа выбранного
- * провайдера модуль поднимается «выключенным»: воркер не берёт reply/followup,
- * эндпоинты настроек работают, генерация отвечает 503.
+ * провайдера модуль поднимается «выключенным»: воркер не делает ходов,
+ * эндпоинты настроек и библиотеки работают.
  */
 @Injectable()
 export class AiConfig {
@@ -42,17 +40,14 @@ export class AiConfig {
   readonly deepseekApiKey: string;
   readonly openaiApiKey: string;
   readonly openaiBaseUrl: string;
-  readonly anthropicApiKey: string;
-  readonly anthropicFallbacks: boolean;
   /** HTTP CONNECT-прокси для запросов к провайдеру (http://user:pass@host:port). */
   readonly httpProxy: string | null;
   readonly maxOutputTokens: number;
   readonly requestTimeoutMs: number;
   readonly workerConcurrency: number;
   readonly workerPollMs: number;
-  readonly followupsPerHour: number;
-  readonly digestMaxDialogs: number;
-  readonly importMaxAgeDays: number;
+  /** Новые аккаунты стартуют в сухом прогоне. */
+  readonly defaultDryRun: boolean;
   readonly webUrl: string;
 
   constructor(config: ConfigService) {
@@ -62,18 +57,14 @@ export class AiConfig {
     this.deepseekApiKey = config.get<string>('DEEPSEEK_API_KEY') ?? '';
     this.openaiApiKey = config.get<string>('OPENAI_API_KEY') ?? '';
     this.openaiBaseUrl =
-      config.get<string>('OPENAI_BASE_URL') ?? OPENAI_COMPATIBLE_PRESETS.openai.baseUrl;
-    this.anthropicApiKey = config.get<string>('ANTHROPIC_API_KEY') ?? '';
-    this.anthropicFallbacks = config.get<string>('AI_ANTHROPIC_FALLBACKS') === 'true';
+      config.get<string>('OPENAI_BASE_URL') || OPENAI_COMPATIBLE_PRESETS.openai.baseUrl;
     this.httpProxy = config.get<string>('AI_HTTP_PROXY') || null;
     this.model = config.get<string>('AI_MODEL') || defaultModelFor(this.provider);
     this.maxOutputTokens = readInt(config, 'AI_MAX_OUTPUT_TOKENS', 2048);
     this.requestTimeoutMs = readInt(config, 'AI_REQUEST_TIMEOUT_SEC', 60) * 1000;
     this.workerConcurrency = readInt(config, 'AI_WORKER_CONCURRENCY', 3);
     this.workerPollMs = readInt(config, 'AI_WORKER_POLL_SEC', 3) * 1000;
-    this.followupsPerHour = readInt(config, 'AI_FOLLOWUPS_PER_HOUR', 30);
-    this.digestMaxDialogs = readInt(config, 'AI_DIGEST_MAX_DIALOGS', 400);
-    this.importMaxAgeDays = readInt(config, 'AI_IMPORT_MAX_AGE_DAYS', 730);
+    this.defaultDryRun = (config.get<string>('AI_DEFAULT_DRY_RUN') ?? 'true') !== 'false';
     this.webUrl = (config.get<string>('WEB_URL') ?? 'http://localhost:5173').replace(/\/+$/, '');
 
     if (!this.enabled) {
@@ -92,8 +83,6 @@ export class AiConfig {
         return this.deepseekApiKey.length > 0;
       case 'openai':
         return this.openaiApiKey.length > 0;
-      case 'anthropic':
-        return this.anthropicApiKey.length > 0;
       case 'mock':
         return true;
       default:
@@ -112,8 +101,6 @@ export function defaultModelFor(provider: AiProviderName): string {
       return OPENAI_COMPATIBLE_PRESETS.deepseek.defaultModel;
     case 'openai':
       return OPENAI_COMPATIBLE_PRESETS.openai.defaultModel;
-    case 'anthropic':
-      return ANTHROPIC_MODELS[0];
     case 'mock':
       return 'mock';
     default:

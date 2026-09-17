@@ -13,7 +13,7 @@ import { useRealtimeEvents } from '../model/useRealtimeEvents'
 interface Toast {
   key: number
   title: string
-  severity: 'success' | 'warning' | 'error'
+  severity: 'success' | 'warning' | 'error' | 'info'
   to: string
 }
 

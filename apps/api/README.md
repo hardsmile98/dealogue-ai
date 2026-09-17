@@ -253,63 +253,68 @@ await queryRunner.query(
 
 ## ИИ-агент
 
-Модуль `src/ai` — агент продаж, который отвечает клиентам от лица менеджера.
-Telegram-модуль про него не знает: он только публикует события в
-`TelegramEventsService` и предоставляет отправку (`TelegramOutboundService`).
+Модуль `src/ai` — диалоговый агент, ведомый воронкой (полное ТЗ —
+[docs/ai-agent-spec.md](../../docs/ai-agent-spec.md)). Telegram-модуль про него
+не знает: он публикует события в `TelegramEventsService` (сообщение, прочтение,
+«печатает…», аккаунт поднят/остановлен) и предоставляет отправку
+(`TelegramOutboundService`).
 
-### Как устроено
+### Состояние работ
 
-- **Очередь в Postgres** (`ai_jobs`) — всё отложенное: ответы (`reply`),
-  дожимы (`followup`), обучение (`digest`), выгрузка истории (`import`).
+Этап 1 из плана ТЗ (фундамент) сделан:
+
+- миграция `CreateAiFunnel` сносит данные старого агента и создаёт таблицы
+  воронки: `ai_account_settings`, `ai_chat_state`, `ai_turns`, `ai_events`,
+  `ai_playbooks`, `ai_phrases`, `ai_facts`, `ai_diagnostics`, `ai_categories`,
+  `ai_drafts`, `ai_notes`, `ai_stats_daily`;
+- у сообщений появились `read_at` (когда собеседник прочитал наше исходящее),
+  `media_kind` (вид вложения) и `ai_turn_id` (ход бота, который отправил
+  сообщение); у чатов — `read_outbox_max_id`;
+- runtime ловит `UpdateReadHistoryOutbox` и `UpdateUserTyping`, досинхронизация
+  берёт `readOutboxMaxId` из диалога;
+- менеджер может писать клиенту из веб-интерфейса
+  (`POST /telegram/accounts/:id/chats/:chatId/messages`);
+- настройки аккаунта (`GET/PUT …/ai/settings`) с валидацией zod.
+
+Ход агента (Planner → Composer → Guard → Outbound), библиотека, черновики и
+статистика — следующие этапы; бот пока ничего не отправляет.
+
+### Как устроено (целевая архитектура)
+
+- **Очередь в Postgres** (`ai_jobs`) — всё отложенное: `inbound` (пачка входящих
+  после дебаунса), `touch` (касание воронки по таймеру), `notify`, `stats`.
   Воркер `AiJobWorker` забирает задания через `FOR UPDATE SKIP LOCKED`,
-  повторяет с backoff, watchdog возвращает зависшие, при остановке процесса
-  недоделанное остаётся в очереди. Повторный enqueue сдвигает время запуска —
-  так работает debounce входящих.
-- **Ответ** (`AiAgentService.runForChat`): guards (ИИ включён на аккаунте и в
-  чате, аккаунт онлайн, предохранитель провайдера закрыт, рабочее окно,
-  лимиты) → история чата → похожие прошлые обмены из `ai_exchanges`
-  (`pg_trgm` + русский FTS) → промпт (`prompt/prompt-builder.ts`) → модель
-  (structured JSON) → `lib/decision-guard.ts` (роботизмы, суммы/ссылки вне
-  фактов, повторы, стоп-слова) → «человеческая» задержка из выученного
-  времени реакции менеджера с typing → 1–3 сообщения → `ai_runs` → handoff.
-- **Ручной ответ**: исходящее без `ai_run_id` — это менеджер из Telegram;
-  ИИ в чате выключается (`ai_paused_reason = manual_reply`).
-- **Handoff** (`HandoffService`): `ready_to_pay` / `needs_human` → алерт,
-  `needs_attention` на чате, пауза ИИ, уведомление в Telegram (`handoff_peer`
-  или «Избранное»), SSE-событие. `ai_error` — при проблемах провайдера.
-- **Обучение** (`learning/`): `HistoryImportService` выгружает всю историю
-  (бережно, с паузами, возобновляемо); `ExchangeIndexerService` режет её на
-  пары «клиент → менеджер»; `StyleLearningService` делает map-reduce через
-  модель и собирает профиль (`ai_style_profile`): styleGuide, phrasebook,
-  FAQ, возражения, факты; привычки и тайминг считаются кодом. Правки владельца —
-  в `overrides`.
+  повторяет с backoff, watchdog возвращает зависшие. Повторный enqueue
+  сдвигает время запуска — так работает дебаунс входящих.
+- **Ход** — одна реакция агента: Planner (код) собирает задачу хода → Composer
+  (один вызов DeepSeek, JSON) понимает входящие и сочиняет ответ → Guard (код)
+  проверяет факты, ссылки, цены, признания «я бот», повторы → Outbound
+  отправляет по-человечески (прочитано → пауза → «печатает» → текст).
+- **Режимы чата**: `off`, `auto`, `supervised` (менеджер подтверждает каждый
+  ход), `manager` (пишет человек, бот готовит черновики).
+- **Передача менеджеру** только в крайних случаях: оплата, «вы бот?»,
+  агрессия, кризис, несовершеннолетний, медиа, отказ, вопрос вне фактов.
 - **Провайдеры** (`llm/`): `OpenAiCompatibleProvider` (DeepSeek по умолчанию,
-  OpenAI, локальные), `MockProvider` для тестов, заглушка Anthropic. Один
-  предохранитель на провайдера.
-- **SSE** (`src/realtime`): `POST /realtime/ticket` → `GET /realtime/events?ticket=`.
+  OpenAI), `MockProvider` для тестов. Один предохранитель на провайдера.
+- **SSE** (`src/realtime`): `POST /realtime/ticket` → `GET /realtime/events?ticket=`;
+  события `message.read`, `settings.updated`, `draft.*`, `funnel.updated`, `turn.sent`.
 
 ### Env
 
 См. блок «ИИ-агент» в `.env.example`: `AI_ENABLED`, `AI_PROVIDER`, `AI_MODEL`,
-`DEEPSEEK_API_KEY`, `AI_HTTP_PROXY`, лимиты воркера и дожимов, `WEB_URL`.
+`DEEPSEEK_API_KEY`, `AI_HTTP_PROXY`, лимиты воркера, `AI_DEFAULT_DRY_RUN`, `WEB_URL`.
 
 ### Эндпоинты (все под JWT)
 
 | Метод | Путь | Что |
 |---|---|---|
-| GET/PUT | `/telegram/accounts/:id/ai/settings` | настройки и скрипт |
-| GET | `/telegram/accounts/:id/ai/learning` | статус выгрузки/обучения, профиль, оценка |
-| POST | `/telegram/accounts/:id/ai/import` · `/learn` · `/learn/cancel` | задания |
-| GET/PUT | `/telegram/accounts/:id/ai/profile` · `/profile/overrides` | профиль и правки |
-| PATCH | `/telegram/accounts/:id/chats/:chatId/ai` | `{enabled}` |
-| POST | `/telegram/accounts/:id/chats/:chatId/ai/test` | песочница (без отправки) |
-| GET | `/telegram/accounts/:id/chats/:chatId/ai/runs` | аудит запусков |
-| POST | `…/chats/:chatId/ai/followups/stop` · `…/attention/seen` · `…/attention/clear` | дожимы и пометка |
+| GET/PUT | `/telegram/accounts/:id/ai/settings` | настройки аккаунта (включение, dry-run, персона, таймеры, лимиты, guard, ночное окно) |
+| POST | `/telegram/accounts/:id/chats/:chatId/messages` | сообщение клиенту от менеджера |
+| POST | `…/chats/:chatId/attention/seen` · `…/attention/clear` | пометка «требует внимания» |
 | GET | `/alerts` · `/alerts/count`; POST `/alerts/:id/ack` · `/resolve` | алерты |
-| GET | `/ai/providers` · `/health` | справочники |
+| GET | `/ai/providers` · `/ai/health` | справочники |
 
 ### Проверка без внешнего API
 
-В настройках аккаунта выберите провайдера `mock`: он отвечает детерминированно
-(«оплат/реквизит» → готов к оплате, «менеджер» → нужен человек, «тишина» →
-молчит, «ошибка» → ошибка провайдера). Unit-тесты чистых модулей: `npm test`.
+`AI_PROVIDER=mock` — детерминированный провайдер без сети. Unit-тесты чистых
+модулей: `npm test`.

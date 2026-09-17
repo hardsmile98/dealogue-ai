@@ -29,6 +29,13 @@ export class SubmitPasswordDto {
   password: string;
 }
 
+export class SendMessageDto {
+  @MaxLength(4096, { message: 'Сообщение длиннее 4096 символов' })
+  @IsString()
+  @IsNotEmpty({ message: 'Введите текст сообщения' })
+  text: string;
+}
+
 export class StatsQueryDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'from: ожидается YYYY-MM-DD' })
   @IsString()

@@ -1,18 +1,38 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
+import type { HandoffReason } from '../domain/types.js';
 
-export type AlertType = 'ready_to_pay' | 'needs_human' | 'ai_error';
+/**
+ * Типы алертов (раздел 6.13 ТЗ):
+ * - `handoff` — чат передан менеджеру (причина в payload.reason);
+ * - `minor` — клиент несовершеннолетний;
+ * - `media` — клиент прислал медиа, бот не может ответить;
+ * - `stale_lead` — лид ждал первого ответа слишком долго;
+ * - `library_incomplete` — в библиотеке нет обязательного блока;
+ * - `ai_error` — провайдер недоступен;
+ * - `anomaly` — подозрительная статистика (много передач, ошибок, сообщений).
+ */
+export type AlertType =
+  | 'handoff'
+  | 'minor'
+  | 'media'
+  | 'stale_lead'
+  | 'library_incomplete'
+  | 'ai_error'
+  | 'anomaly';
 export type AlertStatus = 'open' | 'acknowledged' | 'resolved';
 
 export interface AlertPayload {
-  reason?: string;
+  reason?: HandoffReason | string;
   stage?: string | null;
-  confidence?: number;
   lastClientText?: string;
-  aiRunId?: string;
+  draftId?: string;
+  turnId?: string;
   error?: string;
+  /** Для anomaly / library_incomplete: что именно. */
+  detail?: string;
 }
 
-/** Сигнал менеджеру: клиент готов платить, нужен человек, ИИ сломался. */
+/** Сигнал менеджеру. */
 @Entity({ name: 'alerts' })
 @Index(['accountId', 'status', 'createdAt'])
 export class AlertEntity {

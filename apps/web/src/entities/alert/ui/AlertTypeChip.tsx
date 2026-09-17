@@ -1,15 +1,23 @@
 import Chip from '@mui/material/Chip'
 import type { ChipProps } from '@mui/material/Chip'
+import AttachFileOutlinedIcon from '@mui/icons-material/AttachFileOutlined'
+import ChildCareOutlinedIcon from '@mui/icons-material/ChildCareOutlined'
 import ErrorOutlinedIcon from '@mui/icons-material/ErrorOutlined'
-import PaidOutlinedIcon from '@mui/icons-material/PaidOutlined'
+import HourglassBottomOutlinedIcon from '@mui/icons-material/HourglassBottomOutlined'
+import LibraryBooksOutlinedIcon from '@mui/icons-material/LibraryBooksOutlined'
 import SupportAgentOutlinedIcon from '@mui/icons-material/SupportAgentOutlined'
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined'
 import type { AlertType } from '@/shared/api'
 import { ALERT_TYPE_META } from '../lib/alertMeta'
 
 const ICONS: Record<AlertType, ChipProps['icon']> = {
-  ready_to_pay: <PaidOutlinedIcon />,
-  needs_human: <SupportAgentOutlinedIcon />,
+  handoff: <SupportAgentOutlinedIcon />,
+  minor: <ChildCareOutlinedIcon />,
+  media: <AttachFileOutlinedIcon />,
+  stale_lead: <HourglassBottomOutlinedIcon />,
+  library_incomplete: <LibraryBooksOutlinedIcon />,
   ai_error: <ErrorOutlinedIcon />,
+  anomaly: <WarningAmberOutlinedIcon />,
 }
 
 interface AlertTypeChipProps {

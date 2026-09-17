@@ -6,24 +6,21 @@ import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
-import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import SearchIcon from '@mui/icons-material/Search'
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined'
 import { formatChatListTime, pluralize } from '@/shared/lib'
-import { ATTENTION_REASON_META } from '@/entities/ai-agent'
+import { ALERT_TYPE_META } from '@/entities/alert'
 import { LeadCodeChip } from '@/entities/chat'
 import type { Chat } from '@/entities/chat'
 import { AccountAvatar } from '@/entities/telegram-account'
 import { chatPanelStyles as styles } from './ChatPanel.styles'
 
-type ChatFilter = 'all' | 'attention' | 'ai' | 'with-code' | 'no-code'
+type ChatFilter = 'all' | 'attention' | 'with-code' | 'no-code'
 
 const FILTERS: { key: ChatFilter; label: string }[] = [
   { key: 'all', label: 'Все' },
   { key: 'attention', label: 'Требуют внимания' },
-  { key: 'ai', label: 'ИИ включён' },
   { key: 'with-code', label: 'С кодом' },
   { key: 'no-code', label: 'Без кода' },
 ]
@@ -39,8 +36,6 @@ function matchesFilter(chat: Chat, filter: ChatFilter): boolean {
   switch (filter) {
     case 'attention':
       return chat.attention.needed
-    case 'ai':
-      return chat.ai.enabled
     case 'with-code':
       return chat.leadCode !== null
     case 'no-code':
@@ -129,8 +124,7 @@ export function ChatList({ chats, isLoading, selectedId, onSelect }: ChatListPro
 
         {visible.map((chat) => {
           const outgoing = chat.lastMessage.direction === 'out'
-          const attention = chat.attention.reason ? ATTENTION_REASON_META[chat.attention.reason] : null
-          const aiActive = chat.ai.enabled && !chat.ai.pausedReason
+          const attention = chat.attention.reason ? ALERT_TYPE_META[chat.attention.reason] : null
           return (
             <ListItemButton
               key={chat.id}
@@ -150,27 +144,16 @@ export function ChatList({ chats, isLoading, selectedId, onSelect }: ChatListPro
                   {outgoing ? 'Вы: ' : ''}
                   {chat.lastMessage.text}
                 </Typography>
-                {(chat.leadCode !== null || chat.attention.needed || chat.ai.enabled) && (
+                {(chat.leadCode !== null || chat.attention.needed) && (
                   <Box sx={styles.listItemBottom}>
                     {chat.attention.needed && attention && (
                       <Chip
                         size="small"
-                        color={attention.color === 'success' ? 'success' : attention.color === 'error' ? 'error' : 'warning'}
+                        color={attention.color}
                         icon={<NotificationsActiveIcon />}
                         label={attention.label}
                         sx={{ fontWeight: 600 }}
                       />
-                    )}
-                    {chat.ai.enabled && (
-                      <Tooltip title={aiActive ? 'ИИ отвечает в этом чате' : 'ИИ включён, но остановлен'}>
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          color={aiActive ? 'primary' : 'default'}
-                          icon={<SmartToyOutlinedIcon />}
-                          label="ИИ"
-                        />
-                      </Tooltip>
                     )}
                     <LeadCodeChip code={chat.leadCode} />
                   </Box>

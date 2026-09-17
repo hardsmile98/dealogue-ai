@@ -12,7 +12,7 @@ import { accountLinks } from '@/shared/config'
 import { formatRelative, getApiErrorMessage } from '@/shared/lib'
 import { EmptyState } from '@/shared/ui'
 import type { AlertDto } from '@/shared/api'
-import { ALERT_STATUS_LABELS, AlertTypeChip, useGetAlertsQuery } from '@/entities/alert'
+import { ALERT_STATUS_LABELS, AlertTypeChip, HANDOFF_REASON_LABELS, useGetAlertsQuery } from '@/entities/alert'
 import { AccountAvatar } from '@/entities/telegram-account'
 import { AlertActions } from '@/features/alerts/manage'
 
@@ -47,7 +47,7 @@ export function AttentionList({ includeResolved = false }: AttentionListProps) {
       <EmptyState
         icon={<NotificationsNoneOutlinedIcon />}
         title="Пока ничего не требует внимания"
-        description="Когда ИИ доведёт клиента до оплаты или не сможет ответить сам, чат появится здесь и в списке чатов с пометкой."
+        description="Когда бот передаст чат менеджеру, наткнётся на медиа или несовершеннолетнего, либо сломается провайдер, чат появится здесь и в списке чатов с пометкой."
       />
     )
   }
@@ -91,7 +91,12 @@ function AlertCard({ alert }: { alert: AlertDto }) {
             <Typography sx={{ fontSize: 13, mt: 0.75, color: 'error.main' }}>{alert.payload.error}</Typography>
           )}
           {alert.payload.reason && !alert.payload.error && (
-            <Typography sx={{ fontSize: 12, mt: 0.5, color: 'text.secondary' }}>{alert.payload.reason}</Typography>
+            <Typography sx={{ fontSize: 12, mt: 0.5, color: 'text.secondary' }}>
+              Причина: {HANDOFF_REASON_LABELS[alert.payload.reason] ?? alert.payload.reason}
+            </Typography>
+          )}
+          {alert.payload.detail && (
+            <Typography sx={{ fontSize: 12, mt: 0.5, color: 'text.secondary' }}>{alert.payload.detail}</Typography>
           )}
         </Box>
         <Stack spacing={1} sx={{ alignItems: { xs: 'stretch', sm: 'flex-end' }, flexShrink: 0 }}>

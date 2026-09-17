@@ -11,13 +11,20 @@ export interface EnqueueParams {
   runAt: Date;
   payload?: Record<string, unknown>;
   maxAttempts?: number;
+  /** Явный ключ дедупликации (для `notify:{draftId}`); иначе — по типу. */
+  dedupeKey?: string;
 }
 
 /** Сколько держать блокировку без heartbeat, прежде чем watchdog вернёт job в очередь. */
 const LOCK_MINUTES = 5;
 
+/**
+ * Ключ дедупликации: у чата не более одного активного `inbound` и одного
+ * `touch`, у аккаунта — одного `stats`. Для `notify` ключ задаёт вызывающий
+ * (`notify:{draftId}`) через `dedupeKey` в параметрах.
+ */
 export function dedupeKeyFor(type: AiJobType, accountId: string, chatId?: string | null): string {
-  return type === 'reply' || type === 'followup' ? `${type}:${chatId}` : `${type}:${accountId}`;
+  return type === 'inbound' || type === 'touch' ? `${type}:${chatId}` : `${type}:${accountId}`;
 }
 
 /**
@@ -34,7 +41,7 @@ export class AiJobsService {
   ) {}
 
   async enqueue(params: EnqueueParams): Promise<AiJobEntity> {
-    const dedupeKey = dedupeKeyFor(params.type, params.accountId, params.chatId);
+    const dedupeKey = params.dedupeKey ?? dedupeKeyFor(params.type, params.accountId, params.chatId);
     const rows = rowsOf(
       await this.dataSource.query<unknown>(
       `
@@ -94,7 +101,7 @@ export class AiJobsService {
 
   /**
    * Забрать один готовый job. Не берём job чата, у которого уже что-то
-   * выполняется, и не запускаем второй digest/import на аккаунт.
+   * выполняется, и не запускаем второй пересчёт статистики на аккаунт.
    */
   async claim(types: AiJobType[]): Promise<AiJobEntity | null> {
     const rows = rowsOf(
@@ -117,9 +124,9 @@ export class AiJobsService {
             )
           )
           AND (
-            c."type" NOT IN ('digest', 'import') OR NOT EXISTS (
+            c."type" <> 'stats' OR NOT EXISTS (
               SELECT 1 FROM "ai_jobs" r
-              WHERE r."status" = 'running' AND r."account_id" = c."account_id" AND r."type" IN ('digest', 'import')
+              WHERE r."status" = 'running' AND r."account_id" = c."account_id" AND r."type" = 'stats'
             )
           )
         ORDER BY c."run_at" ASC

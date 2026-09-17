@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import {
   SendCodeDto,
+  SendMessageDto,
   SignInDto,
   StatsQueryDto,
   SubmitPasswordDto,
@@ -117,5 +118,17 @@ export class TelegramController {
     @Param('chatId', ParseUUIDPipe) chatId: string,
   ): Promise<MessageDto[]> {
     return this.accounts.listMessages(user.id, id, chatId);
+  }
+
+  /** Сообщение клиенту от менеджера из веб-интерфейса. */
+  @Post(':id/chats/:chatId/messages')
+  @HttpCode(HttpStatus.CREATED)
+  sendMessage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('chatId', ParseUUIDPipe) chatId: string,
+    @Body() dto: SendMessageDto,
+  ): Promise<MessageDto> {
+    return this.accounts.sendMessage(user.id, id, chatId, dto.text);
   }
 }
