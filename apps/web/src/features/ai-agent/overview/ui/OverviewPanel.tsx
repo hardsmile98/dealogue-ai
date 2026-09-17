@@ -14,6 +14,7 @@ import { formatDateTime, formatRelative, getApiErrorMessage } from '@/shared/lib
 import { FUNNEL_STAGES } from '@/shared/api'
 import type { ChatMode } from '@/shared/api'
 import { CHAT_MODE_META, FUNNEL_STAGE_META, TOUCH_KIND_META, useGetAiOverviewQuery, useUpdateAiSettingsMutation } from '@/entities/ai-agent'
+import { ReadinessCard } from './ReadinessCard'
 
 interface OverviewPanelProps {
   accountId: string
@@ -66,6 +67,8 @@ export function OverviewPanel({ accountId }: OverviewPanelProps) {
       )}
       {!data.provider.ready && <Alert severity="error">Провайдер {data.provider.name} не настроен: ключ не задан в .env.</Alert>}
       {data.provider.breakerOpen && <Alert severity="error">Провайдер {data.provider.name} временно недоступен — ходы откладываются.</Alert>}
+
+      <ReadinessCard accountId={accountId} overview={data} />
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 4 }}>

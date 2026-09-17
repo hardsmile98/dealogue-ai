@@ -5,6 +5,7 @@ import Tabs from '@mui/material/Tabs'
 import { AiSettingsForm } from '@/features/ai-agent/edit-settings'
 import { OverviewPanel } from '@/features/ai-agent/overview'
 import { SandboxPanel } from '@/features/ai-agent/sandbox'
+import { StatsPanel } from '@/features/ai-agent/stats'
 import {
   CategoriesPanel,
   DiagnosticsPanel,
@@ -15,7 +16,17 @@ import {
   PlaybooksPanel,
 } from '@/features/ai-library'
 
-type AiTab = 'overview' | 'playbooks' | 'library' | 'facts' | 'diagnostics' | 'categories' | 'notes' | 'sandbox' | 'settings'
+type AiTab =
+  | 'overview'
+  | 'playbooks'
+  | 'library'
+  | 'facts'
+  | 'diagnostics'
+  | 'categories'
+  | 'notes'
+  | 'sandbox'
+  | 'stats'
+  | 'settings'
 
 const TABS: { key: AiTab; label: string }[] = [
   { key: 'overview', label: 'Обзор' },
@@ -26,6 +37,7 @@ const TABS: { key: AiTab; label: string }[] = [
   { key: 'categories', label: 'Категории' },
   { key: 'notes', label: 'Заметки' },
   { key: 'sandbox', label: 'Песочница' },
+  { key: 'stats', label: 'Статистика' },
   { key: 'settings', label: 'Настройки' },
 ]
 
@@ -60,6 +72,7 @@ export function AccountAiPage() {
       {tab === 'categories' && <CategoriesPanel accountId={accountId} />}
       {tab === 'notes' && <NotesPanel accountId={accountId} />}
       {tab === 'sandbox' && <SandboxPanel accountId={accountId} />}
+      {tab === 'stats' && <StatsPanel accountId={accountId} />}
       {tab === 'settings' && <AiSettingsForm accountId={accountId} />}
     </Box>
   )

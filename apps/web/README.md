@@ -195,11 +195,13 @@ VITE_API_URL=http://localhost:3000
   (инжектится в `chatsApi`, чтобы включение ИИ инвалидировало список чатов),
   метаданные режимов, этапов и касаний. `entities/ai-draft` — очередь
   черновиков и решения менеджера; `entities/ai-library` — библиотека, там же
-  доля ответов и пометка «переписать». `entities/alert` — алерты.
+  доля ответов и пометка «переписать»; `entities/ai-stats` — статистика
+  аккаунта. `entities/alert` — алерты.
 - `features/ai-agent/chat-ai` — панель чата и журнал ходов с оценками;
   `draft` — карточка черновика (правки, «свой ответ», похожие случаи);
-  `edit-settings` — настройки аккаунта; `overview` — сводка; `sandbox` —
-  песочница. `features/ai-library` — редактирование библиотеки.
+  `edit-settings` — настройки аккаунта; `overview` — сводка и чек-лист
+  готовности; `sandbox` — песочница; `stats` — вкладка «Статистика».
+  `features/ai-library` — редактирование библиотеки.
 - `features/realtime` — `RealtimeProvider` (SSE → инвалидация кэшей, тост и
   браузерное уведомление на алерт, без звука). `features/alerts/manage` — ack/resolve.
 - `widgets/attention-list`, `widgets/draft-queue`, `pages/attention` — раздел

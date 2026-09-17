@@ -21,6 +21,8 @@ import { SandboxService } from './agent/services/sandbox.service.js';
 import { SimilarCasesService } from './agent/services/similar-cases.service.js';
 import { StabilityService } from './agent/services/stability.service.js';
 import { TurnContextService } from './agent/services/turn-context.service.js';
+import { StatsController } from './agent/stats.controller.js';
+import { StatsService } from './agent/stats/stats.service.js';
 import { AiController, AiSettingsController } from './ai-settings.controller.js';
 import { AiConfig } from './ai.config.js';
 import { AlertsController } from './alerts.controller.js';
@@ -89,6 +91,7 @@ import { AlertsService } from './services/alerts.service.js';
     ChatAiController,
     DraftsController,
     DraftsQueueController,
+    StatsController,
     AgentController,
   ],
   providers: [
@@ -113,6 +116,7 @@ import { AlertsService } from './services/alerts.service.js';
     DraftsService,
     NotifyService,
     StabilityService,
+    StatsService,
   ],
 })
 export class AiModule {}
