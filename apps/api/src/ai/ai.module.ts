@@ -16,7 +16,10 @@ import { ChatAiService } from './agent/services/chat-ai.service.js';
 import { ChatStateService } from './agent/services/chat-state.service.js';
 import { DraftsService } from './agent/services/drafts.service.js';
 import { InboundListenerService } from './agent/services/inbound-listener.service.js';
+import { LearningService } from './agent/services/learning.service.js';
 import { SandboxService } from './agent/services/sandbox.service.js';
+import { SimilarCasesService } from './agent/services/similar-cases.service.js';
+import { StabilityService } from './agent/services/stability.service.js';
 import { TurnContextService } from './agent/services/turn-context.service.js';
 import { AiController, AiSettingsController } from './ai-settings.controller.js';
 import { AiConfig } from './ai.config.js';
@@ -51,7 +54,8 @@ import { AlertsService } from './services/alerts.service.js';
  *
  * Слои: настройки и очередь (этап 1), библиотека (этап 2), ход агента —
  * Planner → Composer → Guard → Outbound, слушатель событий, песочница (этап 3),
- * касания по таймеру (этап 4), черновики и решения менеджера (этап 5).
+ * касания по таймеру (этап 4), черновики и решения менеджера (этап 5),
+ * похожие случаи, счётчик ответов и аномалии (этап 6).
  */
 @Module({
   imports: [
@@ -97,6 +101,8 @@ import { AlertsService } from './services/alerts.service.js';
     AlertsService,
     ChatStateService,
     TurnContextService,
+    SimilarCasesService,
+    LearningService,
     ComposerService,
     OutboundService,
     AgentService,
@@ -106,6 +112,7 @@ import { AlertsService } from './services/alerts.service.js';
     ChatAiService,
     DraftsService,
     NotifyService,
+    StabilityService,
   ],
 })
 export class AiModule {}

@@ -25,6 +25,7 @@ import { inboundRunAt, typingRunAt } from '../lib/debounce.js';
 import { defaultRng } from '../lib/random.js';
 import { OutboundService } from '../outbound/outbound.service.js';
 import { ChatStateService } from './chat-state.service.js';
+import { LearningService } from './learning.service.js';
 
 /** Сколько ждать, прежде чем считать исходящее без ai_turn_id сообщением менеджера. */
 const ECHO_GRACE_MS = 4_000;
@@ -49,6 +50,7 @@ export class InboundListenerService implements OnModuleInit, OnModuleDestroy {
     private readonly events: TelegramEventsService,
     private readonly settings: AiSettingsService,
     private readonly chatState: ChatStateService,
+    private readonly learning: LearningService,
     private readonly jobs: AiJobsService,
     private readonly worker: AiJobWorker,
     private readonly outbound: OutboundService,
@@ -92,6 +94,12 @@ export class InboundListenerService implements OnModuleInit, OnModuleDestroy {
     const chat = event.chat;
     const state = await this.chatState.ensureForInbound(chat, settings);
     const now = new Date();
+
+    // Клиент ответил на ход бота — засчитываем это примерам и блокам того хода.
+    await this.learning.markReplied(chat.id, now).catch((error) => {
+      this.logger.warn(`Чат ${chat.id}: счётчик ответов не обновлён — ${error instanceof Error ? error.message : error}`);
+      return [];
+    });
 
     // Клиент ответил — запланированное касание больше не нужно.
     if (state.nextTouchKind) {

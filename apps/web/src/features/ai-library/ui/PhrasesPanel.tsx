@@ -30,7 +30,10 @@ import type { Gender, PhraseDto, PhraseInput, PhraseKind, PhraseUsage } from '@/
 import {
   GENDER_LABELS,
   PHRASE_KIND_META,
+  REPLY_LOW_RATE,
   SOURCE_LABELS,
+  formatReplyRate,
+  isReplaceCandidate,
   useCreatePhraseMutation,
   useDeletePhraseMutation,
   useGetCategoriesQuery,
@@ -202,7 +205,14 @@ export function PhrasesPanel({ accountId }: PhrasesPanelProps) {
                   {row.language !== 'ru' && <div>{row.language}</div>}
                 </TableCell>
                 <TableCell align="right" sx={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                  {row.sentCount > 0 ? `${row.repliedCount}/${row.sentCount}` : '—'}
+                  <Tooltip title={`Клиент отвечал в течение суток после ${row.sentCount} отправок`} disableHoverListener={row.sentCount === 0}>
+                    <span>{formatReplyRate(row)}</span>
+                  </Tooltip>
+                  {isReplaceCandidate(row) && (
+                    <Tooltip title={`Отвечают меньше чем на ${Math.round(REPLY_LOW_RATE * 100)} % отправок — текст стоит переписать`}>
+                      <Chip size="small" color="warning" variant="outlined" label="переписать" sx={{ mt: 0.5 }} />
+                    </Tooltip>
+                  )}
                 </TableCell>
                 <TableCell align="center">
                   <Switch

@@ -56,6 +56,7 @@ export type {
   ResumeChatAiRequest,
   SandboxRequest,
   SandboxResponse,
+  SimilarCaseDto,
   TouchKind,
   TurnDto,
   TurnMessageDto,

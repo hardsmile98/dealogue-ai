@@ -52,3 +52,26 @@ export const SOURCE_LABELS: Record<string, string> = {
   manual: 'вручную',
   copied: 'скопировано',
 }
+
+/**
+ * Отклик на текст: сколько раз клиент отвечал в течение суток после того,
+ * как этот образец, блок или диагностика уходили клиенту (раздел 9.2 ТЗ).
+ */
+export const REPLY_MIN_SENT = 20
+export const REPLY_LOW_RATE = 0.2
+
+export function replyRate(row: { sentCount: number; repliedCount: number }): number | null {
+  return row.sentCount > 0 ? row.repliedCount / row.sentCount : null
+}
+
+/** Выборка набралась, а отвечают редко — менеджеру стоит переписать текст. */
+export function isReplaceCandidate(row: { sentCount: number; repliedCount: number }): boolean {
+  const rate = replyRate(row)
+  return rate !== null && row.sentCount >= REPLY_MIN_SENT && rate < REPLY_LOW_RATE
+}
+
+export function formatReplyRate(row: { sentCount: number; repliedCount: number }): string {
+  const rate = replyRate(row)
+  if (rate === null) return '—'
+  return `${row.repliedCount}/${row.sentCount} · ${Math.round(rate * 100)} %`
+}

@@ -30,6 +30,8 @@ export interface AlertPayload {
   error?: string;
   /** Для anomaly / library_incomplete: что именно. */
   detail?: string;
+  /** Код аномалии (раздел 15 ТЗ): handoff_rate, regeneration_rate, provider_errors, chat_messages. */
+  code?: string;
 }
 
 /** Сигнал менеджеру. */

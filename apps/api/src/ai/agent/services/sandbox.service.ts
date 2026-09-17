@@ -6,9 +6,11 @@ import type { FunnelStage, Gender, TouchKind } from '../../domain/types.js';
 import { AiSettingsService } from '../../services/ai-settings.service.js';
 import type { HistoryMessage, SlotsSnapshot } from '../agent.types.js';
 import { defaultRng } from '../lib/random.js';
+import { formatSimilarCases } from '../learning/similar-cases.js';
 import { plan, stageAfterTurn, stageForTouch } from '../planner/planner.js';
 import { AgentService, snapshot } from './agent.service.js';
 import { ChatStateService } from './chat-state.service.js';
+import { SimilarCasesService } from './similar-cases.service.js';
 import { TurnContextService } from './turn-context.service.js';
 
 export interface SandboxHistoryItem {
@@ -40,9 +42,13 @@ export interface SandboxResult {
   guardOk: boolean;
   examples: { kind: string; title: string }[];
   blocks: { kind: string; title: string }[];
+  /** Похожие прошлые случаи, подмешанные в промпт (раздел 9.3 ТЗ). */
+  similarCases: { source: string; clientText: string; answerText: string }[];
   usage: { tokensIn: number; tokensOut: number; durationMs: number; model: string };
   prompts: { system: string; user: string } | null;
 }
+
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 /**
  * Песочница (раздел 12.1 п. 7 ТЗ): полный ход Planner → Composer → Guard
@@ -56,6 +62,7 @@ export class SandboxService {
     private readonly settings: AiSettingsService,
     private readonly chatState: ChatStateService,
     private readonly context: TurnContextService,
+    private readonly similar: SimilarCasesService,
     private readonly agent: AgentService,
   ) {}
 
@@ -169,6 +176,7 @@ export class SandboxService {
       guardOk: true,
       examples: ctx.examples.map((e) => ({ kind: e.kind, title: e.title })),
       blocks: ctx.blocks.map((b) => ({ kind: b.kind, title: b.title })),
+      similarCases: [],
       usage: { tokensIn: 0, tokensOut: 0, durationMs: 0, model: '' },
       prompts: null,
     };
@@ -176,9 +184,17 @@ export class SandboxService {
     if (verdict.kind === 'handoff') return { ...base, verdict: { kind: 'handoff', reason: verdict.reason, detail: verdict.detail } };
 
     const task = verdict.task;
+    // Похожие случаи — как в настоящем ходе, чтобы песочница показывала то же, что увидит модель.
+    const cases = await this.similar.find({
+      accountId,
+      chatId: request.chatId ?? ZERO_UUID,
+      texts: batch.map((m) => m.text),
+      stage,
+      categoryKey: slots.requestCategoryKey,
+    });
     const gen = await this.agent.generate({
       system: { persona: settings.persona, facts: ctx.facts, stages: ctx.stages, categories: ctx.categories },
-      turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, now },
+      turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, similarCases: formatSimilarCases(cases), now },
       guard: {
         sentBlockIds,
         exhaustedBlockKinds: ctx.exhaustedBlockKinds,
@@ -202,6 +218,7 @@ export class SandboxService {
     return {
       ...base,
       stageAfter,
+      similarCases: cases.map((item) => ({ source: item.source, clientText: item.clientText, answerText: item.answerText })),
       task: task.text,
       verdict: escalation
         ? { kind: 'handoff', reason: escalation.reason, detail: escalation.note ?? '' }

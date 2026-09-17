@@ -20,6 +20,7 @@
     "migration:show": "tsx ./node_modules/typeorm/cli.js migration:show -d ./src/database/data-source.ts",
     "migration:create": "tsx ./node_modules/typeorm/cli.js migration:create",
     "test": "vitest run",
+    "ai:fixtures": "tsx ./scripts/export-fixtures.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

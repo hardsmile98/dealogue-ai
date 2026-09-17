@@ -3,6 +3,7 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import Collapse from '@mui/material/Collapse'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -12,7 +13,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { PHRASE_KINDS } from '@/shared/api'
-import type { DraftDto, PhraseKind } from '@/shared/api'
+import type { DraftDto, PhraseKind, SimilarCaseDto } from '@/shared/api'
 import { formatRelative, getApiErrorMessage } from '@/shared/lib'
 import { HANDOFF_REASON_LABELS } from '@/entities/alert'
 import { useGetAiSettingsQuery } from '@/entities/ai-agent'
@@ -81,6 +82,7 @@ export function DraftCard({ accountId, chatId, draft }: DraftCardProps) {
           {draft.rationale}
         </Typography>
       )}
+      {draft.similarCases.length > 0 && <SimilarCases cases={draft.similarCases} />}
       {suggested.length === 0 && (
         <Alert severity="info" sx={{ mb: 1 }}>
           Бот не предложил текст — напишите ответ сами или откройте переписку целиком.
@@ -187,6 +189,40 @@ interface EditState {
 
 function initialEdit(signature: string, suggested: string[]): EditState {
   return { signature, texts: suggested.length > 0 ? suggested : [''], own: suggested.length === 0 }
+}
+
+// --- на что опирался бот ------------------------------------------------------------
+
+/** Похожие прошлые случаи из промпта: что писал клиент и чем тогда ответили. */
+function SimilarCases({ cases }: { cases: SimilarCaseDto[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Box sx={{ mb: 1 }}>
+      <Button size="small" variant="text" sx={{ px: 0, minWidth: 0 }} onClick={() => setOpen(!open)}>
+        {open ? 'Скрыть похожие случаи' : `Похожие случаи из переписок (${cases.length})`}
+      </Button>
+      <Collapse in={open}>
+        <Stack spacing={1} sx={{ mt: 0.5 }}>
+          {cases.map((item) => (
+            <Box key={item.id} sx={{ pl: 1, borderLeft: '2px solid', borderColor: 'divider' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                {item.source === 'draft' ? 'ответил менеджер' : 'удачный ход бота'} · {formatRelative(item.createdAt)}
+              </Typography>
+              <Typography variant="body2">Клиент: {cut(item.clientText, 200)}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Ответ: {cut(item.answerText, 300)}
+              </Typography>
+            </Box>
+          ))}
+        </Stack>
+      </Collapse>
+    </Box>
+  )
+}
+
+function cut(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat
 }
 
 // --- «Сохранить как пример / заметку» ------------------------------------------------

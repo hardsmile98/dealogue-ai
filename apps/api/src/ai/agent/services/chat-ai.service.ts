@@ -21,6 +21,7 @@ import { planNextTouch } from '../funnel/touch-planner.js';
 import { ageFrom } from '../lib/slots.js';
 import { defaultRng } from '../lib/random.js';
 import { ChatStateService } from './chat-state.service.js';
+import { SimilarCasesService } from './similar-cases.service.js';
 
 /** Состояние чата для менеджера: просмотр, правка слотов, режимы, ручные ходы, журнал, оценки. */
 @Injectable()
@@ -35,6 +36,7 @@ export class ChatAiService {
     @InjectRepository(TelegramChatEntity)
     private readonly chats: Repository<TelegramChatEntity>,
     private readonly chatState: ChatStateService,
+    private readonly similar: SimilarCasesService,
     private readonly settings: AiSettingsService,
     private readonly jobs: AiJobsService,
     private readonly worker: AiJobWorker,
@@ -47,7 +49,19 @@ export class ChatAiService {
   async getState(chat: TelegramChatEntity): Promise<ChatAiStateDto> {
     const state = await this.requireState(chat);
     const draft = await this.drafts.findOne({ where: { chatId: chat.id, status: In(['pending', 'pending_classification']) }, order: { createdAt: 'DESC' } });
-    return toChatAiStateDto(state, draft);
+    // На что опирался черновик — показываем менеджеру рядом с текстом (раздел 9.3 ТЗ).
+    const cases = draft ? await this.similar.byIds(draft.similarCaseIds) : [];
+    return toChatAiStateDto(
+      state,
+      draft,
+      cases.map((item) => ({
+        id: item.id,
+        source: item.source,
+        clientText: item.clientText,
+        answerText: item.answerText,
+        createdAt: item.createdAt.toISOString(),
+      })),
+    );
   }
 
   async listSummaries(accountId: string): Promise<ChatAiSummaryDto[]> {

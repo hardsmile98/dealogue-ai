@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, MoreThan, Repository } from 'typeorm';
+import { In, IsNull, MoreThan, Not, Repository } from 'typeorm';
 import { RealtimeService } from '../../../realtime/realtime.service.js';
 import { TelegramChatEntity } from '../../../telegram/entities/telegram-chat.entity.js';
 import { TelegramMessageEntity } from '../../../telegram/entities/telegram-message.entity.js';
@@ -37,13 +37,17 @@ import { planNextTouch, pickInterval } from '../funnel/touch-planner.js';
 import { expandMarkers, joinMessages, resolveBlocks } from '../guard/blocks.js';
 import { describeViolations, runGuard } from '../guard/guard.js';
 import type { GuardInput } from '../guard/guard.js';
+import { formatSimilarCases } from '../learning/similar-cases.js';
 import { defaultRng } from '../lib/random.js';
 import type { Rng } from '../lib/random.js';
 import { ageFrom, detectLanguage, parseBirthDate, startsWithGreeting } from '../lib/slots.js';
 import { OutboundInterruptedError, OutboundService } from '../outbound/outbound.service.js';
 import { plan, stageAfterTurn, stageForTouch } from '../planner/planner.js';
 import type { RecentTurnSummary } from '../planner/planner.js';
+import { stopReason } from '../planner/stop-reason.js';
+import type { StopVerdict } from '../planner/stop-reason.js';
 import { ChatStateService, StaleStateError } from './chat-state.service.js';
+import { SimilarCasesService } from './similar-cases.service.js';
 import { TurnContextService, refsOf, toHistoryMessage } from './turn-context.service.js';
 import type { TurnContext, TurnLibraryRefs } from './turn-context.service.js';
 
@@ -110,6 +114,8 @@ export interface GenerateResult {
 const STALE_LEAD_MS = 6 * 3_600_000;
 const RECENT_TURNS = 6;
 const LIMIT_POSTPONE_MS = 10 * 60_000;
+/** Дневной лимит сообщений в чат освобождается медленно — заглядываем раз в час. */
+const CHAT_LIMIT_POSTPONE_MS = 60 * 60_000;
 
 /**
  * Ход агента целиком (раздел 4 ТЗ): Planner → Composer → Guard → Outbound →
@@ -136,6 +142,7 @@ export class AgentService {
     private readonly settings: AiSettingsService,
     private readonly chatState: ChatStateService,
     private readonly context: TurnContextService,
+    private readonly similar: SimilarCasesService,
     private readonly composer: ComposerService,
     private readonly outbound: OutboundService,
     private readonly jobs: AiJobsService,
@@ -277,12 +284,16 @@ export class AgentService {
     // Лимиты вызовов модели по аккаунту.
     const limit = await this.overLlmLimit(chat.accountId, settings, now);
     if (limit) return { kind: 'postpone', runAt: new Date(now.getTime() + LIMIT_POSTPONE_MS), reason: limit };
+    // Лимиты сообщений бота (раздел 7 ТЗ): молчим, пока окно не освободится.
+    const messageLimit = await this.overMessageLimit(chat, settings, now);
+    if (messageLimit) return { kind: 'postpone', runAt: new Date(now.getTime() + messageLimit.retryMs), reason: messageLimit.reason };
 
     const task = verdict.task;
+    const similar = await this.findSimilar(chat, state, stage, batch);
 
     let gen: GenerateResult;
     try {
-      gen = await this.generate(this.generateParams({ settings, ctx, task, history, batch, slots, state, now }));
+      gen = await this.generate(this.generateParams({ settings, ctx, task, history, batch, slots, state, similarCases: similar.lines, now }));
     } catch (error) {
       return this.onProviderError(error, params, settings, chat, state, batch, handledId, slotPatch, stage, task);
     }
@@ -297,6 +308,8 @@ export class AgentService {
       touchKind: trigger === 'inbound' ? null : touchKind,
       stageBefore: stage,
       inputMessageIds: batch.map((m) => m.id),
+      clientText: batch.map((m) => m.text).join('\n'),
+      similarCaseIds: similar.ids,
       promptVersion: PROMPT_VERSION,
       model: gen.model,
       analysis: gen.output.analysis as unknown as Record<string, unknown>,
@@ -569,10 +582,11 @@ export class AgentService {
     });
     const history = await this.context.loadHistory(chat.id, batch.map((m) => m.id));
     const task = managerDraftTask(stage, ctx);
+    const similar = await this.findSimilar(chat, state, stage, batch);
 
     let gen: GenerateResult;
     try {
-      gen = await this.generate(this.generateParams({ settings, ctx, task, history, batch, slots, state, now }));
+      gen = await this.generate(this.generateParams({ settings, ctx, task, history, batch, slots, state, similarCases: similar.lines, now }));
     } catch (error) {
       const retryable = error instanceof LlmError ? error.retryable : true;
       const lastAttempt = params.attempt ? params.attempt.current >= params.attempt.max : false;
@@ -595,6 +609,8 @@ export class AgentService {
         stageBefore: stage,
         stageAfter: stage,
         inputMessageIds: batch.map((m) => m.id),
+        clientText: batch.map((m) => m.text).join('\n'),
+        similarCaseIds: similar.ids,
         promptVersion: PROMPT_VERSION,
         model: gen.model,
         analysis: gen.output.analysis as unknown as Record<string, unknown>,
@@ -677,14 +693,17 @@ export class AgentService {
       if (verdict.kind === 'proceed') task = verdict.task;
     }
 
-    const gen = await this.generate(this.generateParams({ settings, ctx, task, history, batch, slots, state, now }));
+    const similar = await this.findSimilar(chat, state, stage, batch);
+    const gen = await this.generate(this.generateParams({ settings, ctx, task, history, batch, slots, state, similarCases: similar.lines, now }));
     draft.draftMessages = gen.messages.map(toTurnMessage);
+    draft.similarCaseIds = similar.ids;
     draft.draftRationale = gen.output.reply.send
       ? (gen.output.analysis.clientIntent ?? draft.draftRationale)
       : (gen.output.reply.silentReason ?? 'Модель считает, что отвечать сейчас не нужно');
     await this.drafts.save(draft);
     if (turn) {
       turn.messagesPlanned = draft.draftMessages;
+      turn.similarCaseIds = similar.ids;
       turn.analysis = gen.output.analysis as unknown as Record<string, unknown>;
       turn.guardNotes = gen.guardNotes as unknown as Record<string, unknown>[];
       turn.tokensIn += gen.tokensIn;
@@ -705,12 +724,13 @@ export class AgentService {
     batch: HistoryMessage[];
     slots: SlotsSnapshot;
     state: AiChatStateEntity;
+    similarCases?: string[];
     now: Date;
   }): GenerateParams {
     const { settings, ctx, task, history, batch, slots, state, now } = input;
     return {
       system: { persona: settings.persona, facts: ctx.facts, stages: ctx.stages, categories: ctx.categories },
-      turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, now },
+      turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, similarCases: input.similarCases ?? [], now },
       guard: {
         sentBlockIds: state.sentBlockIds,
         exhaustedBlockKinds: ctx.exhaustedBlockKinds,
@@ -723,6 +743,27 @@ export class AgentService {
       task,
       blocks: ctx.blocks,
     };
+  }
+
+  /**
+   * Похожие прошлые случаи для промпта (раздел 9.3 ТЗ). Ищем только по тексту
+   * клиента: у касания его нет, значит и подсказывать нечем.
+   */
+  private async findSimilar(
+    chat: TelegramChatEntity,
+    state: AiChatStateEntity,
+    stage: FunnelStage,
+    batch: HistoryMessage[],
+  ): Promise<{ lines: string[]; ids: string[] }> {
+    if (batch.length === 0) return { lines: [], ids: [] };
+    const cases = await this.similar.find({
+      accountId: chat.accountId,
+      chatId: chat.id,
+      texts: batch.map((m) => m.text),
+      stage,
+      categoryKey: state.requestCategoryKey,
+    });
+    return { lines: formatSimilarCases(cases), ids: cases.map((c) => c.id) };
   }
 
   // ---------------------------------------------------------------------------
@@ -774,6 +815,8 @@ export class AgentService {
   ): Promise<AiDraftEntity> {
     // Новое входящее при висящем черновике — старый устаревает.
     await this.drafts.update({ chatId: chat.id, status: In(OPEN_DRAFT_STATUSES) }, { status: 'superseded', decidedAt: new Date() });
+    // На что опирался ход — видно в карточке черновика; у хода это уже посчитано.
+    const turn = turnId ? await this.turns.findOne({ where: { id: turnId } }) : null;
     const draft = await this.drafts.save(
       this.drafts.create({
         accountId: chat.accountId,
@@ -786,6 +829,7 @@ export class AgentService {
         handoffReason: reason,
         draftMessages: messages.map(toTurnMessage),
         draftRationale: rationale,
+        similarCaseIds: turn?.similarCaseIds ?? [],
         promptVersion: PROMPT_VERSION,
       }),
     );
@@ -834,6 +878,7 @@ export class AgentService {
         stageBefore: stage,
         stageAfter: stage,
         inputMessageIds: batch.map((m) => m.id),
+        clientText: batch.map((m) => m.text).join('\n'),
         promptVersion: PROMPT_VERSION,
         model: this.composer.modelName,
         outcome: 'error',
@@ -857,22 +902,16 @@ export class AgentService {
     gen: GenerateResult,
     ctx: TurnContext,
     settings: AiAccountSettingsEntity,
-  ): { reason: HandoffReason; detail: string } | null {
-    const analysis = gen.output.analysis;
-    if (state.isMinor) return { reason: 'minor', detail: 'Клиент несовершеннолетний' };
-    if (analysis.escalation) {
-      return { reason: analysis.escalation.reason, detail: analysis.escalation.note ?? analysis.clientIntent ?? analysis.escalation.reason };
-    }
-    if (analysis.language === 'other') return { reason: 'language', detail: 'Клиент пишет не на русском и не на английском' };
-    if (analysis.language === 'en' && !ctx.hasEnglishTexts) return { reason: 'language', detail: 'Клиент пишет на английском, а англоязычных текстов в библиотеке нет' };
-    if (analysis.confidence < settings.guard.confidenceThreshold) {
-      return { reason: 'unsure', detail: `Модель не уверена (${analysis.confidence.toFixed(2)}): ${analysis.clientIntent ?? ''}` };
-    }
-    if (!gen.guardOk) {
-      const last = gen.guardNotes[gen.guardNotes.length - 1];
-      return { reason: 'guard_failed', detail: last ? describeViolations(last.violations) : 'Проверка не пройдена дважды' };
-    }
-    return null;
+  ): StopVerdict | null {
+    const last = gen.guardNotes[gen.guardNotes.length - 1];
+    return stopReason({
+      isMinor: state.isMinor,
+      analysis: gen.output.analysis,
+      hasEnglishTexts: ctx.hasEnglishTexts,
+      guardOk: gen.guardOk,
+      guardRemark: last ? describeViolations(last.violations) : null,
+      confidenceThreshold: settings.guard.confidenceThreshold,
+    });
   }
 
   private async silentTurn(
@@ -1008,8 +1047,8 @@ export class AgentService {
     } else {
       await this.jobs.cancel('touch', chat.accountId, chat.id);
     }
-    await this.bumpCounters(refs, blockIds);
-    if (sent.length > 0) await this.turns.update(turn.id, { messagesSent: sent });
+    const libraryIds = await this.bumpCounters(refs, blockIds);
+    await this.turns.update(turn.id, { libraryIds, ...(sent.length > 0 ? { messagesSent: sent } : {}) });
     await this.chatState.publishFunnel(state);
     await this.realtime.publishForAccount(chat.accountId, { type: 'turn.sent', accountId: chat.accountId, chatId: chat.id, turnId: turn.id });
   }
@@ -1056,11 +1095,49 @@ export class AgentService {
     return at;
   }
 
-  private async bumpCounters(refs: TurnLibraryRefs, blockIds: string[]): Promise<void> {
+  /** Счётчик отправок примеров, блоков и диагностик; возвращает их id для счётчика ответов. */
+  private async bumpCounters(refs: TurnLibraryRefs, blockIds: string[]): Promise<string[]> {
     const phraseIds = [...refs.exampleIds, ...refs.phraseBlockIds.filter((id) => blockIds.includes(id))];
     const diagnosticIds = refs.diagnosticIds.filter((id) => blockIds.includes(id));
     if (phraseIds.length > 0) await this.phrases.increment({ id: In(phraseIds) }, 'sentCount', 1).catch(() => undefined);
     if (diagnosticIds.length > 0) await this.diagnostics.increment({ id: In(diagnosticIds) }, 'sentCount', 1).catch(() => undefined);
+    return [...phraseIds, ...diagnosticIds];
+  }
+
+  /**
+   * Лимиты сообщений бота (раздел 6.1 ТЗ): в один чат за сутки и по аккаунту
+   * за час. Ход не отменяем, а переносим: тема разговора никуда не денется,
+   * а сообщений в чате станет меньше, чем у живого человека.
+   */
+  private async overMessageLimit(
+    chat: TelegramChatEntity,
+    settings: AiAccountSettingsEntity,
+    now: Date,
+  ): Promise<{ reason: string; retryMs: number } | null> {
+    const perChat = await this.messages.count({
+      where: { chatId: chat.id, direction: 'out', aiTurnId: Not(IsNull()), sentAt: MoreThan(new Date(now.getTime() - 86_400_000)) },
+    });
+    if (perChat >= settings.limits.botMessagesPerChatPerDay) {
+      return {
+        reason: `Лимит сообщений бота в чат за сутки (${settings.limits.botMessagesPerChatPerDay}) исчерпан`,
+        retryMs: CHAT_LIMIT_POSTPONE_MS,
+      };
+    }
+    const perHour = await this.messages
+      .createQueryBuilder('m')
+      .innerJoin(TelegramChatEntity, 'c', 'c.id = m.chatId')
+      .where('c.accountId = :accountId', { accountId: chat.accountId })
+      .andWhere('m.direction = :direction', { direction: 'out' })
+      .andWhere('m.aiTurnId IS NOT NULL')
+      .andWhere('m.sentAt > :since', { since: new Date(now.getTime() - 3_600_000) })
+      .getCount();
+    if (perHour >= settings.limits.botMessagesPerHour) {
+      return {
+        reason: `Лимит сообщений бота по аккаунту в час (${settings.limits.botMessagesPerHour}) исчерпан`,
+        retryMs: LIMIT_POSTPONE_MS,
+      };
+    }
+    return null;
   }
 
   private async overLlmLimit(accountId: string, settings: AiAccountSettingsEntity, now: Date): Promise<string | null> {

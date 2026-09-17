@@ -7,7 +7,7 @@
 import type { FactGroup, PersonaConfig } from '../../domain/types.js';
 import type { HistoryMessage, LibraryBlock, LibraryExample, PlaybookSnapshot, SlotsSnapshot, TurnTask } from '../agent.types.js';
 
-export const PROMPT_VERSION = 'v3.0';
+export const PROMPT_VERSION = 'v3.1';
 
 export interface PromptFact {
   group: FactGroup;
@@ -38,6 +38,8 @@ export interface TurnPromptInput {
   batch: HistoryMessage[];
   slots: SlotsSnapshot;
   notes: string[];
+  /** Похожие прошлые случаи «клиент → ответ» (раздел 9.3 ТЗ), уже отформатированные. */
+  similarCases?: string[];
   now: Date;
   /** Замечание guard при регенерации. */
   guardRemark?: string | null;
@@ -146,6 +148,12 @@ export function buildTurnPrompt(input: TurnPromptInput): string {
   lines.push(`- пол: ${slots.gender === 'f' ? 'женский' : slots.gender === 'm' ? 'мужской' : 'неизвестен (пиши нейтрально)'}`);
   lines.push(`- язык: ${slots.language}`);
   lines.push(`- запрос: ${slots.requestSummary ?? 'ещё не выяснен'}${slots.requestCategoryKey ? ` (категория ${slots.requestCategoryKey})` : ''}`);
+
+  if (input.similarCases && input.similarCases.length > 0) {
+    lines.push('');
+    lines.push('ПОХОЖИЕ СЛУЧАИ ИЗ ПРОШЛЫХ ПЕРЕПИСОК (как отвечали на похожее — ориентир по смыслу и тону, не текст для копирования):');
+    input.similarCases.forEach((line, index) => lines.push(`${index + 1}. ${line}`));
+  }
 
   if (input.notes.length > 0) {
     lines.push('');

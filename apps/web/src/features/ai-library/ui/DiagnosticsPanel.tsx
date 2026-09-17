@@ -30,6 +30,8 @@ import {
   CATEGORY_GROUP_LABELS,
   GENDER_LABELS,
   SOURCE_LABELS,
+  formatReplyRate,
+  isReplaceCandidate,
   useCreateDiagnosticMutation,
   useDeleteDiagnosticMutation,
   useGetCategoriesQuery,
@@ -181,7 +183,8 @@ export function DiagnosticsPanel({ accountId }: DiagnosticsPanelProps) {
                   <Typography variant="caption" color="text.disabled">
                     {row.gender ? GENDER_LABELS[row.gender] : 'всем'} · {row.text.length} симв. · {row.messagesCount} сообщ. ·{' '}
                     {SOURCE_LABELS[row.source] ?? row.source}
-                    {row.sentCount > 0 && ` · отклик ${row.repliedCount}/${row.sentCount}`}
+                    {row.sentCount > 0 && ` · отклик ${formatReplyRate(row)}`}
+                    {isReplaceCandidate(row) && ' · отвечают редко, стоит переписать'}
                   </Typography>
                 </Box>
                 <Switch

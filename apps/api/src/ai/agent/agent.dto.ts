@@ -66,6 +66,15 @@ export interface ChatAiSummaryDto {
   handoffReason: HandoffReason | null;
 }
 
+/** Похожий прошлый случай, на который опирался черновик (раздел 9.3 ТЗ). */
+export interface SimilarCaseDto {
+  id: string;
+  source: 'draft' | 'turn';
+  clientText: string;
+  answerText: string;
+  createdAt: string;
+}
+
 export interface DraftDto {
   id: string;
   accountId: string;
@@ -79,6 +88,8 @@ export interface DraftDto {
   rationale: string | null;
   finalText: string | null;
   decisionSource: DecisionSource | null;
+  /** На что опирался черновик; пусто, если похожих случаев не нашлось. */
+  similarCases: SimilarCaseDto[];
   createdAt: string;
   decidedAt: string | null;
 }
@@ -111,6 +122,10 @@ export interface TurnDto {
   durationMs: number;
   rating: TurnRating | null;
   ratingNote: string | null;
+  /** Сколько похожих случаев подмешали в промпт этого хода. */
+  similarCases: number;
+  /** Клиент ответил на этот ход (в пределах суток). */
+  repliedAt: string | null;
   createdAt: string;
 }
 
@@ -126,7 +141,11 @@ export interface AiOverviewDto {
   provider: { name: string; model: string; ready: boolean; breakerOpen: boolean };
 }
 
-export function toChatAiStateDto(row: AiChatStateEntity, draft: AiDraftEntity | null): ChatAiStateDto {
+export function toChatAiStateDto(
+  row: AiChatStateEntity,
+  draft: AiDraftEntity | null,
+  similarCases: SimilarCaseDto[] = [],
+): ChatAiStateDto {
   return {
     chatId: row.chatId,
     mode: row.mode,
@@ -158,7 +177,7 @@ export function toChatAiStateDto(row: AiChatStateEntity, draft: AiDraftEntity | 
     manualNotes: row.manualNotes,
     funnelStartedAt: iso(row.funnelStartedAt),
     closedAt: iso(row.closedAt),
-    draft: draft ? toDraftDto(draft) : null,
+    draft: draft ? toDraftDto(draft, similarCases) : null,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -175,7 +194,7 @@ export function toChatAiSummaryDto(row: AiChatStateEntity, hasPendingDraft: bool
   };
 }
 
-export function toDraftDto(row: AiDraftEntity): DraftDto {
+export function toDraftDto(row: AiDraftEntity, similarCases: SimilarCaseDto[] = []): DraftDto {
   return {
     id: row.id,
     accountId: row.accountId,
@@ -189,6 +208,7 @@ export function toDraftDto(row: AiDraftEntity): DraftDto {
     rationale: row.draftRationale,
     finalText: row.finalText,
     decisionSource: row.decisionSource,
+    similarCases,
     createdAt: row.createdAt.toISOString(),
     decidedAt: iso(row.decidedAt),
   };
@@ -230,6 +250,8 @@ export function toTurnDto(row: AiTurnEntity): TurnDto {
     durationMs: row.durationMs,
     rating: row.rating,
     ratingNote: row.ratingNote,
+    similarCases: row.similarCaseIds?.length ?? 0,
+    repliedAt: iso(row.repliedAt),
     createdAt: row.createdAt.toISOString(),
   };
 }

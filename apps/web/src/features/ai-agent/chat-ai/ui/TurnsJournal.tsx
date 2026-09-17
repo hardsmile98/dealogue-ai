@@ -71,6 +71,12 @@ function TurnCard({ accountId, chatId, turn }: { accountId: string; chatId: stri
             {turn.stageAfter !== turn.stageBefore ? ` → ${FUNNEL_STAGE_META[turn.stageAfter].short}` : ''}
           </Typography>
         )}
+        {turn.similarCases > 0 && (
+          <Chip size="small" variant="outlined" label={`похожих случаев: ${turn.similarCases}`} sx={{ height: 20, fontSize: 11 }} />
+        )}
+        {turn.repliedAt && (
+          <Chip size="small" variant="outlined" color="success" label="клиент ответил" sx={{ height: 20, fontSize: 11 }} />
+        )}
         <Box sx={{ flexGrow: 1 }} />
         <Typography variant="caption" color="text.secondary">
           {formatDateTime(turn.createdAt)} · {turn.tokensIn + turn.tokensOut} ток. · {(turn.durationMs / 1000).toFixed(1)} с

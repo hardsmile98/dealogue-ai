@@ -431,6 +431,24 @@ export type DraftStatus =
 
 export type DecisionSource = 'web' | 'telegram'
 
+/** Похожий прошлый случай, на который опирался черновик. */
+export interface SimilarCaseDto {
+  id: string
+  source: 'draft' | 'turn'
+  clientText: string
+  answerText: string
+  createdAt: string
+}
+
+/** Похожий прошлый случай, на который опирался черновик. */
+export interface SimilarCaseDto {
+  id: string
+  source: 'draft' | 'turn'
+  clientText: string
+  answerText: string
+  createdAt: string
+}
+
 export interface DraftDto {
   id: string
   accountId: string
@@ -444,6 +462,8 @@ export interface DraftDto {
   rationale: string | null
   finalText: string | null
   decisionSource: DecisionSource | null
+  /** На что опирался черновик. */
+  similarCases: SimilarCaseDto[]
   createdAt: string
   decidedAt: string | null
 }
@@ -553,6 +573,10 @@ export interface TurnDto {
   durationMs: number
   rating: 'good' | 'bad' | null
   ratingNote: string | null
+  /** Сколько похожих случаев подмешали в промпт хода. */
+  similarCases: number
+  /** Клиент ответил на этот ход в течение суток. */
+  repliedAt: string | null
   createdAt: string
 }
 
@@ -603,6 +627,8 @@ export interface SandboxResponse {
   guardOk: boolean
   examples: { kind: string; title: string }[]
   blocks: { kind: string; title: string }[]
+  /** Похожие прошлые случаи, подмешанные в промпт. */
+  similarCases: { source: string; clientText: string; answerText: string }[]
   usage: { tokensIn: number; tokensOut: number; durationMs: number; model: string }
   prompts: { system: string; user: string } | null
 }

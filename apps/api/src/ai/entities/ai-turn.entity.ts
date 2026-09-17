@@ -39,6 +39,14 @@ export class AiTurnEntity {
   @Column({ name: 'input_message_ids', type: 'uuid', array: true, default: () => "'{}'::uuid[]" })
   inputMessageIds: string[];
 
+  /** Текст входящих пачки — по нему ищутся похожие случаи (раздел 9.3 ТЗ). */
+  @Column({ name: 'client_text', type: 'text', default: '' })
+  clientText: string;
+
+  /** Черновики и ходы, подмешанные в промпт как похожие случаи. */
+  @Column({ name: 'similar_case_ids', type: 'uuid', array: true, default: () => "'{}'::uuid[]" })
+  similarCaseIds: string[];
+
   @Column({ name: 'prompt_version', type: 'varchar', length: 16, nullable: true })
   promptVersion: string | null;
 
@@ -79,6 +87,14 @@ export class AiTurnEntity {
 
   @Column({ name: 'rating_note', type: 'text', nullable: true })
   ratingNote: string | null;
+
+  /** Примеры, блоки и диагностики, ушедшие в этом ходе, — для счётчика ответов. */
+  @Column({ name: 'library_ids', type: 'uuid', array: true, default: () => "'{}'::uuid[]" })
+  libraryIds: string[];
+
+  /** Когда клиент ответил на этот ход (в пределах суток); null — ответа не было или ещё не считали. */
+  @Column({ name: 'replied_at', type: 'timestamptz', nullable: true })
+  repliedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

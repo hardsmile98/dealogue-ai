@@ -215,6 +215,12 @@ function SandboxResult({ data, showPrompts, onTogglePrompts }: { data: SandboxRe
           <div style={{ marginTop: 6, color: 'rgba(0,0,0,0.6)' }}>
             Образцы: {data.examples.map((e) => `${e.kind} «${e.title}»`).join(', ') || '—'}. Блоки: {data.blocks.map((b) => b.title).join(', ') || '—'}.
           </div>
+          {data.similarCases.length > 0 && (
+            <div style={{ marginTop: 6, color: 'rgba(0,0,0,0.6)' }}>
+              Похожие случаи ({data.similarCases.length}):{' '}
+              {data.similarCases.map((c) => `«${c.clientText.slice(0, 60)}» → «${c.answerText.slice(0, 60)}»`).join('; ')}
+            </div>
+          )}
         </CardContent>
       </Card>
 
