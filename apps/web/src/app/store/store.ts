@@ -4,7 +4,7 @@ import { baseApi, setAuthTokenProvider } from '@/shared/api'
 import {
   SESSION_SLICE_NAME,
   selectAccessToken,
-  sessionPersistenceMiddleware,
+  sessionLifecycleMiddleware,
   sessionReducer,
 } from '@/entities/session'
 
@@ -15,7 +15,7 @@ export const store = configureStore({
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware()
-      .prepend(sessionPersistenceMiddleware)
+      .prepend(sessionLifecycleMiddleware)
       .concat(baseApi.middleware),
 })
 

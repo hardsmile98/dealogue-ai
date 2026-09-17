@@ -18,6 +18,7 @@ const RECONNECT_MAX_MS = 60_000
 export function connectRealtime(
   onEvent: (event: RealtimeEvent) => void,
   onStatus?: (connected: boolean) => void,
+  onUnauthorized?: () => void,
 ): RealtimeConnection {
   let source: EventSource | null = null
   let closed = false
@@ -44,6 +45,13 @@ export function connectRealtime(
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       })
+      if (response.status === 401) {
+        // Токен протух: переподключаться нечем, пока не появится новая сессия.
+        closed = true
+        onStatus?.(false)
+        onUnauthorized?.()
+        return
+      }
       if (!response.ok) throw new Error(`ticket ${response.status}`)
       ticket = ((await response.json()) as RealtimeTicketResponse).ticket
     } catch {

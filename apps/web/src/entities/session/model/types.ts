@@ -11,6 +11,8 @@ export interface Session {
 
 export interface SessionState {
   current: Session | null
+  /** Сессия оборвалась сама (истёк токен), а не по кнопке «Выйти». */
+  expired: boolean
 }
 
 /**

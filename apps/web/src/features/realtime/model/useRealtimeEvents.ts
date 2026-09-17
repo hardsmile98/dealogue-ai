@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useDispatch } from 'react-redux'
-import { connectRealtime } from '@/shared/api'
+import { connectRealtime, unauthorized } from '@/shared/api'
 import type { RealtimeEvent } from '@/shared/api'
 import { AI_LEARNING_TAG, AI_RUNS_TAG, aiAgentApi } from '@/entities/ai-agent'
 import { ALERT_TAG, alertsApi } from '@/entities/alert'
@@ -61,6 +61,7 @@ export function useRealtimeEvents(onEvent?: (event: RealtimeEvent) => void): { c
         handlerRef.current?.(event)
       },
       setConnected,
+      () => dispatch(unauthorized()),
     )
     return () => connection.close()
   }, [dispatch])

@@ -1,13 +1,17 @@
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import { useSessionExpired } from '@/entities/session'
 import { LoginForm } from '@/features/auth/login'
 import { BrandMark } from '@/shared/ui'
 import { BRAND_HIGHLIGHTS } from './brandHighlights'
 import { loginPageStyles as styles } from './LoginPage.styles'
 
 export function LoginPage() {
+  const expired = useSessionExpired()
+
   return (
     <Box sx={styles.root}>
       <Box sx={styles.brandPanel}>
@@ -61,6 +65,12 @@ export function LoginPage() {
               Введите логин и пароль, выданные администратором
             </Typography>
           </Stack>
+
+          {expired && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Сессия истекла — войдите снова.
+            </Alert>
+          )}
 
           <LoginForm />
         </Paper>

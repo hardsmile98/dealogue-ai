@@ -4,14 +4,21 @@ export {
   sessionEstablished,
   sessionReducer,
 } from './model/slice'
-export { sessionPersistenceMiddleware } from './model/persistence'
+export { sessionLifecycleMiddleware } from './model/lifecycle'
 export {
   selectAccessToken,
   selectCurrentUser,
   selectIsAuthenticated,
   selectSession,
+  selectSessionExpired,
 } from './model/selectors'
-export { useCurrentUser, useIsAuthenticated, useSession } from './model/hooks'
+export {
+  useCurrentUser,
+  useIsAuthenticated,
+  useSession,
+  useSessionExpired,
+} from './model/hooks'
+export { useSessionExpiry } from './model/useSessionExpiry'
 export type {
   AuthUser,
   Session,

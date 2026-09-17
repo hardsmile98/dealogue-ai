@@ -1,4 +1,5 @@
 export { baseApi } from './baseApi'
+export { unauthorized } from './authEvents'
 export { setAuthTokenProvider, getAuthToken } from './authToken'
 export { connectRealtime } from './realtime'
 export type { RealtimeConnection } from './realtime'

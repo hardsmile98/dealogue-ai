@@ -10,3 +10,7 @@ export const selectAccessToken = (state: WithSessionState) =>
 
 export const selectIsAuthenticated = (state: WithSessionState) =>
   state.session.current !== null
+
+/** Сессию оборвал истёкший токен — есть что объяснить на странице входа. */
+export const selectSessionExpired = (state: WithSessionState) =>
+  state.session.expired
