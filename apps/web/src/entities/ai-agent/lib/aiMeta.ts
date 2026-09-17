@@ -1,4 +1,4 @@
-import type { ChatMode, FunnelStage } from '@/shared/api'
+import type { ChatMode, FunnelStage, TouchKind, TurnOutcome, TurnTrigger } from '@/shared/api'
 
 export interface ModeMeta {
   label: string
@@ -33,4 +33,34 @@ export const FUNNEL_STAGE_META: Record<FunnelStage, { label: string; short: stri
   discount: { label: 'Скидка', short: 'скидка' },
   reminders: { label: 'Напоминания', short: 'напоминания' },
   closed_silent: { label: 'Воронка завершена', short: 'завершена' },
+}
+
+export const TOUCH_KIND_META: Record<TouchKind, string> = {
+  first_reply: 'первый ответ',
+  birth_nudge: 'напоминание о дате рождения',
+  diagnostics: 'диагностика',
+  reengage: 'вопрос после диагностики',
+  offer: 'предложение услуг',
+  offer_question: 'вопрос по предложению',
+  price: 'цены',
+  price_question: 'вопрос по ценам',
+  discount: 'скидка',
+  reminder: 'напоминание',
+}
+
+export const TURN_OUTCOME_META: Record<TurnOutcome, { label: string; color: 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info' }> = {
+  sent: { label: 'отправлено', color: 'success' },
+  dry_run: { label: 'отправил бы (dry-run)', color: 'info' },
+  silent: { label: 'промолчал', color: 'default' },
+  handoff: { label: 'передано менеджеру', color: 'warning' },
+  cancelled: { label: 'отменено', color: 'default' },
+  error: { label: 'ошибка', color: 'error' },
+  awaiting_approval: { label: 'ждёт подтверждения', color: 'primary' },
+}
+
+export const TURN_TRIGGER_LABELS: Record<TurnTrigger, string> = {
+  inbound: 'ответ клиенту',
+  touch: 'касание',
+  manual: 'ручной ход',
+  manager_draft: 'черновик менеджеру',
 }

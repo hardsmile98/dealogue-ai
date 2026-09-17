@@ -4,6 +4,17 @@ import { AuthModule } from '../auth/auth.module.js';
 import { HealthController } from '../health/health.controller.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
 import { TelegramModule } from '../telegram/telegram.module.js';
+import { AgentController } from './agent/agent.controller.js';
+import { ChatAiController } from './agent/chat-ai.controller.js';
+import { ComposerService } from './agent/composer/composer.service.js';
+import { AgentJobsService } from './agent/jobs/agent-jobs.service.js';
+import { OutboundService } from './agent/outbound/outbound.service.js';
+import { AgentService } from './agent/services/agent.service.js';
+import { ChatAiService } from './agent/services/chat-ai.service.js';
+import { ChatStateService } from './agent/services/chat-state.service.js';
+import { InboundListenerService } from './agent/services/inbound-listener.service.js';
+import { SandboxService } from './agent/services/sandbox.service.js';
+import { TurnContextService } from './agent/services/turn-context.service.js';
 import { AiController, AiSettingsController } from './ai-settings.controller.js';
 import { AiConfig } from './ai.config.js';
 import { AlertsController } from './alerts.controller.js';
@@ -35,8 +46,8 @@ import { AlertsService } from './services/alerts.service.js';
  * (события, отправка, доступ к чатам), сам наружу ничего не экспортирует —
  * Telegram про ИИ не знает.
  *
- * Этап 1: фундамент — сущности, настройки, очередь, алерты. Ход агента,
- * библиотека и черновики добавляются следующими этапами.
+ * Слои: настройки и очередь (этап 1), библиотека (этап 2), ход агента —
+ * Planner → Composer → Guard → Outbound, слушатель событий, песочница (этап 3).
  */
 @Module({
   imports: [
@@ -67,6 +78,8 @@ import { AlertsService } from './services/alerts.service.js';
     AiLibraryController,
     AttentionController,
     AlertsController,
+    ChatAiController,
+    AgentController,
   ],
   providers: [
     AiConfig,
@@ -76,6 +89,15 @@ import { AlertsService } from './services/alerts.service.js';
     AiSettingsService,
     AiLibraryService,
     AlertsService,
+    ChatStateService,
+    TurnContextService,
+    ComposerService,
+    OutboundService,
+    AgentService,
+    AgentJobsService,
+    InboundListenerService,
+    SandboxService,
+    ChatAiService,
   ],
 })
 export class AiModule {}

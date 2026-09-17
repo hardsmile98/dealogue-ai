@@ -52,7 +52,7 @@ export class AiJobsService {
         "run_at" = CASE WHEN "ai_jobs"."status" = 'queued' THEN EXCLUDED."run_at" ELSE "ai_jobs"."run_at" END,
         "payload" = CASE
           WHEN "ai_jobs"."status" = 'queued' THEN "ai_jobs"."payload" || EXCLUDED."payload"
-          ELSE "ai_jobs"."payload" || jsonb_build_object('requeueAt', to_jsonb(EXCLUDED."run_at"))
+          ELSE "ai_jobs"."payload" || EXCLUDED."payload" || jsonb_build_object('requeueAt', to_jsonb(EXCLUDED."run_at"))
         END,
         "updated_at" = now()
       RETURNING *

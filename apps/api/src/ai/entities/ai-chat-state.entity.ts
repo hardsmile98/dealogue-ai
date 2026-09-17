@@ -140,6 +140,14 @@ export class AiChatStateEntity {
   @Column({ name: 'last_bot_message_at', type: 'timestamptz', nullable: true })
   lastBotMessageAt: Date | null;
 
+  /** Менеджер писал клиенту сам (из Telegram или веба). */
+  @Column({ name: 'last_manager_message_at', type: 'timestamptz', nullable: true })
+  lastManagerMessageAt: Date | null;
+
+  /** До какого telegram_message_id входящие уже обработаны ходом. */
+  @Column({ name: 'last_handled_message_id', type: 'integer', default: 0 })
+  lastHandledMessageId: number;
+
   @Column({ name: 'manual_notes', type: 'text', nullable: true })
   manualNotes: string | null;
 

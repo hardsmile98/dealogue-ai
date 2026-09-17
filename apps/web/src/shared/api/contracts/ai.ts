@@ -359,3 +359,202 @@ export interface PreviewSplitResponse {
   messages: string[]
   lengths: number[]
 }
+
+// --- ход агента: состояние чата, журнал, обзор, песочница ---------------------------
+
+export type TouchKind =
+  | 'first_reply'
+  | 'birth_nudge'
+  | 'diagnostics'
+  | 'reengage'
+  | 'offer'
+  | 'offer_question'
+  | 'price'
+  | 'price_question'
+  | 'discount'
+  | 'reminder'
+
+export type TurnTrigger = 'inbound' | 'touch' | 'manual' | 'manager_draft'
+
+export type TurnOutcome = 'sent' | 'silent' | 'dry_run' | 'handoff' | 'cancelled' | 'error' | 'awaiting_approval'
+
+export type HandoffReason =
+  | 'ready_to_pay'
+  | 'suspects_bot'
+  | 'wants_human'
+  | 'aggression'
+  | 'crisis'
+  | 'minor'
+  | 'refusal'
+  | 'out_of_scope'
+  | 'unsure'
+  | 'media'
+  | 'guard_failed'
+  | 'provider_error'
+  | 'loop'
+  | 'auto_limit'
+  | 'language'
+  | 'stale_lead'
+  | 'manual'
+
+export interface TurnMessageDto {
+  text: string
+  blockId?: string | null
+  telegramMessageId?: number | null
+  sentAt?: string | null
+}
+
+export interface ChatAiSlotsDto {
+  birthDate: string | null
+  birthDateText: string | null
+  birthPlace: string | null
+  age: number | null
+  isMinor: boolean
+  gender: Gender | null
+  genderSource: string | null
+  language: string
+  requestCategoryKey: string | null
+  requestSummary: string | null
+  manualSlots: string[]
+}
+
+export interface DraftDto {
+  id: string
+  chatId: string
+  turnId: string | null
+  kind: string
+  status: string
+  clientText: string
+  handoffReason: HandoffReason | null
+  messages: TurnMessageDto[]
+  rationale: string | null
+  finalText: string | null
+  createdAt: string
+  decidedAt: string | null
+}
+
+export interface ChatAiStateDto {
+  chatId: string
+  mode: ChatMode
+  stage: FunnelStage
+  stageEnteredAt: string | null
+  nextTouchKind: TouchKind | null
+  nextTouchAt: string | null
+  remindersSent: number
+  slots: ChatAiSlotsDto
+  handoffReason: HandoffReason | null
+  handoffAt: string | null
+  diagnosticsSentAt: string | null
+  diagnosticsReadAt: string | null
+  lastClientMessageAt: string | null
+  lastBotMessageAt: string | null
+  lastManagerMessageAt: string | null
+  manualNotes: string | null
+  funnelStartedAt: string | null
+  closedAt: string | null
+  draft: DraftDto | null
+  updatedAt: string
+}
+
+export interface ChatAiSummaryDto {
+  chatId: string
+  mode: ChatMode
+  stage: FunnelStage
+  nextTouchKind: TouchKind | null
+  nextTouchAt: string | null
+  hasPendingDraft: boolean
+  handoffReason: HandoffReason | null
+}
+
+export interface PatchChatAiRequest {
+  mode?: ChatMode
+  slots?: Partial<{
+    birthDate: string | null
+    birthPlace: string | null
+    gender: Gender | null
+    language: string
+    requestSummary: string | null
+    requestCategoryKey: string | null
+  }>
+  manualNotes?: string | null
+}
+
+export interface ResumeChatAiRequest {
+  mode: 'auto' | 'supervised'
+  stage?: FunnelStage
+  when: 'now' | 'interval'
+}
+
+export interface TurnDto {
+  id: string
+  chatId: string
+  trigger: TurnTrigger
+  touchKind: TouchKind | null
+  stageBefore: FunnelStage | null
+  stageAfter: FunnelStage | null
+  inputMessageIds: string[]
+  model: string | null
+  analysis: Record<string, unknown> | null
+  messagesPlanned: TurnMessageDto[]
+  messagesSent: TurnMessageDto[]
+  guardNotes: Record<string, unknown>[]
+  outcome: TurnOutcome
+  error: string | null
+  tokensIn: number
+  tokensOut: number
+  durationMs: number
+  rating: 'good' | 'bad' | null
+  ratingNote: string | null
+  createdAt: string
+}
+
+export interface RateTurnRequest {
+  rating: 'good' | 'bad' | null
+  note?: string | null
+  createNote?: boolean
+}
+
+export interface AiOverviewDto {
+  enabled: boolean
+  dryRun: boolean
+  defaultChatMode: ChatMode
+  chatsByMode: Record<string, number>
+  chatsByStage: Record<string, number>
+  upcomingTouches: { chatId: string; peerName: string; kind: TouchKind; at: string; stage: FunnelStage }[]
+  pendingDrafts: number
+  turnsToday: { total: number; sent: number; dryRun: number; handoff: number; error: number }
+  provider: { name: string; model: string; ready: boolean; breakerOpen: boolean }
+}
+
+export interface SandboxRequest {
+  chatId?: string | null
+  history?: { role: 'client' | 'bot' | 'manager'; text: string }[]
+  message?: string | null
+  touchKind?: TouchKind | null
+  stage?: FunnelStage | null
+  slots?: Partial<{
+    birthDate: string | null
+    birthPlace: string | null
+    gender: Gender | null
+    language: string
+    requestSummary: string | null
+    requestCategoryKey: string | null
+  }> | null
+}
+
+export interface SandboxResponse {
+  stage: FunnelStage
+  stageAfter: FunnelStage
+  task: string | null
+  verdict: { kind: string; reason?: string; detail?: string }
+  analysis: Record<string, unknown> | null
+  messages: { text: string; blockKind: string | null }[]
+  send: boolean
+  silentReason: string | null
+  guardNotes: Record<string, unknown>[]
+  guardOk: boolean
+  examples: { kind: string; title: string }[]
+  blocks: { kind: string; title: string }[]
+  usage: { tokensIn: number; tokensOut: number; durationMs: number; model: string }
+  prompts: { system: string; user: string } | null
+}

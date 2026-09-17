@@ -1,10 +1,22 @@
 export {
+  AI_CHAT_TAG,
   AI_HEALTH_TAG,
+  AI_OVERVIEW_TAG,
   AI_SETTINGS_TAG,
+  AI_TURNS_TAG,
   aiAgentApi,
   useGetAiHealthQuery,
+  useGetAiOverviewQuery,
   useGetAiProvidersQuery,
   useGetAiSettingsQuery,
+  useGetChatAiQuery,
+  useGetChatAiSummariesQuery,
+  useGetChatTurnsQuery,
+  useManualTurnMutation,
+  usePatchChatAiMutation,
+  useRateTurnMutation,
+  useResumeChatAiMutation,
+  useRunSandboxMutation,
   useUpdateAiSettingsMutation,
 } from './api/aiAgentApi'
-export { CHAT_MODE_META, FUNNEL_STAGE_META } from './lib/aiMeta'
+export { CHAT_MODE_META, FUNNEL_STAGE_META, TOUCH_KIND_META, TURN_OUTCOME_META, TURN_TRIGGER_LABELS } from './lib/aiMeta'

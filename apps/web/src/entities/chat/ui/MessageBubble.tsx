@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import AttachFileOutlinedIcon from '@mui/icons-material/AttachFileOutlined'
 import DoneAllIcon from '@mui/icons-material/DoneAll'
@@ -13,9 +14,11 @@ interface MessageBubbleProps {
   /** Первое входящее сообщение диалога — по нему считается статистика. */
   isFirst?: boolean
   leadCode?: string | null
+  /** Действия под сообщением (оценка хода бота). */
+  footer?: ReactNode
 }
 
-export function MessageBubble({ message, isFirst = false, leadCode = null }: MessageBubbleProps) {
+export function MessageBubble({ message, isFirst = false, leadCode = null, footer }: MessageBubbleProps) {
   const incoming = message.direction === 'in'
   return (
     <Box sx={[styles.row, incoming ? styles.rowIn : styles.rowOut]}>
@@ -50,6 +53,34 @@ export function MessageBubble({ message, isFirst = false, leadCode = null }: Mes
             </Box>
           )}
         </Box>
+        {footer && <Box sx={styles.footer}>{footer}</Box>}
+      </Box>
+    </Box>
+  )
+}
+
+interface GhostBubbleProps {
+  text: string
+  sentAt: string
+  /** «отправил бы (dry-run)», «ждёт подтверждения». */
+  label: string
+  footer?: ReactNode
+}
+
+/** Сообщение бота, которое в Telegram не уходило: сухой прогон или черновик. */
+export function GhostBubble({ text, sentAt, label, footer }: GhostBubbleProps) {
+  return (
+    <Box sx={[styles.row, styles.rowOut]}>
+      <Box sx={[styles.bubble, styles.bubbleGhost]}>
+        {text}
+        <Box sx={styles.meta}>
+          <Box component="span" sx={styles.aiTag}>
+            <SmartToyOutlinedIcon />
+            {label}
+          </Box>
+          {formatTime(sentAt)}
+        </Box>
+        {footer && <Box sx={styles.footer}>{footer}</Box>}
       </Box>
     </Box>
   )

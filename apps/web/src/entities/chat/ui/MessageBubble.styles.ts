@@ -30,6 +30,21 @@ export const messageBubbleStyles = {
     color: 'text.primary',
     borderBottomRightRadius: 6,
   },
+  /** Не отправлялось в Telegram: сухой прогон или черновик. */
+  bubbleGhost: {
+    bgcolor: 'transparent',
+    border: '1px dashed',
+    borderColor: 'primary.main',
+    color: 'text.secondary',
+    borderBottomRightRadius: 6,
+  },
+  footer: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 0.5,
+    mt: 0.5,
+  },
   meta: {
     display: 'flex',
     justifyContent: 'flex-end',

@@ -4,38 +4,51 @@ import Chip from '@mui/material/Chip'
 import InputAdornment from '@mui/material/InputAdornment'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
+import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import SearchIcon from '@mui/icons-material/Search'
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined'
 import { formatChatListTime, pluralize } from '@/shared/lib'
+import { FUNNEL_STAGES } from '@/shared/api'
+import type { ChatAiSummaryDto, ChatMode, FunnelStage } from '@/shared/api'
+import { CHAT_MODE_META, FUNNEL_STAGE_META } from '@/entities/ai-agent'
 import { ALERT_TYPE_META } from '@/entities/alert'
 import { LeadCodeChip } from '@/entities/chat'
 import type { Chat } from '@/entities/chat'
 import { AccountAvatar } from '@/entities/telegram-account'
 import { chatPanelStyles as styles } from './ChatPanel.styles'
 
-type ChatFilter = 'all' | 'attention' | 'with-code' | 'no-code'
+type ChatFilter = 'all' | 'attention' | 'bot' | 'draft' | 'with-code' | 'no-code'
 
 const FILTERS: { key: ChatFilter; label: string }[] = [
   { key: 'all', label: 'Все' },
   { key: 'attention', label: 'Требуют внимания' },
+  { key: 'bot', label: 'Ведёт бот' },
+  { key: 'draft', label: 'С черновиком' },
   { key: 'with-code', label: 'С кодом' },
   { key: 'no-code', label: 'Без кода' },
 ]
 
 interface ChatListProps {
   chats: Chat[] | undefined
+  /** Состояние бота по чатам (chatId → сводка). */
+  summaries: Map<string, ChatAiSummaryDto>
   isLoading: boolean
   selectedId: string | null
   onSelect: (chatId: string) => void
 }
 
-function matchesFilter(chat: Chat, filter: ChatFilter): boolean {
+function matchesFilter(chat: Chat, ai: ChatAiSummaryDto | undefined, filter: ChatFilter): boolean {
   switch (filter) {
     case 'attention':
       return chat.attention.needed
+    case 'bot':
+      return ai?.mode === 'auto' || ai?.mode === 'supervised'
+    case 'draft':
+      return Boolean(ai?.hasPendingDraft)
     case 'with-code':
       return chat.leadCode !== null
     case 'no-code':
@@ -59,16 +72,23 @@ function matchesSearch(chat: Chat, query: string): boolean {
   return haystack.includes(query)
 }
 
-export function ChatList({ chats, isLoading, selectedId, onSelect }: ChatListProps) {
+export function ChatList({ chats, summaries, isLoading, selectedId, onSelect }: ChatListProps) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<ChatFilter>('all')
+  const [stageFilter, setStageFilter] = useState<FunnelStage | ''>('')
+  const [modeFilter, setModeFilter] = useState<ChatMode | ''>('')
 
   const attentionCount = useMemo(() => (chats ?? []).filter((c) => c.attention.needed).length, [chats])
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase()
-    return (chats ?? []).filter((chat) => matchesFilter(chat, filter) && matchesSearch(chat, query))
-  }, [chats, filter, search])
+    return (chats ?? []).filter((chat) => {
+      const ai = summaries.get(chat.id)
+      if (stageFilter && ai?.stage !== stageFilter) return false
+      if (modeFilter && (ai?.mode ?? 'off') !== modeFilter) return false
+      return matchesFilter(chat, ai, filter) && matchesSearch(chat, query)
+    })
+  }, [chats, summaries, filter, stageFilter, modeFilter, search])
 
   return (
     <Box sx={styles.listPane}>
@@ -102,6 +122,24 @@ export function ChatList({ chats, isLoading, selectedId, onSelect }: ChatListPro
             />
           ))}
         </Box>
+        <Box sx={[styles.filterRow, { mt: 1 }]}>
+          <TextField select size="small" label="Режим" value={modeFilter} onChange={(e) => setModeFilter(e.target.value as ChatMode | '')} sx={{ minWidth: 150 }}>
+            <MenuItem value="">любой</MenuItem>
+            {(Object.keys(CHAT_MODE_META) as ChatMode[]).map((mode) => (
+              <MenuItem key={mode} value={mode}>
+                {CHAT_MODE_META[mode].label}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField select size="small" label="Этап" value={stageFilter} onChange={(e) => setStageFilter(e.target.value as FunnelStage | '')} sx={{ minWidth: 150, flexGrow: 1 }}>
+            <MenuItem value="">любой</MenuItem>
+            {FUNNEL_STAGES.map((stage) => (
+              <MenuItem key={stage} value={stage}>
+                {FUNNEL_STAGE_META[stage].label}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Box>
       </Box>
 
       <List disablePadding sx={styles.list}>
@@ -125,6 +163,8 @@ export function ChatList({ chats, isLoading, selectedId, onSelect }: ChatListPro
         {visible.map((chat) => {
           const outgoing = chat.lastMessage.direction === 'out'
           const attention = chat.attention.reason ? ALERT_TYPE_META[chat.attention.reason] : null
+          const ai = summaries.get(chat.id)
+          const botActive = ai?.mode === 'auto' || ai?.mode === 'supervised'
           return (
             <ListItemButton
               key={chat.id}
@@ -144,7 +184,7 @@ export function ChatList({ chats, isLoading, selectedId, onSelect }: ChatListPro
                   {outgoing ? 'Вы: ' : ''}
                   {chat.lastMessage.text}
                 </Typography>
-                {(chat.leadCode !== null || chat.attention.needed) && (
+                {(chat.leadCode !== null || chat.attention.needed || ai) && (
                   <Box sx={styles.listItemBottom}>
                     {chat.attention.needed && attention && (
                       <Chip
@@ -155,6 +195,17 @@ export function ChatList({ chats, isLoading, selectedId, onSelect }: ChatListPro
                         sx={{ fontWeight: 600 }}
                       />
                     )}
+                    {ai && (
+                      <Chip
+                        size="small"
+                        variant={botActive ? 'filled' : 'outlined'}
+                        color={botActive ? 'primary' : ai.mode === 'manager' ? 'warning' : 'default'}
+                        icon={botActive ? <SmartToyOutlinedIcon /> : undefined}
+                        label={botActive ? FUNNEL_STAGE_META[ai.stage].short : CHAT_MODE_META[ai.mode].label}
+                        title={`${CHAT_MODE_META[ai.mode].label} · ${FUNNEL_STAGE_META[ai.stage].label}`}
+                      />
+                    )}
+                    {ai?.hasPendingDraft && <Chip size="small" color="info" label="черновик" />}
                     <LeadCodeChip code={chat.leadCode} />
                   </Box>
                 )}

@@ -10,8 +10,11 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined'
 import SendIcon from '@mui/icons-material/Send'
 import { formatDateTime, formatDayDivider, getApiErrorMessage, toDayKey } from '@/shared/lib'
+import type { TurnDto } from '@/shared/api'
 import { ALERT_TYPE_META } from '@/entities/alert'
+import { TURN_OUTCOME_META, useGetChatTurnsQuery } from '@/entities/ai-agent'
 import {
+  GhostBubble,
   LeadCodeChip,
   MessageBubble,
   useClearAttentionMutation,
@@ -21,6 +24,7 @@ import {
 } from '@/entities/chat'
 import type { Chat, Message } from '@/entities/chat'
 import { AccountAvatar } from '@/entities/telegram-account'
+import { ChatAiPanel, RateTurn, TurnsJournal } from '@/features/ai-agent/chat-ai'
 import { chatPanelStyles as styles } from './ChatPanel.styles'
 
 interface ChatThreadProps {
@@ -30,20 +34,37 @@ interface ChatThreadProps {
   onBack?: () => void
 }
 
+/** Элемент ленты: реальное сообщение или «отправил бы» из журнала (сухой прогон, черновик). */
+type ThreadItem =
+  | { kind: 'message'; at: string; message: Message }
+  | { kind: 'ghost'; at: string; id: string; text: string; label: string; turn: TurnDto }
+
 interface DayGroup {
   key: string
-  messages: Message[]
+  items: ThreadItem[]
 }
 
-function groupByDay(messages: Message[]): DayGroup[] {
+function groupByDay(items: ThreadItem[]): DayGroup[] {
   const groups: DayGroup[] = []
-  for (const message of messages) {
-    const key = toDayKey(message.sentAt)
+  for (const item of items) {
+    const key = toDayKey(item.at)
     const last = groups[groups.length - 1]
-    if (last && last.key === key) last.messages.push(message)
-    else groups.push({ key, messages: [message] })
+    if (last && last.key === key) last.items.push(item)
+    else groups.push({ key, items: [item] })
   }
   return groups
+}
+
+/** Ходы без отправки в Telegram показываем в ленте пунктиром. */
+function ghostsOf(turns: TurnDto[]): ThreadItem[] {
+  const result: ThreadItem[] = []
+  for (const turn of turns) {
+    if (turn.outcome !== 'dry_run' && turn.outcome !== 'awaiting_approval') continue
+    turn.messagesPlanned.forEach((m, index) => {
+      result.push({ kind: 'ghost', at: turn.createdAt, id: `${turn.id}:${index}`, text: m.text, label: TURN_OUTCOME_META[turn.outcome].label, turn })
+    })
+  }
+  return result
 }
 
 export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
@@ -51,13 +72,19 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
     { accountId, chatId: chat.id },
     { pollingInterval: 10_000 },
   )
+  const { data: turns } = useGetChatTurnsQuery({ accountId, chatId: chat.id, limit: 100 })
   const [markSeen] = useMarkAttentionSeenMutation()
   const [clearAttention, { isLoading: clearing }] = useClearAttentionMutation()
   const [sendMessage, { isLoading: sending, error: sendError }] = useSendMessageMutation()
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const groups = useMemo(() => groupByDay(messages ?? []), [messages])
+  const turnsById = useMemo(() => new Map((turns ?? []).map((t) => [t.id, t])), [turns])
+  const items = useMemo(() => {
+    const real: ThreadItem[] = (messages ?? []).map((message) => ({ kind: 'message', at: message.sentAt, message }))
+    return [...real, ...ghostsOf(turns ?? [])].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+  }, [messages, turns])
+  const groups = useMemo(() => groupByDay(items), [items])
   const firstIncomingId = useMemo(
     () => messages?.find((message) => message.direction === 'in')?.id ?? null,
     [messages],
@@ -67,7 +94,7 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
   useEffect(() => {
     const node = scrollRef.current
     if (node) node.scrollTop = node.scrollHeight
-  }, [messages])
+  }, [items])
 
   // Менеджер открыл чат с пометкой — алерты считаем увиденными.
   useEffect(() => {
@@ -88,6 +115,11 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
   const attentionSeverity =
     attention?.color === 'success' ? 'success' : attention?.color === 'error' ? 'error' : attention?.color === 'info' ? 'info' : 'warning'
 
+  const rateFor = (turnId: string | null) => {
+    const turn = turnId ? turnsById.get(turnId) : null
+    return turn ? <RateTurn accountId={accountId} chatId={chat.id} turn={turn} /> : undefined
+  }
+
   return (
     <Box sx={styles.threadPane}>
       <Box sx={styles.threadHeader}>
@@ -106,6 +138,8 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
           </Box>
         </Box>
       </Box>
+
+      <ChatAiPanel accountId={accountId} chatId={chat.id} />
 
       {attention && chat.attention.needed && (
         <Alert
@@ -149,17 +183,24 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
             <Box sx={styles.dayDivider}>
               <Box sx={styles.dayDividerLabel}>{formatDayDivider(group.key)}</Box>
             </Box>
-            {group.messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                isFirst={message.id === firstIncomingId}
-                leadCode={chat.leadCode}
-              />
-            ))}
+            {group.items.map((item) =>
+              item.kind === 'message' ? (
+                <MessageBubble
+                  key={item.message.id}
+                  message={item.message}
+                  isFirst={item.message.id === firstIncomingId}
+                  leadCode={chat.leadCode}
+                  footer={item.message.byBot ? rateFor(item.message.aiTurnId) : undefined}
+                />
+              ) : (
+                <GhostBubble key={item.id} text={item.text} sentAt={item.at} label={item.label} footer={rateFor(item.turn.id)} />
+              ),
+            )}
           </Box>
         ))}
       </Box>
+
+      <TurnsJournal accountId={accountId} chatId={chat.id} turns={turns ?? []} />
 
       <Box sx={styles.composer}>
         {sendError && (

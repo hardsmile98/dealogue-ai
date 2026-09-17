@@ -27,6 +27,7 @@ import { DropServiceChats1700000000004 } from './migrations/1700000000004-DropSe
 import { CreateAiAgent1700000000005 } from './migrations/1700000000005-CreateAiAgent.js';
 import { AddFollowupNextAt1700000000006 } from './migrations/1700000000006-AddFollowupNextAt.js';
 import { CreateAiFunnel1700000000007 } from './migrations/1700000000007-CreateAiFunnel.js';
+import { AiChatStateHandledMessage1700000000008 } from './migrations/1700000000008-AiChatStateHandledMessage.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -98,6 +99,7 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       CreateAiAgent1700000000005,
       AddFollowupNextAt1700000000006,
       CreateAiFunnel1700000000007,
+      AiChatStateHandledMessage1700000000008,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

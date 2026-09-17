@@ -48,6 +48,8 @@ export class AiConfig {
   readonly workerPollMs: number;
   /** Новые аккаунты стартуют в сухом прогоне. */
   readonly defaultDryRun: boolean;
+  /** Паузы «на чтение» и «печатает» при отправке; false — для отладки без ожиданий. */
+  readonly humanDelays: boolean;
   readonly webUrl: string;
 
   constructor(config: ConfigService) {
@@ -65,6 +67,7 @@ export class AiConfig {
     this.workerConcurrency = readInt(config, 'AI_WORKER_CONCURRENCY', 3);
     this.workerPollMs = readInt(config, 'AI_WORKER_POLL_SEC', 3) * 1000;
     this.defaultDryRun = (config.get<string>('AI_DEFAULT_DRY_RUN') ?? 'true') !== 'false';
+    this.humanDelays = (config.get<string>('AI_HUMAN_DELAYS') ?? 'true') !== 'false';
     this.webUrl = (config.get<string>('WEB_URL') ?? 'http://localhost:5173').replace(/\/+$/, '');
 
     if (!this.enabled) {

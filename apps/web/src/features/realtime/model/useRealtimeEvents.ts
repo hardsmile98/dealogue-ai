@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useDispatch } from 'react-redux'
 import { connectRealtime, unauthorized } from '@/shared/api'
 import type { RealtimeEvent } from '@/shared/api'
-import { AI_SETTINGS_TAG, aiAgentApi } from '@/entities/ai-agent'
+import { AI_CHAT_TAG, AI_OVERVIEW_TAG, AI_SETTINGS_TAG, AI_TURNS_TAG, aiAgentApi } from '@/entities/ai-agent'
 import { ALERT_TAG, alertsApi } from '@/entities/alert'
 import { CHAT_TAG, MESSAGE_TAG, chatsApi } from '@/entities/chat'
 
@@ -24,10 +24,29 @@ export function tagsForEvent(event: RealtimeEvent): { chats: ChatTags; alerts: A
         agent: [],
       }
     case 'chat.updated':
-    case 'funnel.updated':
       return { chats: [{ type: CHAT_TAG, id: event.accountId }], alerts: [], agent: [] }
+    case 'funnel.updated':
+      return {
+        chats: [{ type: CHAT_TAG, id: event.accountId }],
+        alerts: [],
+        agent: [
+          { type: AI_CHAT_TAG, id: event.chatId },
+          { type: AI_CHAT_TAG, id: event.accountId },
+          { type: AI_OVERVIEW_TAG, id: event.accountId },
+        ],
+      }
+    case 'draft.created':
+    case 'draft.updated':
+      return {
+        chats: [],
+        alerts: [],
+        agent: [
+          { type: AI_CHAT_TAG, id: event.chatId },
+          { type: AI_CHAT_TAG, id: event.accountId },
+          { type: AI_OVERVIEW_TAG, id: event.accountId },
+        ],
+      }
     case 'message.created':
-    case 'turn.sent':
       return {
         chats: [
           { type: MESSAGE_TAG, id: event.chatId },
@@ -35,6 +54,19 @@ export function tagsForEvent(event: RealtimeEvent): { chats: ChatTags; alerts: A
         ],
         alerts: [],
         agent: [],
+      }
+    case 'turn.sent':
+      return {
+        chats: [
+          { type: MESSAGE_TAG, id: event.chatId },
+          { type: CHAT_TAG, id: event.accountId },
+        ],
+        alerts: [],
+        agent: [
+          { type: AI_TURNS_TAG, id: event.chatId },
+          { type: AI_CHAT_TAG, id: event.chatId },
+          { type: AI_OVERVIEW_TAG, id: event.accountId },
+        ],
       }
     case 'message.read':
       return { chats: [{ type: MESSAGE_TAG, id: event.chatId }], alerts: [], agent: [] }

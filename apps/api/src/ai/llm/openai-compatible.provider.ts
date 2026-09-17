@@ -1,6 +1,10 @@
 import { Logger } from '@nestjs/common';
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { Agent, ProxyAgent, fetch as undiciFetch } from 'undici';
 import type { Dispatcher } from 'undici';
+
+const KEEP_ALIVE_MS = 4_000;
+/** Сетевая ошибка на, возможно, протухшем сокете — один повтор на свежем соединении. */
+const NETWORK_RETRY_DELAY_MS = 500;
 import { wellFormed } from '../lib/text.js';
 import { extractJson } from './json-parse.js';
 import { LlmError } from './llm-provider.interface.js';
@@ -48,7 +52,11 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 
   constructor(private readonly options: OpenAiCompatibleOptions) {
     this.name = options.name;
-    this.dispatcher = options.httpProxy ? new ProxyAgent(options.httpProxy) : undefined;
+    // Свой агент с коротким keep-alive: провайдер молча закрывает простаивающие
+    // соединения, а повторное использование такого сокета даёт «Protocol error».
+    this.dispatcher = options.httpProxy
+      ? new ProxyAgent({ uri: options.httpProxy, keepAliveTimeout: KEEP_ALIVE_MS, keepAliveMaxTimeout: KEEP_ALIVE_MS })
+      : new Agent({ keepAliveTimeout: KEEP_ALIVE_MS, keepAliveMaxTimeout: KEEP_ALIVE_MS, pipelining: 0 });
   }
 
   async complete(request: LlmCompletionRequest): Promise<LlmCompletionResult> {
@@ -63,6 +71,36 @@ export class OpenAiCompatibleProvider implements LlmProvider {
         return this.call(request, false);
       }
       throw error;
+    }
+  }
+
+  /** Один HTTP-запрос с таймаутом; сетевые ошибки — LlmError('network') с настоящей причиной. */
+  private async send(payload: string, timeoutMs: number): Promise<Awaited<ReturnType<typeof undiciFetch>>> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await undiciFetch(`${this.options.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${this.options.apiKey}`,
+        },
+        body: payload,
+        signal: controller.signal,
+        dispatcher: this.dispatcher,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new LlmError('network', `${this.name}: таймаут ${Math.round(timeoutMs / 1000)} с`);
+      }
+      // undici прячет настоящую причину («fetch failed») в cause.
+      const cause = error instanceof Error && error.cause instanceof Error ? error.cause : null;
+      const code = cause && 'code' in cause && typeof cause.code === 'string' ? ` ${cause.code}` : '';
+      const reason = `${error instanceof Error ? error.message : String(error)}${cause ? ` (${cause.message}${code})` : ''}`;
+      const hint = this.options.httpProxy ? '' : ' (если API недоступен из вашей сети — задайте AI_HTTP_PROXY)';
+      throw new LlmError('network', `${this.name}: сеть недоступна — ${reason}${hint}`);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -90,27 +128,16 @@ export class OpenAiCompatibleProvider implements LlmProvider {
         : { type: 'json_object' },
     };
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), request.timeoutMs);
+    const payload = JSON.stringify(body);
     let response: Awaited<ReturnType<typeof undiciFetch>>;
     try {
-      response = await undiciFetch(`${this.options.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${this.options.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-        dispatcher: this.dispatcher,
-      });
-    } catch (error) {
-      clearTimeout(timer);
-      const reason = error instanceof Error ? error.message : String(error);
-      const hint = this.options.httpProxy ? '' : ' (если API недоступен из вашей сети — задайте AI_HTTP_PROXY)';
-      throw new LlmError('network', `${this.name}: сеть недоступна — ${reason}${hint}`);
+      response = await this.send(payload, request.timeoutMs);
+    } catch (first) {
+      if (!(first instanceof LlmError) || first.kind !== 'network' || /таймаут/.test(first.message)) throw first;
+      this.logger.warn(`${this.name}: ${first.message} — повторяем на новом соединении`);
+      await new Promise((resolve) => setTimeout(resolve, NETWORK_RETRY_DELAY_MS));
+      response = await this.send(payload, request.timeoutMs);
     }
-    clearTimeout(timer);
 
     const raw = await response.text();
     let parsed: ChatCompletionResponse = {};
