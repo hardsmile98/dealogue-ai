@@ -8,10 +8,12 @@ import type { HistoryMessage, SlotsSnapshot } from '../agent.types.js';
 import { defaultRng } from '../lib/random.js';
 import { formatSimilarCases } from '../learning/similar-cases.js';
 import { plan, stageAfterTurn, stageForTouch } from '../planner/planner.js';
-import { snapshot } from '../lib/turn-slots.js';
+import type { ClientCard } from '../../domain/types.js';
+import { emptyCard } from '../card/client-card.js';
+import { clientCard, slotsOf } from '../card/turn-card.js';
 import { ChatStateService } from './chat-state.service.js';
 import { SimilarCasesService } from './similar-cases.service.js';
-import { TurnContextService } from './turn-context.service.js';
+import { TurnContextService, peerOf } from './turn-context.service.js';
 import { TurnGenerationService } from './turn-generation.service.js';
 
 export interface SandboxHistoryItem {
@@ -72,17 +74,9 @@ export class SandboxService {
     const now = new Date();
     const rng = defaultRng;
 
-    let slots: SlotsSnapshot = {
-      birthDate: null,
-      birthDateText: null,
-      birthPlace: null,
-      age: null,
-      gender: null,
-      language: 'ru',
-      requestCategoryKey: null,
-      requestSummary: null,
-      manualSlots: [],
-    };
+    let card: ClientCard = emptyCard(settings.persona.language);
+    let manualSlots: string[] = [];
+    let peer: { name: string | null; username: string | null } = { name: null, username: null };
     let history: HistoryMessage[] = [];
     let baseStage: FunnelStage = 'greeting';
     let sentBlockIds: string[] = [];
@@ -91,9 +85,13 @@ export class SandboxService {
     if (request.chatId) {
       const chat = await this.chats.findOne({ where: { id: request.chatId, accountId } });
       const state = chat ? await this.chatState.find(chat.id) : null;
-      if (chat) history = await this.context.loadHistory(chat.id);
+      if (chat) {
+        history = await this.context.loadHistory(chat.id);
+        peer = peerOf(chat);
+      }
       if (state) {
-        slots = snapshot(state);
+        card = clientCard(state, settings.persona.language, now);
+        manualSlots = state.manualSlots;
         baseStage = state.stage;
         sentBlockIds = state.sentBlockIds;
         usedExampleIds = state.usedExampleIds;
@@ -112,16 +110,17 @@ export class SandboxService {
       }));
     }
     if (request.slots) {
-      slots = {
-        ...slots,
-        birthDate: request.slots.birthDate ?? slots.birthDate,
-        birthPlace: request.slots.birthPlace ?? slots.birthPlace,
-        gender: (request.slots.gender as Gender | null | undefined) ?? slots.gender,
-        language: request.slots.language ?? slots.language,
-        requestSummary: request.slots.requestSummary ?? slots.requestSummary,
-        requestCategoryKey: request.slots.requestCategoryKey ?? slots.requestCategoryKey,
+      card = {
+        ...card,
+        birthDate: request.slots.birthDate ?? card.birthDate,
+        birthPlace: request.slots.birthPlace ?? card.birthPlace,
+        gender: (request.slots.gender as Gender | null | undefined) ?? card.gender,
+        language: request.slots.language ?? card.language,
+        requestSummary: request.slots.requestSummary ?? card.requestSummary,
+        requestCategoryKey: request.slots.requestCategoryKey ?? card.requestCategoryKey,
       };
     }
+    const slots = slotsOf(card, manualSlots, now);
 
     const trigger = request.message?.trim() ? 'inbound' : 'touch';
     const touchKind = trigger === 'touch' ? (request.touchKind ?? 'reengage') : null;
@@ -138,7 +137,7 @@ export class SandboxService {
       slots,
       usedExampleIds,
       sentBlockIds,
-      personaLinks: settings.persona.links,
+      accountLanguage: settings.persona.language,
       rng,
     });
 
@@ -195,24 +194,25 @@ export class SandboxService {
     });
     const gen = await this.generation.generate({
       system: { persona: settings.persona, facts: ctx.facts, stages: ctx.stages, categories: ctx.categories },
-      turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, similarCases: formatSimilarCases(cases), now },
+      turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, card, age: slots.age, manualSlots, peer, notes: ctx.notes, similarCases: formatSimilarCases(cases), now },
       guard: {
         sentBlockIds,
         exhaustedBlockKinds: ctx.exhaustedBlockKinds,
-        allow: ctx.allow,
         pastBotMessages: history.filter((m) => m.role === 'bot').map((m) => m.text),
-        clientLanguage: slots.language,
         greetedToday: history.some((m) => m.role === 'bot' && m.sentAt.toISOString().slice(0, 10) === now.toISOString().slice(0, 10) && /^(привет|здравствуй|добр)/i.test(m.text)),
         config: settings.guard,
       },
       task,
-      blocks: ctx.blocks,
+      blockPools: ctx.blockPools,
+      facts: ctx.facts,
+      personaLinks: settings.persona.links,
+      accountLanguage: ctx.accountLanguage,
     });
 
     const escalation = gen.output.analysis.escalation;
     const stageAfter = stageAfterTurn(stage, trigger, touchKind, gen.output.analysis.stageProgress, {
       birthKnown: Boolean(slots.birthDate || slots.birthDateText),
-      requestKnown: Boolean(slots.requestSummary || gen.output.analysis.slots?.requestSummary),
+      requestKnown: Boolean(slots.requestSummary || gen.output.analysis.card.requestSummary),
       hasDiscountBlock: ctx.hasDiscountBlock,
     });
 

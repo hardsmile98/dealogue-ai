@@ -11,12 +11,13 @@ export interface StopInput {
   isMinor: boolean;
   analysis: {
     escalation: { reason: HandoffReason; note: string | null } | null;
-    language: string;
     confidence: number;
     clientIntent: string | null;
   };
-  /** Есть ли в библиотеке англоязычные тексты. */
-  hasEnglishTexts: boolean;
+  /** Язык клиента из карточки. */
+  language: string;
+  /** Языки, на которых в библиотеке вообще есть тексты; пустой список — библиотека пуста. */
+  libraryLanguages: string[];
   /** Guard пропустил ответ (сам или после регенерации). */
   guardOk: boolean;
   /** Замечания guard последней попытки — в текст передачи. */
@@ -38,9 +39,9 @@ export function stopReason(input: StopInput): StopVerdict | null {
       detail: analysis.escalation.note ?? analysis.clientIntent ?? analysis.escalation.reason,
     };
   }
-  if (analysis.language === 'other') return { reason: 'language', detail: 'Клиент пишет не на русском и не на английском' };
-  if (analysis.language === 'en' && !input.hasEnglishTexts) {
-    return { reason: 'language', detail: 'Клиент пишет на английском, а англоязычных текстов в библиотеке нет' };
+  // Пустая библиотека — не повод отдавать чат по языку: это ловит library_incomplete.
+  if (input.libraryLanguages.length > 0 && !input.libraryLanguages.includes(input.language)) {
+    return { reason: 'language', detail: `Клиент пишет на «${input.language}», а текстов на этом языке в библиотеке нет` };
   }
   if (analysis.confidence < input.confidenceThreshold) {
     return { reason: 'unsure', detail: `Модель не уверена (${analysis.confidence.toFixed(2)}): ${analysis.clientIntent ?? ''}` };

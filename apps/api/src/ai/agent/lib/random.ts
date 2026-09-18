@@ -16,6 +16,22 @@ export function pick<T>(rng: Rng, items: T[]): T | undefined {
   return items[Math.min(items.length - 1, Math.floor(rng() * items.length))];
 }
 
+/**
+ * Взвешенная перестановка: тот же выбор, что у `pickWeighted`, но сразу для
+ * всего списка. Нужна, чтобы случайность хода была разыграна один раз: дальше
+ * выбор варианта — детерминированный проход по готовому порядку.
+ */
+export function shuffleWeighted<T extends { weight: number }>(rng: Rng, items: T[]): T[] {
+  const rest = [...items];
+  const result: T[] = [];
+  while (rest.length > 0) {
+    const picked = pickWeighted(rng, rest) ?? rest[0];
+    result.push(picked);
+    rest.splice(rest.indexOf(picked), 1);
+  }
+  return result;
+}
+
 /** Взвешенный выбор: элементы с большим weight выпадают чаще. */
 export function pickWeighted<T extends { weight: number }>(rng: Rng, items: T[]): T | undefined {
   if (items.length === 0) return undefined;

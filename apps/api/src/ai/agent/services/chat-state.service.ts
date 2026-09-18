@@ -9,7 +9,7 @@ import { AiAccountSettingsEntity } from '../../entities/ai-account-settings.enti
 import { AiChatStateEntity } from '../../entities/ai-chat-state.entity.js';
 import { AiEventEntity } from '../../entities/ai-event.entity.js';
 import { AiJobsService } from '../../jobs/ai-jobs.service.js';
-import { guessGenderByName } from '../lib/slots.js';
+import { emptyCard } from '../card/client-card.js';
 
 /** Состояние изменилось под нами (ход и таймер наперегонки) — ход повторяется заново. */
 export class StaleStateError extends Error {
@@ -63,7 +63,9 @@ export class ChatStateService {
     const ourMessages = await this.messages.count({ where: { chatId: chat.id, direction: 'out' } });
     const isLead = chat.firstMessageDirection !== 'out' && ourMessages === 0;
     const mode: ChatMode = isLead ? settings.defaultChatMode : settings.assistantForExistingChats ? 'manager' : 'off';
-    const gender = guessGenderByName(chat.peerName);
+    // Пол и язык не угадываем: их заполнит модель на первом же ходе, увидев
+    // имя клиента и его сообщения. Имя в Telegram уходит ей в промпт.
+    const language = settings.persona.language || 'ru';
 
     try {
       const created = await this.states.save(
@@ -74,9 +76,8 @@ export class ChatStateService {
           stage: 'greeting',
           stageEnteredAt: new Date(),
           funnelStartedAt: isLead ? new Date() : null,
-          gender,
-          genderSource: gender ? 'name' : null,
-          language: 'ru',
+          language,
+          card: emptyCard(language),
           // Всё, что было до включения бота, ходом не считается.
           lastHandledMessageId: isLead ? 0 : chat.lastTelegramMessageId,
         }),

@@ -18,14 +18,14 @@ import { pickInterval } from '../funnel/touch-planner.js';
 import { defaultRng } from '../lib/random.js';
 import type { Rng } from '../lib/random.js';
 import { toTurnMessage } from '../lib/turn-message.js';
-import { slotsFromAnalysis, slotsFromMessages, snapshot } from '../lib/turn-slots.js';
+import { cardPatch, clientCard, slotsOf } from '../card/turn-card.js';
 import { OutboundInterruptedError, OutboundService } from '../outbound/outbound.service.js';
 import { plan, stageAfterTurn, stageForTouch } from '../planner/planner.js';
 import { ChatStateService, StaleStateError } from './chat-state.service.js';
 import { HandoffService } from './handoff.service.js';
 import { ManagerDraftService } from './manager-draft.service.js';
 import { TouchSchedulerService, lastInterval } from './touch-scheduler.service.js';
-import { TurnContextService, refsOf, toHistoryMessage } from './turn-context.service.js';
+import { TurnContextService, peerOf, refsOf, toHistoryMessage } from './turn-context.service.js';
 import type { TurnContext } from './turn-context.service.js';
 import { TurnFinalizerService } from './turn-finalizer.service.js';
 import { TurnGenerationService } from './turn-generation.service.js';
@@ -120,30 +120,28 @@ export class AgentService {
     const handledId = newInbound.length > 0 ? newInbound[newInbound.length - 1].telegramMessageId : state.lastHandledMessageId;
     const stage: FunnelStage = touchKind && trigger !== 'inbound' ? stageForTouch(touchKind) : state.stage;
 
-    // Слоты, которые можно вынуть кодом до модели.
-    const slotPatch = slotsFromMessages(state, batch, now);
-    Object.assign(state, slotPatch);
-
     // Чат ведёт человек — бот только готовит черновик ответа (раздел 8.3 ТЗ).
     // Проверяем до стоп-триггеров: передавать нечего, чат уже у менеджера.
     if (state.mode === 'manager') {
-      return this.managerDrafts.run({ params, settings, chat, state, batch, handledId, slotPatch, now, rng });
+      return this.managerDrafts.run({ params, settings, chat, state, batch, handledId, now, rng });
     }
 
     // Лид ждал первого ответа слишком долго — отвечать «привет» через полдня странно.
     if (stage === 'greeting' && trigger === 'inbound' && !state.lastBotMessageAt && now.getTime() - batch[0].sentAt.getTime() > STALE_LEAD_MS) {
-      await this.chatState.apply(state, { ...slotPatch, lastHandledMessageId: handledId, lastClientMessageAt: batch[batch.length - 1].sentAt });
+      await this.chatState.apply(state, { lastHandledMessageId: handledId, lastClientMessageAt: batch[batch.length - 1].sentAt });
       await this.handoffs.handoff(state, chat, 'stale_lead', 'Лид ждал первого ответа больше 6 часов', batch, [], null, null);
       return done('handoff', null, 'stale_lead');
     }
 
     if (state.isMinor) {
-      await this.chatState.apply(state, { ...slotPatch, lastHandledMessageId: handledId });
+      await this.chatState.apply(state, { lastHandledMessageId: handledId });
       await this.handoffs.handoff(state, chat, 'minor', `По дате рождения клиенту ${state.age ?? '<18'} лет`, batch, [], null, null);
       return done('handoff', null, 'minor');
     }
 
-    const slots = snapshot(state);
+    // Карточка клиента до хода: её увидит модель и вернёт обновлённой.
+    const card = clientCard(state, settings.persona.language, now);
+    const slots = slotsOf(card, state.manualSlots, now);
     const ctx = await this.context.load({
       accountId: chat.accountId,
       stage,
@@ -151,7 +149,7 @@ export class AgentService {
       slots,
       usedExampleIds: state.usedExampleIds,
       sentBlockIds: state.sentBlockIds,
-      personaLinks: settings.persona.links,
+      accountLanguage: settings.persona.language,
       rng,
     });
     const history = await this.context.loadHistory(chat.id, batch.map((m) => m.id));
@@ -179,11 +177,10 @@ export class AgentService {
     });
 
     if (verdict.kind === 'skip') {
-      return this.skipTurn(chat, state, verdict.detail, slotPatch, handledId, batch, stage, trigger, touchKind);
+      return this.skipTurn(chat, state, verdict.detail, handledId, batch, stage, trigger, touchKind);
     }
     if (verdict.kind === 'handoff') {
       await this.chatState.apply(state, {
-        ...slotPatch,
         lastHandledMessageId: handledId,
         ...(batch.length > 0 ? { lastClientMessageAt: batch[batch.length - 1].sentAt } : {}),
       });
@@ -204,15 +201,16 @@ export class AgentService {
     let gen: GenerateResult;
     try {
       gen = await this.generation.generate(
-        this.generation.paramsFor({ settings, ctx, task, history, batch, slots, state, similarCases: similar.lines, now }),
+        this.generation.paramsFor({ settings, ctx, task, history, batch, card, slots, peer: peerOf(chat), state, similarCases: similar.lines, now }),
       );
     } catch (error) {
-      return this.onProviderError(error, params, chat, state, batch, handledId, slotPatch, stage, task);
+      return this.onProviderError(error, params, chat, state, batch, handledId, stage, task);
     }
 
-    // --- анализ: слоты, стоп-триггеры от модели -------------------------------------
-    const llmSlots = slotsFromAnalysis(state, gen.output, now);
-    Object.assign(state, llmSlots);
+    // --- карточка клиента и стоп-триггеры от модели ---------------------------------
+    // Карточку слил TurnGeneration — по ней же выбраны блоки этого хода.
+    const cardState = cardPatch(gen.card, now);
+    Object.assign(state, cardState);
     const turnBase: Partial<AiTurnEntity> = {
       accountId: chat.accountId,
       chatId: chat.id,
@@ -224,7 +222,9 @@ export class AgentService {
       similarCaseIds: similar.ids,
       promptVersion: PROMPT_VERSION,
       model: gen.model,
-      analysis: gen.output.analysis as unknown as Record<string, unknown>,
+      // Что карточка изменила в этот ход и на каких словах клиента — рядом с ответом
+      // модели: именно сюда смотрят, когда спрашивают «почему бот так решил».
+      analysis: { ...gen.output.analysis, cardChanges: gen.cardChanges } as unknown as Record<string, unknown>,
       messagesPlanned: gen.messages.map(toTurnMessage),
       guardNotes: gen.guardNotes as unknown as Record<string, unknown>[],
       tokensIn: gen.tokensIn,
@@ -232,8 +232,7 @@ export class AgentService {
       durationMs: gen.durationMs,
     };
     const basePatch: Partial<AiChatStateEntity> = {
-      ...slotPatch,
-      ...llmSlots,
+      ...cardState,
       lastHandledMessageId: handledId,
       ...(batch.length > 0 ? { lastClientMessageAt: batch[batch.length - 1].sentAt, autoMessagesSinceClient: 0 } : {}),
     };
@@ -257,7 +256,7 @@ export class AgentService {
       trigger,
       touchKind,
       progress: gen.output.analysis.stageProgress,
-      requestKnown: Boolean(state.requestSummary || gen.output.analysis.slots?.requestSummary),
+      requestKnown: Boolean(state.requestSummary),
       hasDiscountBlock: ctx.hasDiscountBlock,
       settings,
     });
@@ -281,7 +280,7 @@ export class AgentService {
         chat,
         state,
         settings,
-        refs: refsOf(ctx),
+        refs: refsOf(ctx, gen.blocks),
         turn,
         sent: [],
         planned: gen.messages.map(toTurnMessage),
@@ -318,7 +317,7 @@ export class AgentService {
         chat,
         state,
         settings,
-        refs: refsOf(ctx),
+        refs: refsOf(ctx, gen.blocks),
         turn,
         sent: result.sent,
         planned: gen.messages.map(toTurnMessage),
@@ -389,7 +388,6 @@ export class AgentService {
     chat: TelegramChatEntity,
     state: AiChatStateEntity,
     detail: string,
-    slotPatch: Partial<AiChatStateEntity>,
     handledId: number,
     batch: HistoryMessage[],
     stage: FunnelStage,
@@ -397,7 +395,6 @@ export class AgentService {
     touchKind: TouchKind | null,
   ): Promise<TurnRunResult> {
     await this.chatState.apply(state, {
-      ...slotPatch,
       lastHandledMessageId: handledId,
       ...(batch.length > 0 ? { lastClientMessageAt: batch[batch.length - 1].sentAt, autoMessagesSinceClient: 0 } : {}),
       ...(trigger === 'touch' ? { nextTouchKind: null, nextTouchAt: null } : {}),
@@ -465,7 +462,7 @@ export class AgentService {
       chat,
       state,
       settings,
-      refs: refsOf(ctx),
+      refs: refsOf(ctx, gen.blocks),
       turn,
       sent: [],
       planned: [],
@@ -491,7 +488,6 @@ export class AgentService {
     state: AiChatStateEntity,
     batch: HistoryMessage[],
     handledId: number,
-    slotPatch: Partial<AiChatStateEntity>,
     stage: FunnelStage,
     task: TurnTask,
   ): Promise<TurnRunResult> {
@@ -518,7 +514,6 @@ export class AgentService {
       }),
     );
     await this.chatState.apply(state, {
-      ...slotPatch,
       lastHandledMessageId: handledId,
       ...(batch.length > 0 ? { lastClientMessageAt: batch[batch.length - 1].sentAt } : {}),
     });

@@ -16,12 +16,12 @@ import { PROMPT_VERSION } from '../composer/prompt-builder.js';
 import { managerDraftTask } from '../drafts/manager-draft.js';
 import { defaultRng } from '../lib/random.js';
 import type { Rng } from '../lib/random.js';
-import { slotsFromAnalysis, snapshot } from '../lib/turn-slots.js';
+import { cardPatch, clientCard, slotsOf } from '../card/turn-card.js';
 import { toTurnMessage } from '../lib/turn-message.js';
 import { plan } from '../planner/planner.js';
 import { ChatStateService } from './chat-state.service.js';
 import { HandoffService } from './handoff.service.js';
-import { TurnContextService, toHistoryMessage } from './turn-context.service.js';
+import { TurnContextService, peerOf, toHistoryMessage } from './turn-context.service.js';
 import { TurnGenerationService } from './turn-generation.service.js';
 import type { GenerateResult } from './turn-generation.service.js';
 import { TurnLimitsService } from './turn-limits.service.js';
@@ -62,14 +62,12 @@ export class ManagerDraftService {
     state: AiChatStateEntity;
     batch: HistoryMessage[];
     handledId: number;
-    slotPatch: Partial<AiChatStateEntity>;
     now: Date;
     rng: Rng;
   }): Promise<TurnRunResult> {
-    const { params, settings, chat, state, batch, handledId, slotPatch, now, rng } = input;
+    const { params, settings, chat, state, batch, handledId, now, rng } = input;
     if (params.trigger !== 'inbound' || batch.length === 0) return done('skip', null, 'Чат ведёт менеджер');
     const patch: Partial<AiChatStateEntity> = {
-      ...slotPatch,
       lastHandledMessageId: handledId,
       lastClientMessageAt: batch[batch.length - 1].sentAt,
       autoMessagesSinceClient: 0,
@@ -87,7 +85,8 @@ export class ManagerDraftService {
     if (limit) return postpone(new Date(now.getTime() + limit.retryMs), limit.reason);
 
     const stage = state.stage;
-    const slots = snapshot(state);
+    const card = clientCard(state, settings.persona.language, now);
+    const slots = slotsOf(card, state.manualSlots, now);
     const ctx = await this.context.load({
       accountId: chat.accountId,
       stage,
@@ -95,7 +94,7 @@ export class ManagerDraftService {
       slots,
       usedExampleIds: state.usedExampleIds,
       sentBlockIds: state.sentBlockIds,
-      personaLinks: settings.persona.links,
+      accountLanguage: settings.persona.language,
       rng,
     });
     const history = await this.context.loadHistory(chat.id, batch.map((m) => m.id));
@@ -105,7 +104,7 @@ export class ManagerDraftService {
     let gen: GenerateResult;
     try {
       gen = await this.generation.generate(
-        this.generation.paramsFor({ settings, ctx, task, history, batch, slots, state, similarCases: similar.lines, now }),
+        this.generation.paramsFor({ settings, ctx, task, history, batch, card, slots, peer: peerOf(chat), state, similarCases: similar.lines, now }),
       );
     } catch (error) {
       const retryable = error instanceof LlmError ? error.retryable : true;
@@ -141,7 +140,7 @@ export class ManagerDraftService {
         outcome: 'awaiting_approval',
       }),
     );
-    await this.chatState.apply(state, { ...patch, ...slotsFromAnalysis(state, gen.output, now) });
+    await this.chatState.apply(state, { ...patch, ...cardPatch(gen.card, now) });
     const escalation = gen.output.analysis.escalation;
     await this.handoffs.createDraft(
       'handoff',
@@ -176,7 +175,8 @@ export class ManagerDraftService {
     const batch = batchRows.map(toHistoryMessage);
     const stage = turn?.stageBefore ?? state.stage;
     const touchKind = turn?.touchKind ?? null;
-    const slots = snapshot(state);
+    const card = clientCard(state, settings.persona.language, now);
+    const slots = slotsOf(card, state.manualSlots, now);
     const ctx = await this.context.load({
       accountId: draft.accountId,
       stage,
@@ -184,7 +184,7 @@ export class ManagerDraftService {
       slots,
       usedExampleIds: state.usedExampleIds,
       sentBlockIds: state.sentBlockIds,
-      personaLinks: settings.persona.links,
+      accountLanguage: settings.persona.language,
       rng,
     });
     const history = await this.context.loadHistory(chat.id, batch.map((m) => m.id));
@@ -219,7 +219,7 @@ export class ManagerDraftService {
 
     const similar = await this.generation.findSimilar(chat, state, stage, batch);
     const gen = await this.generation.generate(
-      this.generation.paramsFor({ settings, ctx, task, history, batch, slots, state, similarCases: similar.lines, now }),
+      this.generation.paramsFor({ settings, ctx, task, history, batch, card, slots, peer: peerOf(chat), state, similarCases: similar.lines, now }),
     );
     draft.draftMessages = gen.messages.map(toTurnMessage);
     draft.similarCaseIds = similar.ids;

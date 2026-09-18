@@ -5,7 +5,7 @@
  */
 
 import type { GuardConfig } from '../../domain/types.js';
-import { detectLanguage, hasQuestion, startsWithGreeting, stripLeadingGreeting } from '../lib/slots.js';
+import { hasQuestion, startsWithGreeting, stripLeadingGreeting } from '../lib/reply-text.js';
 import { maxSimilarity } from '../lib/similarity.js';
 import type { ComposedMessage, GuardViolation, LibraryBlock } from '../agent.types.js';
 
@@ -30,8 +30,6 @@ export interface GuardInput {
   allow: Allowlists;
   /** Сообщения бота, уже отправленные в этот чат. */
   pastBotMessages: string[];
-  /** Язык клиента: ru / en / other. */
-  clientLanguage: string;
   /** Бот уже здоровался сегодня. */
   greetedToday: boolean;
   config: GuardConfig;
@@ -132,11 +130,6 @@ export function runGuard(input: GuardInput): GuardResult {
       if (!input.allow.urls.has(url)) {
         violations.push({ check: 'url_not_allowed', messageIndex: index, detail: `Ссылка ${url} не из фактов — убери её` });
       }
-    }
-
-    const language = detectLanguage(text);
-    if (language && input.clientLanguage !== 'other' && language !== 'other' && language !== input.clientLanguage) {
-      violations.push({ check: 'language_mismatch', messageIndex: index, detail: `Ответ должен быть на языке клиента (${input.clientLanguage})` });
     }
 
     if (input.noQuestions && hasQuestion(text)) {

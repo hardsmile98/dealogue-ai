@@ -3,31 +3,45 @@ import type { TelegramChatEntity } from '../../../telegram/entities/telegram-cha
 import type { FunnelStage } from '../../domain/types.js';
 import type { AiAccountSettingsEntity } from '../../entities/ai-account-settings.entity.js';
 import type { AiChatStateEntity } from '../../entities/ai-chat-state.entity.js';
-import type { ComposedMessage, GuardNote, HistoryMessage, LibraryBlock, SlotsSnapshot, TurnTask } from '../agent.types.js';
+import type { ClientCard } from '../../domain/types.js';
+import type { BlockPool, ComposedMessage, GuardNote, HistoryMessage, LibraryBlock, SlotsSnapshot, TurnTask } from '../agent.types.js';
 import type { ComposerOutput } from '../composer/composer.schema.js';
 import { ComposerService } from '../composer/composer.service.js';
 import { buildSystemPrompt, buildTurnPrompt } from '../composer/prompt-builder.js';
 import type { SystemPromptInput, TurnPromptInput } from '../composer/prompt-builder.js';
 import { expandMarkers, joinMessages, resolveBlocks } from '../guard/blocks.js';
-import { describeViolations, runGuard } from '../guard/guard.js';
+import { buildAllowlists, describeViolations, runGuard } from '../guard/guard.js';
 import type { GuardInput } from '../guard/guard.js';
 import { formatSimilarCases } from '../learning/similar-cases.js';
+import { mergeFromOutput } from '../card/turn-card.js';
+import type { CardChange } from '../card/client-card.js';
 import { stopReason } from '../planner/stop-reason.js';
 import type { StopVerdict } from '../planner/stop-reason.js';
 import { SimilarCasesService } from './similar-cases.service.js';
+import { chooseBlocks, targetOf } from '../library/targeting.js';
 import type { TurnContext } from './turn-context.service.js';
 
 export interface GenerateParams {
   system: SystemPromptInput;
   turn: Omit<TurnPromptInput, 'guardRemark' | 'previousReply'>;
-  guard: Omit<GuardInput, 'messages' | 'unknownBlockKinds' | 'requiredBlockKinds' | 'allowedBlockKinds' | 'noQuestions'>;
+  guard: Omit<GuardInput, 'messages' | 'unknownBlockKinds' | 'requiredBlockKinds' | 'allowedBlockKinds' | 'noQuestions' | 'allow'>;
   task: TurnTask;
-  blocks: LibraryBlock[];
+  /** Варианты блоков: конкретный выбирается уже по обновлённой карточке. */
+  blockPools: BlockPool[];
+  /** Факты и ссылки персоны — из них и выбранных блоков собирается белый список. */
+  facts: { value: string }[];
+  personaLinks: { url: string }[];
+  accountLanguage: string;
 }
 
 export interface GenerateResult {
   output: ComposerOutput;
   messages: ComposedMessage[];
+  /** Карточка клиента после слияния с ответом модели. */
+  card: ClientCard;
+  cardChanges: CardChange[];
+  /** Блоки, реально попавшие в ход: выбраны по этой карточке. */
+  blocks: LibraryBlock[];
   guardNotes: GuardNote[];
   /** Guard пропустил (после автоправок или регенерации). */
   guardOk: boolean;
@@ -45,7 +59,11 @@ export interface TurnPromptContext {
   task: TurnTask;
   history: HistoryMessage[];
   batch: HistoryMessage[];
+  /** Карточка клиента до этого хода и её плоский вид. */
+  card: ClientCard;
   slots: SlotsSnapshot;
+  /** Как клиент подписан в Telegram — модель делает по этому выводы об имени и поле. */
+  peer: { name: string | null; username: string | null };
   state: AiChatStateEntity;
   similarCases?: string[];
   now: Date;
@@ -80,7 +98,7 @@ export class TurnGenerationService {
     let model = this.composer.modelName;
     let remark: string | null = null;
     let previous: string | null = null;
-    let last: { output: ComposerOutput; messages: ComposedMessage[] } | null = null;
+    let last: { output: ComposerOutput; messages: ComposedMessage[]; card: ClientCard; changes: CardChange[]; blocks: LibraryBlock[] } | null = null;
     let user = '';
 
     for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
@@ -91,10 +109,20 @@ export class TurnGenerationService {
       durationMs += result.durationMs;
       model = result.raw.model;
 
-      const resolved = resolveBlocks(expandMarkers(result.output.reply.messages), params.blocks);
+      // Карточку сливаем до подстановки блоков: диагностика и прочие блоки
+      // выбираются по тому, что модель поняла в этом ходе, а не по вчерашним данным.
+      const merged = mergeFromOutput(params.turn.card, params.turn.manualSlots, result.output, {
+        now: params.turn.now,
+        defaultLanguage: params.accountLanguage,
+      });
+      const blocks = chooseBlocks(params.blockPools, targetOf(merged.card, params.accountLanguage));
+      const resolved = resolveBlocks(expandMarkers(result.output.reply.messages), blocks);
       const done = (messages: ComposedMessage[], guardOk: boolean): GenerateResult => ({
         output: result.output,
         messages,
+        card: merged.card,
+        cardChanges: merged.changes,
+        blocks,
         guardNotes,
         guardOk,
         tokensIn,
@@ -109,6 +137,8 @@ export class TurnGenerationService {
 
       const guard = runGuard({
         ...params.guard,
+        // Белый список цен и ссылок — из фактов и тех блоков, что реально уйдут.
+        allow: buildAllowlists(params.facts, params.personaLinks, blocks),
         messages: resolved.messages,
         unknownBlockKinds: resolved.unknownKinds,
         requiredBlockKinds: params.task.requiredBlockKinds,
@@ -116,7 +146,7 @@ export class TurnGenerationService {
         noQuestions: params.task.noQuestions,
       });
       guardNotes.push({ attempt, violations: guard.violations, fixes: guard.fixes });
-      last = { output: result.output, messages: guard.messages };
+      last = { output: result.output, messages: guard.messages, card: merged.card, changes: merged.changes, blocks };
       if (guard.ok) return done(guard.messages, true);
 
       remark = describeViolations(guard.violations);
@@ -124,10 +154,13 @@ export class TurnGenerationService {
     }
 
     // Обе попытки с нарушениями: отдаём последнюю, решение — за стоп-триггерами.
-    const final = last as { output: ComposerOutput; messages: ComposedMessage[] };
+    const final = last as NonNullable<typeof last>;
     return {
       output: final.output,
       messages: final.messages,
+      card: final.card,
+      cardChanges: final.changes,
+      blocks: final.blocks,
       guardNotes,
       guardOk: false,
       tokensIn,
@@ -140,21 +173,36 @@ export class TurnGenerationService {
 
   /** Параметры вызова — одинаковые у хода, черновика менеджера и регенерации. */
   paramsFor(input: TurnPromptContext): GenerateParams {
-    const { settings, ctx, task, history, batch, slots, state, now } = input;
+    const { settings, ctx, task, history, batch, card, slots, peer, state, now } = input;
     return {
       system: { persona: settings.persona, facts: ctx.facts, stages: ctx.stages, categories: ctx.categories },
-      turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, similarCases: input.similarCases ?? [], now },
+      turn: {
+        task,
+        playbook: ctx.playbook,
+        examples: ctx.examples,
+        blocks: ctx.blocks,
+        history,
+        batch,
+        card,
+        age: slots.age,
+        manualSlots: slots.manualSlots,
+        peer,
+        notes: ctx.notes,
+        similarCases: input.similarCases ?? [],
+        now,
+      },
       guard: {
         sentBlockIds: state.sentBlockIds,
         exhaustedBlockKinds: ctx.exhaustedBlockKinds,
-        allow: ctx.allow,
         pastBotMessages: history.filter((m) => m.role === 'bot').map((m) => m.text),
-        clientLanguage: slots.language,
         greetedToday: Boolean(state.lastGreetingAt && sameDay(state.lastGreetingAt, now)),
         config: settings.guard,
       },
       task,
-      blocks: ctx.blocks,
+      blockPools: ctx.blockPools,
+      facts: ctx.facts,
+      personaLinks: settings.persona.links,
+      accountLanguage: ctx.accountLanguage,
     };
   }
 
@@ -188,9 +236,11 @@ export class TurnGenerationService {
   ): StopVerdict | null {
     const last = gen.guardNotes[gen.guardNotes.length - 1];
     return stopReason({
+      // Состояние уже несёт карточку этого хода: её применяют до стоп-триггеров.
       isMinor: state.isMinor,
       analysis: gen.output.analysis,
-      hasEnglishTexts: ctx.hasEnglishTexts,
+      language: state.language,
+      libraryLanguages: ctx.libraryLanguages,
       guardOk: gen.guardOk,
       guardRemark: last ? describeViolations(last.violations) : null,
       confidenceThreshold: settings.guard.confidenceThreshold,

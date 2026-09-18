@@ -41,7 +41,6 @@ export type TouchKind =
   | 'reminder';
 
 export type Gender = 'f' | 'm';
-export type GenderSource = 'text' | 'name' | 'manual';
 
 export type PhraseUsage = 'example' | 'block';
 
@@ -188,3 +187,55 @@ export interface GuardConfig {
   confidenceThreshold: number;
 }
 
+
+// --- карточка клиента (jsonb в ai_chat_state) --------------------------------
+
+/** Кто последним записал поле карточки. */
+export type CardSource = 'llm' | 'manager' | 'derived';
+
+/** Поля карточки, за которые отвечает модель. */
+export const CARD_FIELDS = [
+  'birthDate',
+  'birthDateText',
+  'birthPlace',
+  'gender',
+  'language',
+  'requestSummary',
+  'requestCategoryKey',
+  'minorHint',
+] as const;
+
+export type CardField = (typeof CARD_FIELDS)[number];
+
+/** Откуда взялось поле: источник и слова клиента, из которых это следует. */
+export interface CardFieldMeta {
+  source: CardSource;
+  /** Цитата клиента; null — вывод есть, прямой цитаты нет. */
+  evidence: string | null;
+  /** Ход, на котором поле получило это значение. */
+  turnId: string | null;
+  at: string;
+}
+
+/**
+ * Карточка клиента — жёлтый блокнот менеджера: всё, что агент понял о
+ * человеке. Ведёт её модель: каждый ход возвращает карточку целиком, включая
+ * исправления уже записанного. Код только чистит значения, считает
+ * производные (возраст) и не даёт трогать поля, которые правил менеджер.
+ * Колонки-слоты рядом — проекция карточки для фильтров и интерфейса.
+ */
+export interface ClientCard {
+  birthDate: string | null;
+  /** Как написал клиент («12 марта 94»). */
+  birthDateText: string | null;
+  birthPlace: string | null;
+  gender: Gender | null;
+  language: string;
+  requestSummary: string | null;
+  requestCategoryKey: string | null;
+  /** Клиент сказал, что ему нет 18, а даты рождения не дал. */
+  minorHint: boolean;
+  /** Открытые нитки разговора: неотвеченные вопросы, возражения, обещания. */
+  openThreads: string[];
+  meta: Partial<Record<CardField, CardFieldMeta>>;
+}

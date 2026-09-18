@@ -66,7 +66,6 @@
     "title": "Английский лид без англоязычных текстов",
     "stage": "greeting",
     "trigger": "inbound",
-    "hasEnglishTexts": false,
     "client": [{ "role": "client", "text": "hi! how much does the consultation cost?" }],
     "analysis": {
       "escalation": null,

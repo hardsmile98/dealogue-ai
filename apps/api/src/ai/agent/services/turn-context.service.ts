@@ -10,12 +10,11 @@ import { AiNoteEntity } from '../../entities/ai-note.entity.js';
 import { AiPhraseEntity } from '../../entities/ai-phrase.entity.js';
 import { AiTurnEntity } from '../../entities/ai-turn.entity.js';
 import { AiLibraryService } from '../../library/library.service.js';
-import type { HistoryMessage, LibraryBlock, LibraryExample, PlaybookSnapshot, SlotsSnapshot } from '../agent.types.js';
-import { buildAllowlists } from '../guard/guard.js';
+import type { BlockCandidate, BlockPool, HistoryMessage, LibraryBlock, LibraryExample, PlaybookSnapshot, SlotsSnapshot } from '../agent.types.js';
 import type { RecentTurnSummary } from '../planner/planner.js';
-import type { Allowlists } from '../guard/guard.js';
-import { pickWeighted } from '../lib/random.js';
+import { shuffleWeighted } from '../lib/random.js';
 import type { Rng } from '../lib/random.js';
+import { chooseBlocks, orderFor, targetOf } from '../library/targeting.js';
 import type { PromptCategory, PromptFact } from '../composer/prompt-builder.js';
 
 export interface TurnContext {
@@ -25,10 +24,14 @@ export interface TurnContext {
   categories: PromptCategory[];
   notes: string[];
   examples: LibraryExample[];
+  /** Кандидаты по видам: конкретный вариант выбирается после ответа модели. */
+  blockPools: BlockPool[];
+  /** Предварительный выбор — для промпта и проверки «блок вообще есть». */
   blocks: LibraryBlock[];
-  allow: Allowlists;
-  /** Есть ли в библиотеке тексты на английском — иначе английский лид уходит менеджеру. */
-  hasEnglishTexts: boolean;
+  /** Язык аккаунта — к нему отступает подбор, если на языке клиента текстов нет. */
+  accountLanguage: string;
+  /** Языки, на которых в библиотеке вообще есть тексты; клиент на другом языке уходит менеджеру. */
+  libraryLanguages: string[];
   hasDiscountBlock: boolean;
   /** Виды блоков, все варианты которых в этом чате уже отправлены. */
   exhaustedBlockKinds: string[];
@@ -49,12 +52,28 @@ export interface TurnLibraryRefs {
   hasDiscountBlock: boolean;
 }
 
-export function refsOf(ctx: TurnContext): TurnLibraryRefs {
+/** Блоки берём те, что реально попали в ход, — выбор мог смениться после ответа модели. */
+export function refsOf(ctx: TurnContext, blocks: LibraryBlock[] = ctx.blocks): TurnLibraryRefs {
   return {
     exampleIds: ctx.examples.map((e) => e.id),
-    phraseBlockIds: ctx.blocks.filter((b) => b.source === 'phrase').map((b) => b.id),
-    diagnosticIds: ctx.blocks.filter((b) => b.source === 'diagnostic').map((b) => b.id),
+    phraseBlockIds: blocks.filter((b) => b.source === 'phrase').map((b) => b.id),
+    diagnosticIds: blocks.filter((b) => b.source === 'diagnostic').map((b) => b.id),
     hasDiscountBlock: ctx.hasDiscountBlock,
+  };
+}
+
+function toCandidate(
+  row: { id: string; title: string; text: string; categoryKey: string | null; gender: string | null; language: string; weight: number },
+  title?: string,
+): BlockCandidate & { weight: number } {
+  return {
+    id: row.id,
+    title: title ?? row.title,
+    text: row.text,
+    categoryKey: row.categoryKey,
+    gender: row.gender,
+    language: row.language,
+    weight: row.weight,
   };
 }
 
@@ -65,7 +84,8 @@ export interface LoadContextParams {
   slots: SlotsSnapshot;
   usedExampleIds: string[];
   sentBlockIds: string[];
-  personaLinks: { url: string }[];
+  /** Язык аккаунта — последняя ступень в цепочке подбора. */
+  accountLanguage: string;
   rng: Rng;
 }
 
@@ -118,51 +138,48 @@ export class TurnContextService {
       enabled: playbookRow?.enabled ?? true,
     };
 
-    const language = slots.language || 'ru';
-    const fits = (row: { language: string; gender: string | null; categoryKey: string | null }): boolean =>
-      row.language === language && (row.gender === null || row.gender === slots.gender) && (row.categoryKey === null || row.categoryKey === slots.requestCategoryKey);
+    const accountLanguage = params.accountLanguage || 'ru';
+    const target = targetOf(slots, accountLanguage);
 
     // --- образцы ------------------------------------------------------------
     const exampleKinds: PhraseKind[] = [...playbook.exampleKinds];
     if (params.touchKind && isPhraseKind(params.touchKind) && !exampleKinds.includes(params.touchKind)) exampleKinds.unshift(params.touchKind);
     const examples: LibraryExample[] = [];
     for (const kind of exampleKinds) {
-      const pool = phrases.filter((p) => p.usage === 'example' && p.kind === kind && fits(p) && conditionsOk(p, slots));
-      if (pool.length === 0) continue;
-      // Сначала неиспользованные и точнее подходящие (с категорией / полом), потом любые.
-      const fresh = pool.filter((p) => !params.usedExampleIds.includes(p.id));
-      const ranked = rankSpecific(fresh.length > 0 ? fresh : pool);
-      const chosen: AiPhraseEntity[] = [];
-      const candidates = [...ranked];
-      while (chosen.length < EXAMPLES_PER_KIND && candidates.length > 0) {
-        const picked = pickWeighted(params.rng, candidates.slice(0, Math.max(3, EXAMPLES_PER_KIND)));
-        if (!picked) break;
-        chosen.push(picked);
-        candidates.splice(candidates.indexOf(picked), 1);
-      }
+      const pool = shuffleWeighted(params.rng, phrases.filter((p) => p.usage === 'example' && p.kind === kind && conditionsOk(p, slots)));
+      // Порядок: сначала ближе к клиенту (категория, пол, язык), внутри яруса — случайно.
+      const ordered = orderFor(pool, target);
+      if (ordered.length === 0) continue;
+      const fresh = ordered.filter((p) => !params.usedExampleIds.includes(p.id));
+      const chosen = (fresh.length > 0 ? fresh : ordered).slice(0, EXAMPLES_PER_KIND);
       for (const item of chosen) examples.push({ id: item.id, kind: item.kind, title: item.title, text: item.text });
       if (examples.length >= EXAMPLES_MAX) break;
     }
 
     // --- блоки ---------------------------------------------------------------
+    // Пулы вариантов, уже перемешанные по весам. Конкретный вариант выбирает
+    // TurnGeneration после ответа модели — по обновлённой карточке клиента.
     const blockKinds = new Set<string>([...playbook.requiredBlockKinds, ...playbook.allowedBlockKinds]);
-    const blocks: LibraryBlock[] = [];
+    const blockPools: BlockPool[] = [];
     const exhaustedBlockKinds: string[] = [];
     for (const kind of blockKinds) {
-      const pool = phrases.filter((p) => p.usage === 'block' && p.kind === kind && fits(p));
-      const fresh = pool.filter((p) => !params.sentBlockIds.includes(p.id));
+      const all = phrases.filter((p) => p.usage === 'block' && p.kind === kind);
+      const fresh = all.filter((p) => !params.sentBlockIds.includes(p.id));
       // Блок в чате уже уходил — второй раз не предлагаем (цены и ссылки не повторяют).
-      if (pool.length > 0 && fresh.length === 0) {
+      if (all.length > 0 && fresh.length === 0) {
         exhaustedBlockKinds.push(kind);
         continue;
       }
-      const picked = pickWeighted(params.rng, rankSpecific(fresh));
-      if (picked) blocks.push({ kind, id: picked.id, title: picked.title || kind, text: picked.text, source: 'phrase' });
+      if (fresh.length === 0) continue;
+      blockPools.push({ kind, source: 'phrase', items: shuffleWeighted(params.rng, fresh).map((row) => toCandidate(row)) });
     }
     if (params.touchKind === 'diagnostics' || stage === 'diagnostics') {
-      const template = this.chooseDiagnostic(diagnostics, slots, language, params.sentBlockIds, params.rng);
-      if (template) {
-        blocks.push({ kind: 'diagnostics', id: template.id, title: `Диагностика: ${template.title}`, text: template.text, source: 'diagnostic' });
+      // Диагностику, в отличие от блоков-фраз, при исчерпании повторяем.
+      const fresh = diagnostics.filter((d) => !params.sentBlockIds.includes(d.id));
+      const pool = fresh.length > 0 ? fresh : diagnostics;
+      if (pool.length > 0) {
+        const items = shuffleWeighted(params.rng, pool).map((d) => toCandidate(d, `Диагностика: ${d.title}`));
+        blockPools.push({ kind: 'diagnostics', source: 'diagnostic', items });
       }
     }
 
@@ -170,7 +187,7 @@ export class TurnContextService {
       .filter((n) => n.scope === 'global' || n.scope === `stage:${stage}` || (slots.requestCategoryKey && n.scope === `category:${slots.requestCategoryKey}`))
       .map((n) => n.text);
 
-    const hasEnglishTexts = phrases.some((p) => p.language === 'en') || diagnostics.some((d) => d.language === 'en');
+    const libraryLanguages = [...new Set([...phrases.map((p) => p.language), ...diagnostics.map((d) => d.language)])];
     const hasDiscountBlock = phrases.some((p) => p.usage === 'block' && p.kind === 'discount');
 
     return {
@@ -180,11 +197,13 @@ export class TurnContextService {
       categories: categories.map((c) => ({ key: c.key, title: c.title, description: c.description })),
       notes: noteTexts,
       examples,
-      blocks,
-      allow: buildAllowlists(facts, params.personaLinks, blocks),
-      hasEnglishTexts,
+      blockPools,
+      // Для промпта и Planner'а: как выбор выглядит по карточке до хода.
+      blocks: chooseBlocks(blockPools, target),
+      libraryLanguages,
       hasDiscountBlock,
       exhaustedBlockKinds,
+      accountLanguage,
     };
   }
 
@@ -213,29 +232,11 @@ export class TurnContextService {
     }));
   }
 
-  /** Диагностика: категория+пол → категория → универсальная+пол → универсальная; язык совпадает. */
-  chooseDiagnostic(
-    all: AiDiagnosticEntity[],
-    slots: SlotsSnapshot,
-    language: string,
-    sentIds: string[],
-    rng: Rng,
-  ): AiDiagnosticEntity | null {
-    const byLanguage = all.filter((d) => d.language === language);
-    const tiers: ((d: AiDiagnosticEntity) => boolean)[] = [
-      (d) => d.categoryKey !== null && d.categoryKey === slots.requestCategoryKey && d.gender === slots.gender,
-      (d) => d.categoryKey !== null && d.categoryKey === slots.requestCategoryKey && d.gender === null,
-      (d) => d.categoryKey === null && d.gender !== null && d.gender === slots.gender,
-      (d) => d.categoryKey === null && d.gender === null,
-    ];
-    for (const tier of tiers) {
-      const pool = byLanguage.filter(tier);
-      if (pool.length === 0) continue;
-      const fresh = pool.filter((d) => !sentIds.includes(d.id));
-      return pickWeighted(rng, fresh.length > 0 ? fresh : pool) ?? null;
-    }
-    return null;
-  }
+}
+
+/** Подпись клиента в Telegram — сырьё для выводов модели об имени и поле. */
+export function peerOf(chat: { peerName: string | null; peerUsername: string | null }): { name: string | null; username: string | null } {
+  return { name: chat.peerName, username: chat.peerUsername };
 }
 
 export function toHistoryMessage(row: TelegramMessageEntity): HistoryMessage {
@@ -255,15 +256,6 @@ function conditionsOk(phrase: AiPhraseEntity, slots: SlotsSnapshot): boolean {
   const c = phrase.conditions ?? {};
   if (c.requiresRequest && !slots.requestSummary) return false;
   return true;
-}
-
-/** Более конкретные (с категорией, с полом) — вперёд. */
-function rankSpecific<T extends { categoryKey: string | null; gender: string | null; weight: number }>(items: T[]): T[] {
-  return [...items].sort((a, b) => specificity(b) - specificity(a));
-}
-
-function specificity(item: { categoryKey: string | null; gender: string | null }): number {
-  return (item.categoryKey ? 2 : 0) + (item.gender ? 1 : 0);
 }
 
 function isPhraseKind(value: string): value is PhraseKind {

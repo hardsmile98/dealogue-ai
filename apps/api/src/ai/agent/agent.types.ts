@@ -43,6 +43,26 @@ export interface LibraryBlock {
   source: 'phrase' | 'diagnostic';
 }
 
+/** Один вариант блока: чем он помечен и что в нём написано. */
+export interface BlockCandidate {
+  id: string;
+  title: string;
+  text: string;
+  categoryKey: string | null;
+  gender: string | null;
+  language: string;
+}
+
+/**
+ * Варианты блока одного вида, уже перемешанные по весам. Конкретный выбирается
+ * после ответа модели — по карточке, которую она вернула в этом ходе.
+ */
+export interface BlockPool {
+  kind: string;
+  source: 'phrase' | 'diagnostic';
+  items: BlockCandidate[];
+}
+
 /** Образец тона из библиотеки (модель перефразирует). */
 export interface LibraryExample {
   id: string;
@@ -95,7 +115,6 @@ export interface GuardViolation {
     | 'block_unknown'
     | 'bot_admission'
     | 'promise'
-    | 'language_mismatch'
     | 'too_similar'
     | 'too_long'
     | 'question_forbidden'

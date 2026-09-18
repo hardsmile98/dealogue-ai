@@ -45,7 +45,8 @@ export interface RegressionFixture {
   isMinor?: boolean;
   /** Сколько сообщений бот написал подряд без ответа клиента. */
   autoMessagesSinceClient?: number;
-  hasEnglishTexts?: boolean;
+  /** Языки, на которых в библиотеке есть тексты; по умолчанию только русский. */
+  libraryLanguages?: string[];
   guardOk?: boolean;
   analysis?: FixtureAnalysis | null;
   /** Предыдущие ходы — для проверки «разговора по кругу». */
@@ -110,7 +111,8 @@ export function replay(fixture: RegressionFixture): ReplayResult {
   const stop = stopReason({
     isMinor: fixture.isMinor ?? false,
     analysis,
-    hasEnglishTexts: fixture.hasEnglishTexts ?? false,
+    language: analysis.language,
+    libraryLanguages: fixture.libraryLanguages ?? ['ru'],
     guardOk: fixture.guardOk ?? true,
     guardRemark: null,
     confidenceThreshold: DEFAULT_GUARD.confidenceThreshold,

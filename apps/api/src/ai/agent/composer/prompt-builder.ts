@@ -4,10 +4,11 @@
  * — про этот ход.
  */
 
-import type { FactGroup, PersonaConfig } from '../../domain/types.js';
-import type { HistoryMessage, LibraryBlock, LibraryExample, PlaybookSnapshot, SlotsSnapshot, TurnTask } from '../agent.types.js';
+import type { CardField, ClientCard, FactGroup, PersonaConfig } from '../../domain/types.js';
+import { lockedFields } from '../card/client-card.js';
+import type { HistoryMessage, LibraryBlock, LibraryExample, PlaybookSnapshot, TurnTask } from '../agent.types.js';
 
-export const PROMPT_VERSION = 'v3.1';
+export const PROMPT_VERSION = 'v4.0';
 
 export interface PromptFact {
   group: FactGroup;
@@ -36,7 +37,14 @@ export interface TurnPromptInput {
   blocks: LibraryBlock[];
   history: HistoryMessage[];
   batch: HistoryMessage[];
-  slots: SlotsSnapshot;
+  /** Карточка клиента, какой она была до этого хода. */
+  card: ClientCard;
+  /** Возраст по дате рождения — считает код, модель его не выводит. */
+  age: number | null;
+  /** Значения `manual_slots`: поля, которые правил менеджер. */
+  manualSlots: string[];
+  /** Как клиент подписан в Telegram — сырьё для выводов об имени и поле. */
+  peer: { name: string | null; username: string | null };
   notes: string[];
   /** Похожие прошлые случаи «клиент → ответ» (раздел 9.3 ТЗ), уже отформатированные. */
   similarCases?: string[];
@@ -101,18 +109,30 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   if (input.categories.length > 0) {
     lines.push('');
-    lines.push('КАТЕГОРИИ ЗАПРОСА (для analysis.slots.requestCategoryKey; выбирай ключ, если запрос клиента ясно подходит, иначе null):');
+    lines.push('КАТЕГОРИИ ЗАПРОСА (для card.requestCategoryKey; выбирай ключ, если запрос клиента ясно подходит, иначе null):');
     for (const c of input.categories) lines.push(`- ${c.key}: ${c.title}${c.description ? ` — ${c.description}` : ''}`);
   }
 
   lines.push('');
-  lines.push('ФОРМАТ ОТВЕТА: один JSON-объект {analysis, reply}. analysis — что ты понял (язык клиента, намерение, слоты, безответный вопрос клиента, escalation или null, stageProgress: "stay" | "advance" | "jump:<этап>", confidence 0–1). reply — {send, messages[], silentReason}. Каждый элемент messages — отдельное сообщение в Telegram.');
+  lines.push('КАРТОЧКА КЛИЕНТА (analysis.card) — твой блокнот о человеке. Ты ведёшь его сам, код ничего о клиенте не додумывает:');
+  lines.push('- Каждый ход возвращай карточку целиком, а не только новое.');
+  lines.push('- null в поле значит «не знаю»: прежнее значение останется. Пустой карточкой ничего не сотрёшь.');
+  lines.push('- Если раньше ты понял поле неверно — просто верни правильное значение, оно заменит старое. Исправлять себя можно и нужно.');
+  lines.push('- Стереть поле можно только через cleared: ["поле"] — когда клиент поправил себя или отказался отвечать.');
+  lines.push('- На каждое поле, которое изменил в этот ход, добавь в evidence пару {field, quote} — слова клиента, из которых это следует.');
+  lines.push('- gender — пол клиента, а не твой: выводи по имени, самоописанию и грамматике («я сама зашла» — женщина). Не уверен — null, тогда текст будет нейтральным.');
+  lines.push('- language — язык, на котором клиент ведёт переписку, кодом (ru, en, kk, uk). Одно случайное слово латиницей язык не меняет.');
+  lines.push('- openThreads — что в разговоре осталось открытым: неотвеченные вопросы клиента, его возражения, твои обещания. Закрыл — убери из списка.');
+  lines.push('- Поля с пометкой «правил менеджер» не меняй: они всё равно останутся прежними.');
+
+  lines.push('');
+  lines.push('ФОРМАТ ОТВЕТА: один JSON-объект {analysis, reply}. analysis — {clientIntent, card, escalation или null, stageProgress: "stay" | "advance" | "jump:<этап>", confidence 0–1}. reply — {send, messages[], silentReason}. Каждый элемент messages — отдельное сообщение в Telegram.');
   return lines.join('\n');
 }
 
 export function buildTurnPrompt(input: TurnPromptInput): string {
   const lines: string[] = [];
-  const { task, playbook, slots } = input;
+  const { task, playbook } = input;
 
   lines.push(`ЭТАП: ${task.stage}. Цель: ${playbook.goal}`);
   if (playbook.instructions) {
@@ -142,12 +162,7 @@ export function buildTurnPrompt(input: TurnPromptInput): string {
   }
 
   lines.push('');
-  lines.push('ИЗВЕСТНО О КЛИЕНТЕ:');
-  lines.push(`- дата рождения: ${slots.birthDate ?? slots.birthDateText ?? 'нет'}${slots.age !== null ? ` (${slots.age} лет)` : ''}`);
-  lines.push(`- место рождения: ${slots.birthPlace ?? 'нет'}`);
-  lines.push(`- пол: ${slots.gender === 'f' ? 'женский' : slots.gender === 'm' ? 'мужской' : 'неизвестен (пиши нейтрально)'}`);
-  lines.push(`- язык: ${slots.language}`);
-  lines.push(`- запрос: ${slots.requestSummary ?? 'ещё не выяснен'}${slots.requestCategoryKey ? ` (категория ${slots.requestCategoryKey})` : ''}`);
+  lines.push(...cardLines(input));
 
   if (input.similarCases && input.similarCases.length > 0) {
     lines.push('');
@@ -183,6 +198,49 @@ export function buildTurnPrompt(input: TurnPromptInput): string {
   lines.push('');
   lines.push('Верни JSON.');
   return lines.join('\n');
+}
+
+/**
+ * Карточка в промпт: значения и пометки о полях менеджера. Основания
+ * (evidence) намеренно не показываем — модель начнёт повторять прежний вывод
+ * вместо того, чтобы перечитать переписку.
+ */
+function cardLines(input: TurnPromptInput): string[] {
+  const { card } = input;
+  const locked = lockedFields(input.manualSlots);
+  const mark = (field: CardField): string => (locked.has(field) ? ' (правил менеджер — не меняй)' : '');
+  const peer = [input.peer.name, input.peer.username ? `@${input.peer.username}` : null].filter(Boolean).join(' ');
+
+  const lines: string[] = ['КАРТОЧКА КЛИЕНТА (какой ты заполнил её к этому ходу; верни обновлённой):'];
+  lines.push(`- подпись в Telegram: ${peer || 'нет'}`);
+  lines.push(
+    `- дата рождения: ${card.birthDate ?? card.birthDateText ?? 'нет'}${input.age !== null ? ` (${years(input.age)})` : ''}${mark('birthDate')}`,
+  );
+  lines.push(`- место рождения: ${card.birthPlace ?? 'нет'}${mark('birthPlace')}`);
+  lines.push(
+    `- пол: ${card.gender === 'f' ? 'женский' : card.gender === 'm' ? 'мужской' : 'неизвестен (пиши нейтрально)'}${mark('gender')}`,
+  );
+  lines.push(`- язык: ${card.language}${mark('language')}`);
+  lines.push(
+    `- запрос: ${card.requestSummary ?? 'ещё не выяснен'}${card.requestCategoryKey ? ` (категория ${card.requestCategoryKey})` : ''}${mark('requestSummary')}`,
+  );
+  if (card.minorHint) lines.push('- клиент говорил, что ему нет 18');
+  lines.push(
+    card.openThreads.length > 0
+      ? `- открытые нитки: ${card.openThreads.map((thread, index) => `${index + 1}) ${thread}`).join(' ')}`
+      : '- открытых ниток нет',
+  );
+  return lines;
+}
+
+/** «32 года», «21 год», «15 лет» — промпт учит модель писать по-русски, сам тоже должен. */
+function years(age: number): string {
+  const tail = age % 100;
+  if (tail >= 11 && tail <= 14) return `${age} лет`;
+  const last = age % 10;
+  if (last === 1) return `${age} год`;
+  if (last >= 2 && last <= 4) return `${age} года`;
+  return `${age} лет`;
 }
 
 function formatHistoryLine(message: HistoryMessage, now: Date): string {

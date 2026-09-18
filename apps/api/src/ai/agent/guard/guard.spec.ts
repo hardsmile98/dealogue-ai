@@ -27,7 +27,6 @@ function input(overrides: Partial<GuardInput>): GuardInput {
     noQuestions: false,
     allow,
     pastBotMessages: [],
-    clientLanguage: 'ru',
     greetedToday: false,
     config: DEFAULT_GUARD,
     ...overrides,
@@ -74,9 +73,9 @@ describe('runGuard', () => {
     expect(unknown.violations[0].check).toBe('block_unknown');
   });
 
-  it('язык ответа должен совпадать с языком клиента', () => {
-    const result = runGuard(input({ messages: [text('Hello! Please send your birth date and place.')], clientLanguage: 'ru' }));
-    expect(result.violations[0].check).toBe('language_mismatch');
+  it('язык ответа не проверяет: это понимание, а не факт из текста', () => {
+    const result = runGuard(input({ messages: [text('Hello! Please send your birth date and place.')] }));
+    expect(result.ok).toBe(true);
   });
 
   it('ловит повтор уже отправленного и вопрос там, где нельзя', () => {

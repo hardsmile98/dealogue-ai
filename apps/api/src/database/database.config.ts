@@ -30,6 +30,8 @@ import { CreateAiFunnel1700000000007 } from './migrations/1700000000007-CreateAi
 import { AiChatStateHandledMessage1700000000008 } from './migrations/1700000000008-AiChatStateHandledMessage.js';
 import { AiLearning1700000000009 } from './migrations/1700000000009-AiLearning.js';
 import { DropNightWindow1700000000010 } from './migrations/1700000000010-DropNightWindow.js';
+import { AiClientCard1700000000011 } from './migrations/1700000000011-AiClientCard.js';
+import { DropGenderSource1700000000012 } from './migrations/1700000000012-DropGenderSource.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -104,6 +106,8 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       AiChatStateHandledMessage1700000000008,
       AiLearning1700000000009,
       DropNightWindow1700000000010,
+      AiClientCard1700000000011,
+      DropGenderSource1700000000012,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

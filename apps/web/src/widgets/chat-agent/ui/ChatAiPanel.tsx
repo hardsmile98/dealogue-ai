@@ -111,9 +111,11 @@ export function ChatAiPanel({ accountId, chatId }: ChatAiPanelProps) {
       </Stack>
 
       <Stack direction="row" spacing={1} sx={styles.slotsRow}>
-        <Typography variant="caption" color="text.secondary">
-          {describeSlots(data)}
-        </Typography>
+        <Tooltip title={describeSources(data)} placement="bottom-start">
+          <Typography variant="caption" color="text.secondary">
+            {describeSlots(data)}
+          </Typography>
+        </Tooltip>
         <IconButton
           size="small"
           onClick={() => setSlotsOpen(true)}
@@ -167,5 +169,30 @@ function describeSlots(data: ChatAiStateDto): string {
     slots.requestSummary ? `запрос: ${slots.requestSummary}` : 'запрос —',
   ]
   if (slots.requestCategoryKey) parts.push(`категория ${slots.requestCategoryKey}`)
+  if (slots.openThreads.length > 0) parts.push(`открыто: ${slots.openThreads.join('; ')}`)
   return parts.join(' · ')
+}
+
+const SLOT_LABELS: Record<string, string> = {
+  birthDate: 'дата рождения',
+  birthDateText: 'дата рождения (словами)',
+  birthPlace: 'место рождения',
+  gender: 'пол',
+  language: 'язык',
+  requestSummary: 'запрос',
+  requestCategoryKey: 'категория',
+  minorHint: 'несовершеннолетний',
+}
+
+/** Подсказка «откуда бот это взял»: источник поля и слова клиента, на которых вывод. */
+function describeSources(data: ChatAiStateDto): string {
+  const entries = Object.entries(data.slots.sources)
+  if (entries.length === 0) return 'Бот пока ничего не выяснил сам'
+  return entries
+    .map(([field, meta]) => {
+      const who = meta.source === 'manager' ? 'менеджер' : 'бот'
+      const why = meta.evidence ? `: «${meta.evidence}»` : ''
+      return `${SLOT_LABELS[field] ?? field} — ${who}${why}`
+    })
+    .join('\n')
 }

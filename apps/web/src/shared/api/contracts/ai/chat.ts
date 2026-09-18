@@ -21,11 +21,14 @@ export interface ChatAiSlotsDto {
   age: number | null
   isMinor: boolean
   gender: Gender | null
-  genderSource: string | null
   language: string
   requestCategoryKey: string | null
   requestSummary: string | null
   manualSlots: string[]
+  /** Открытые нитки разговора: неотвеченные вопросы, возражения, обещания. */
+  openThreads: string[]
+  /** Откуда взялось поле карточки и на каких словах клиента это основано. */
+  sources: Record<string, { source: string; evidence: string | null; at: string }>
 }
 
 export interface ChatAiStateDto {

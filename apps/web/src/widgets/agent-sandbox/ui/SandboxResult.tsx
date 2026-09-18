@@ -20,13 +20,15 @@ interface SandboxResultProps {
 function filledSlots(slots: Record<string, unknown>): string[] {
   return Object.entries(slots)
     .filter(([, value]) => value !== null && value !== false && value !== undefined)
-    .map(([key, value]) => `${key}=${String(value)}`)
+    .filter(([, value]) => !Array.isArray(value) || value.length > 0)
+    .map(([key, value]) => `${key}=${Array.isArray(value) ? value.map(String).join('; ') : String(value)}`)
 }
 
 /** Разбор одного прогона: вердикт, что отправил бы, что понял, промпт. */
 export function SandboxResult({ data, showPrompts, onTogglePrompts }: SandboxResultProps) {
   const analysis = data.analysis ?? {}
-  const slots = filledSlots((analysis.slots as Record<string, unknown> | undefined) ?? {})
+  const card = (analysis.card as Record<string, unknown> | undefined) ?? {}
+  const slots = filledSlots(card)
   const guardHits = data.guardNotes.flatMap((note) => (note.violations as { detail: string }[] | undefined) ?? [])
   const fixes = data.guardNotes.flatMap((note) => (note.fixes as string[] | undefined) ?? [])
   const guardSummary = [...fixes, ...guardHits.map((hit) => hit.detail)].join('; ')
@@ -89,14 +91,11 @@ export function SandboxResult({ data, showPrompts, onTogglePrompts }: SandboxRes
         <Box sx={styles.analysis}>
           {typeof analysis.clientIntent === 'string' && <div>Намерение: {analysis.clientIntent}</div>}
           <div>
-            Язык: {String(analysis.language ?? '—')} · уверенность{' '}
+            Язык: {String(card.language ?? '—')} · уверенность{' '}
             {typeof analysis.confidence === 'number' ? analysis.confidence.toFixed(2) : '—'} · продвижение:{' '}
             {String(analysis.stageProgress ?? 'stay')}
           </div>
-          {slots.length > 0 && <div>Слоты: {slots.join(', ')}</div>}
-          {typeof analysis.unansweredQuestion === 'string' && analysis.unansweredQuestion && (
-            <div>Вопрос клиента: {analysis.unansweredQuestion}</div>
-          )}
+          {slots.length > 0 && <div>Карточка: {slots.join(', ')}</div>}
           {guardSummary && (
             <Box sx={styles.analysisLine}>
               <strong>Guard:</strong> {guardSummary}

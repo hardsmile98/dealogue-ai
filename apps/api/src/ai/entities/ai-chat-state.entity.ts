@@ -9,9 +9,9 @@ import {
 } from 'typeorm';
 import type {
   ChatMode,
+  ClientCard,
   FunnelStage,
   Gender,
-  GenderSource,
   HandoffReason,
   TouchKind,
 } from '../domain/types.js';
@@ -77,9 +77,6 @@ export class AiChatStateEntity {
   @Column({ type: 'varchar', length: 1, nullable: true })
   gender: Gender | null;
 
-  @Column({ name: 'gender_source', type: 'varchar', length: 16, nullable: true })
-  genderSource: GenderSource | null;
-
   @Column({ type: 'varchar', length: 8, default: 'ru' })
   language: string;
 
@@ -95,6 +92,14 @@ export class AiChatStateEntity {
   /** Какие слоты правил менеджер — бот их не перезаписывает. */
   @Column({ name: 'manual_slots', type: 'varchar', array: true, default: () => "'{}'::varchar[]" })
   manualSlots: string[];
+
+  /**
+   * Карточка клиента: всё, что агент понял о человеке, вместе с источником
+   * каждого поля. Ведёт её модель, колонки-слоты выше — её проекция для
+   * фильтров и интерфейса. Пустой объект — состояние старше карточки.
+   */
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  card: ClientCard;
 
   // --- что уже было -----------------------------------------------------------
 

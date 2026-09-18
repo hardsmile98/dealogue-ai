@@ -14,6 +14,7 @@ import type {
 import type { AiChatStateEntity } from '../../entities/ai-chat-state.entity.js';
 import type { AiDraftEntity } from '../../entities/ai-draft.entity.js';
 import type { AiTurnEntity, TurnMessage } from '../../entities/ai-turn.entity.js';
+import { clientCard } from '../card/turn-card.js';
 
 /** DTO хода агента — зеркало apps/web/src/shared/api/contracts/ai.ts. */
 
@@ -24,11 +25,14 @@ export interface ChatAiSlotsDto {
   age: number | null;
   isMinor: boolean;
   gender: Gender | null;
-  genderSource: string | null;
   language: string;
   requestCategoryKey: string | null;
   requestSummary: string | null;
   manualSlots: string[];
+  /** Открытые нитки разговора: неотвеченные вопросы, возражения, обещания. */
+  openThreads: string[];
+  /** Откуда взялось поле карточки: источник и слова клиента, из которых это следует. */
+  sources: Record<string, { source: string; evidence: string | null; at: string }>;
 }
 
 export interface ChatAiStateDto {
@@ -146,6 +150,7 @@ export function toChatAiStateDto(
   draft: AiDraftEntity | null,
   similarCases: SimilarCaseDto[] = [],
 ): ChatAiStateDto {
+  const card = clientCard(row, row.language);
   return {
     chatId: row.chatId,
     mode: row.mode,
@@ -161,11 +166,12 @@ export function toChatAiStateDto(
       age: row.age,
       isMinor: row.isMinor,
       gender: row.gender,
-      genderSource: row.genderSource,
       language: row.language,
       requestCategoryKey: row.requestCategoryKey,
       requestSummary: row.requestSummary,
       manualSlots: row.manualSlots,
+      openThreads: card.openThreads,
+      sources: card.meta as Record<string, { source: string; evidence: string | null; at: string }>,
     },
     handoffReason: row.handoffReason,
     handoffAt: iso(row.handoffAt),

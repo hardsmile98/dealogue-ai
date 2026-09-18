@@ -14,7 +14,7 @@ import { AiJobsService } from '../../jobs/ai-jobs.service.js';
 import { planNextTouch } from '../funnel/touch-planner.js';
 import { defaultRng } from '../lib/random.js';
 import type { Rng } from '../lib/random.js';
-import { startsWithGreeting } from '../lib/slots.js';
+import { startsWithGreeting } from '../lib/reply-text.js';
 import { stageAfterTurn } from '../planner/planner.js';
 import { ChatStateService } from './chat-state.service.js';
 import { TouchSchedulerService, lastInterval } from './touch-scheduler.service.js';

@@ -17,7 +17,9 @@ import { AlertsService } from '../../alerts/alerts.service.js';
 import { toChatAiStateDto, toChatAiSummaryDto, toTurnDto } from '../dto/agent.dto.js';
 import type { AiOverviewDto, ChatAiStateDto, ChatAiSummaryDto, TurnDto } from '../dto/agent.dto.js';
 import { planNextTouch } from '../funnel/touch-planner.js';
-import { ageFrom } from '../lib/slots.js';
+import type { CardField } from '../../domain/types.js';
+import { cardToColumns, markManual } from '../card/client-card.js';
+import { clientCard } from '../card/turn-card.js';
 import { defaultRng } from '../lib/random.js';
 import { ChatStateService } from './chat-state.service.js';
 import { SimilarCasesService } from './similar-cases.service.js';
@@ -74,39 +76,50 @@ export class ChatAiService {
   async patch(chat: TelegramChatEntity, input: PatchChatAiInput, byUserId: string): Promise<ChatAiStateDto> {
     const state = await this.requireState(chat);
     if (input.slots) {
-      const patch: Partial<AiChatStateEntity> = {};
+      // Менеджер правит карточку, колонки-слоты пересчитываются из неё.
+      const now = new Date();
       const manual = new Set(state.manualSlots);
+      const touched: CardField[] = [];
+      const card = { ...clientCard(state, state.language, now) };
       const s = input.slots;
       if (s.birthDate !== undefined) {
-        patch.birthDate = s.birthDate;
-        const age = s.birthDate ? ageFrom(s.birthDate) : null;
-        patch.age = age;
-        patch.isMinor = age !== null && age < 18;
+        card.birthDate = s.birthDate;
+        if (s.birthDate === null) card.birthDateText = null;
+        card.minorHint = false;
+        touched.push('birthDate');
         manual.add('birthDate');
       }
       if (s.birthPlace !== undefined) {
-        patch.birthPlace = s.birthPlace;
+        card.birthPlace = s.birthPlace;
+        touched.push('birthPlace');
         manual.add('birthPlace');
       }
       if (s.gender !== undefined) {
-        patch.gender = s.gender;
-        patch.genderSource = 'manual';
+        card.gender = s.gender;
+        touched.push('gender');
         manual.add('gender');
       }
       if (s.language !== undefined) {
-        patch.language = s.language;
+        card.language = s.language;
+        touched.push('language');
         manual.add('language');
       }
       if (s.requestSummary !== undefined) {
-        patch.requestSummary = s.requestSummary;
+        card.requestSummary = s.requestSummary;
+        touched.push('requestSummary');
         manual.add('request');
       }
       if (s.requestCategoryKey !== undefined) {
-        patch.requestCategoryKey = s.requestCategoryKey;
+        card.requestCategoryKey = s.requestCategoryKey;
+        touched.push('requestCategoryKey');
         manual.add('request');
       }
-      patch.manualSlots = [...manual];
-      await this.chatState.apply(state, patch);
+      const next = markManual(card, touched, { now });
+      await this.chatState.apply(state, {
+        card: next,
+        ...cardToColumns(next, now),
+        manualSlots: [...manual],
+      });
     }
     if (input.manualNotes !== undefined) await this.chatState.apply(state, { manualNotes: input.manualNotes });
     if (input.mode !== undefined && input.mode !== state.mode) {

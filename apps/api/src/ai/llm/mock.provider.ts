@@ -52,26 +52,28 @@ export class MockProvider implements LlmProvider {
     if (required.includes('diagnostics')) messages.push('Что откликнулось? Есть вопросы?');
 
     const birth = /(\d{1,2})[./](\d{1,2})[./](\d{4})/.exec(lower);
-    const slots = {
+    const card = {
       birthDate: birth ? `${birth[3]}-${birth[2].padStart(2, '0')}-${birth[1].padStart(2, '0')}` : null,
       birthDateText: birth ? birth[0] : null,
       birthPlace: /москв/.test(lower) ? 'Москва' : null,
+      gender: null,
+      language: 'ru',
       requestSummary: /отношен|муж|парн|развод/.test(lower) ? 'проблемы в отношениях' : null,
       requestCategoryKey: null,
-      genderHint: null,
-      isMinorHint: false,
+      minorHint: false,
+      openThreads: [],
+      cleared: [],
+      evidence: [],
     };
-    const progress = stage === 'greeting' || slots.requestSummary ? 'advance' : 'stay';
-    return this.base(stage, { slots, stageProgress: progress }, { send: true, messages, silentReason: null });
+    const progress = stage === 'greeting' || card.requestSummary ? 'advance' : 'stay';
+    return this.base(stage, { card, stageProgress: progress }, { send: true, messages, silentReason: null });
   }
 
   private base(stage: string, analysis: Record<string, unknown>, reply: Record<string, unknown>): Record<string, unknown> {
     return {
       analysis: {
-        language: 'ru',
         clientIntent: `mock: этап ${stage}`,
-        slots: {},
-        unansweredQuestion: null,
+        card: {},
         escalation: null,
         stageProgress: 'stay',
         confidence: 0.9,
