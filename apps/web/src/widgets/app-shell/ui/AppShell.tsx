@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import LinearProgress from '@mui/material/LinearProgress'
 import AppBar from '@mui/material/AppBar'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
@@ -22,7 +23,7 @@ import { AccountAvatar } from '@/entities/telegram-account'
 import { LogoutButton } from '@/features/auth/logout'
 import { ROUTES } from '@/shared/config'
 import { BrandMark } from '@/shared/ui'
-import { SIDEBAR_WIDTH, appShellStyles as styles } from './AppShell.styles'
+import { appShellStyles as styles } from './AppShell.styles'
 
 interface NavItem {
   label: string
@@ -71,7 +72,7 @@ export function AppShell() {
                   <Icon fontSize="small" />
                 </Badge>
               </ListItemIcon>
-              <ListItemText primary={label} slotProps={{ primary: { sx: { fontWeight: 500 } } }} />
+              <ListItemText primary={label} slotProps={{ primary: { sx: styles.navLabel } }} />
             </ListItemButton>
           ))}
         </List>
@@ -97,14 +98,14 @@ export function AppShell() {
         open={mobileOpen}
         onClose={() => setMobileOpen(false)}
         slotProps={{ paper: { sx: styles.drawerPaper } }}
-        sx={{ display: { xs: 'block', md: 'none' } }}
+        sx={styles.mobileDrawer}
       >
         {sidebar}
       </Drawer>
       <Drawer
         variant="permanent"
         slotProps={{ paper: { sx: styles.drawerPaper } }}
-        sx={{ display: { xs: 'none', md: 'block' }, width: SIDEBAR_WIDTH, flexShrink: 0 }}
+        sx={styles.desktopDrawer}
       >
         {sidebar}
       </Drawer>
@@ -115,15 +116,18 @@ export function AppShell() {
             <IconButton edge="start" onClick={() => setMobileOpen(true)} aria-label="Меню">
               <MenuIcon />
             </IconButton>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ml: 1 }}>
-              <BrandMark sx={{ width: 28, height: 28 }} />
+            <Stack direction="row" spacing={1} sx={styles.mobileBrand}>
+              <BrandMark sx={styles.mobileBrandMark} />
               <Typography sx={styles.brandName}>Dealogue AI</Typography>
             </Stack>
           </Toolbar>
         </AppBar>
 
         <Box sx={styles.content}>
-          <Outlet />
+          {/* Страницы грузятся отдельными чанками — на время загрузки полоска вверху контента. */}
+          <Suspense fallback={<LinearProgress sx={styles.pageLoader} />}>
+            <Outlet />
+          </Suspense>
         </Box>
       </Box>
     </Box>

@@ -69,7 +69,7 @@ export function AccountStatsDashboard({ accountId }: AccountStatsDashboardProps)
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error" sx={styles.loadError}>
           {getApiErrorMessage(error, 'Не удалось загрузить статистику')}
         </Alert>
       )}
@@ -78,7 +78,7 @@ export function AccountStatsDashboard({ accountId }: AccountStatsDashboardProps)
         <StatsSkeleton />
       ) : (
         <Box sx={isFetching ? styles.refetching : undefined}>
-          <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid container spacing={2} sx={styles.skeletonRow}>
             <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
               <StatTile
                 label="Новых диалогов"
@@ -171,20 +171,20 @@ export function AccountStatsDashboard({ accountId }: AccountStatsDashboardProps)
 function StatsSkeleton() {
   return (
     <Box>
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Grid container spacing={2} sx={styles.skeletonRow}>
         {[0, 1, 2, 3].map((i) => (
           <Grid key={i} size={{ xs: 12, sm: 6, lg: 3 }}>
-            <Skeleton variant="rounded" height={112} sx={{ borderRadius: 3 }} />
+            <Skeleton variant="rounded" height={112} />
           </Grid>
         ))}
       </Grid>
-      <Skeleton variant="rounded" height={380} sx={{ borderRadius: 3, mb: 2 }} />
+      <Skeleton variant="rounded" height={380} sx={styles.chartSkeleton} />
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 5 }}>
-          <Skeleton variant="rounded" height={300} sx={{ borderRadius: 3 }} />
+          <Skeleton variant="rounded" height={300} />
         </Grid>
         <Grid size={{ xs: 12, lg: 7 }}>
-          <Skeleton variant="rounded" height={300} sx={{ borderRadius: 3 }} />
+          <Skeleton variant="rounded" height={300} />
         </Grid>
       </Grid>
     </Box>

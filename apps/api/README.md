@@ -162,14 +162,23 @@ joiner — их вставляют в шаблоны против спам-фи�
 
 ## Структура
 
+Каждая папка верхнего уровня — свой Nest-модуль. `AiModule` собственного
+содержимого не имеет: это сборка подмодулей ИИ, у каждого свои сущности,
+контроллеры и сервисы.
+
 ```
 src/
+  common/                     общее для всех модулей, без доменных знаний
+    pipes/zod-validation.pipe.ts   zod-схема → 400 с одной понятной строкой
+    filters/all-exceptions.filter.ts  единая форма ответа на ошибку
   telegram/
     telegram.controller.ts    /telegram/accounts/*
     telegram.module.ts
     telegram.config.ts        переменные окружения, разбор списка MTProxy
     telegram.types.ts         DTO ответов (зеркало контракта фронтенда)
     client/telegram-client.factory.ts   клиенты teleproto, перебор прокси
+    guards/account-access.guard.ts      владение аккаунтом и чатом из пути
+    decorators/account.decorator.ts     @Account() / @AccountId() / @Chat()
     services/
       telegram-auth.service.ts      номер → код → пароль
       telegram-runtime.service.ts   живые клиенты, события, переподключение
@@ -179,11 +188,25 @@ src/
       telegram-accounts.service.ts  чтение: список, чаты, сообщения, статистика
     entities/                 telegram_accounts, telegram_login_attempts, telegram_chats, telegram_messages, telegram_dialog_starts
     lib/                      lead-code, session-crypto, telegram-errors, phone, timezone
+  ai/                         см. раздел «ИИ-агент» ниже
+    ai.module.ts              сборка подмодулей, своего содержимого нет
+    ai.config.ts              настройки из env (AiConfigModule)
+    domain/                   доменные типы и умолчания
+    entities/                 все таблицы ai_* и alerts
+    llm/                      провайдеры модели, предохранители, GET /ai/*
+    jobs/                     очередь ai_jobs и воркер
+    settings/                 настройки агента на аккаунте
+    library/                  тексты, из которых собирается промпт
+    alerts/                   алерты менеджеру и «требует внимания»
+    agent/                    сам ход агента
+    stats/                    воронка, касания, черновики, токены
+  realtime/                   SSE-события для браузера
+  health/                     GET /health для мониторинга
   auth/
     auth.controller.ts        POST /auth/login, GET /auth/me
     auth.service.ts           проверка пароля, выпуск токена
     auth.types.ts             JwtPayload, AuthenticatedUser, LoginResponse
-    dto/login.dto.ts          валидация тела запроса
+    dto/login.dto.ts          валидация тела запроса (class-validator)
     guards/jwt-auth.guard.ts  разбор Bearer-токена
     decorators/current-user.decorator.ts
   users/
@@ -195,6 +218,25 @@ src/
     data-source.ts            точка входа для CLI миграций
     migrations/
 ```
+
+### Сквозные механизмы
+
+Что контроллер не пишет руками:
+
+- **Доступ к аккаунту.** `@UseGuards(JwtAuthGuard, AccountAccessGuard)` на
+  контроллере с путём `telegram/accounts/:id/…`: guard проверяет формат
+  `:id` (и `:chatId`, если он есть в пути), владение аккаунтом и чатом, а
+  найденные строки кладёт в request. Метод берёт их через `@AccountId()`,
+  `@Account()` и `@Chat()` — `requireAccount` внутри обработчика больше
+  не нужен. Владельца *второго* аккаунта в пути (`copy-from/:sourceAccountId`)
+  по-прежнему проверяет сам метод.
+- **Валидация.** Тело и строка запроса разбираются zod-пайпом:
+  `@Body(zod(schema))`, `@Query(zod(schema))`. Первая ошибка становится 400
+  с одной строкой — веб показывает её как есть. Формы `auth` и `telegram`
+  остались на class-validator и глобальном `ValidationPipe`.
+- **Ошибки.** `AllExceptionsFilter` не меняет тело `HttpException` (веб читает
+  `data.message`), но превращает `LlmError` в 503 с текстом провайдера, а всё
+  непредвиденное — в 500 с одной строкой наружу и стеком в логе.
 
 ## Миграции
 
@@ -307,7 +349,19 @@ await queryRunner.query(
   продолжается с оставшихся сообщений;
 - `agent/services/agent.service.ts` — ход целиком: контекст из библиотеки →
   Planner → Composer → Guard → доставка (dry-run / supervised-черновик / auto) →
-  состояние, журнал `ai_turns`, следующее касание;
+  состояние, журнал `ai_turns`, следующее касание. Сам сервис ведёт ход по
+  шагам, за каждым шагом стоит свой:
+  - `turn-generation.service.ts` — вызов модели и проверка ответа (Composer →
+    Guard → регенерация с замечанием), похожие случаи, стоп-триггеры; им же
+    пользуются черновик менеджера и песочница;
+  - `turn-limits.service.ts` — лимиты вызовов модели и сообщений бота;
+  - `handoff.service.ts` — передача менеджеру и черновик, который он увидит;
+  - `turn-finalizer.service.ts` — закрытие хода: этап, счётчики, следующее
+    касание, счётчик отправок по библиотеке;
+  - `touch-scheduler.service.ts` — постановка, перенос и таймаут касаний;
+  - `manager-draft.service.ts` — чат, который ведёт человек, и регенерация
+    черновика;
+  - `lib/turn-slots.ts` — чистые функции слотов (состояние → патч), под тестами;
 - `agent/services/inbound-listener.service.ts` — реакция на события Telegram:
   входящее → дебаунс (120 с тишины, потолок 300 с, «печатает» продлевает) и job
   `inbound`; прочтение диагностики → перенос `reengage`; исходящее от человека →
@@ -374,13 +428,13 @@ await queryRunner.query(
 
 Этап 7 (статистика и приёмка) сделан:
 
-- job `stats` (`agent/stats/stats.service.ts`) раз в час складывает счётчики дня
+- job `stats` (`stats/stats.service.ts`) раз в час складывает счётчики дня
   в `ai_stats_daily`: ходы по исходам, регенерации, токены и уверенность,
   причины передач, переходы по этапам, решения по черновикам, отклик на касания
   и на конкретные тексты библиотеки, лиды и время до диагностики. День —
   в таймзоне аккаунта; первый запуск добирает две недели назад;
 - в `metrics` лежат сырые счётчики, а не доли: период на странице — это сумма
-  дней (`agent/stats/metrics.ts`, покрыт тестами). Сегодняшний день
+  дней (`stats/metrics.ts`, покрыт тестами). Сегодняшний день
   пересчитывается при открытии страницы, если он старше пяти минут;
 - `GET …/ai/stats/funnel · /turns · /drafts · /phrases` — четыре набора цифр
   для вкладки «Статистика»;

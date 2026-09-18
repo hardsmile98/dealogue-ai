@@ -64,7 +64,7 @@ function useContainerWidth() {
     const node = ref.current
     if (!node) return
     const observer = new ResizeObserver(([entry]) => {
-      setWidth(entry.contentRect.width)
+      if (entry) setWidth(entry.contentRect.width)
     })
     observer.observe(node)
     setWidth(node.getBoundingClientRect().width)

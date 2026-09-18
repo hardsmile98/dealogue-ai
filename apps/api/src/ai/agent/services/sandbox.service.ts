@@ -3,15 +3,16 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TelegramChatEntity } from '../../../telegram/entities/telegram-chat.entity.js';
 import type { FunnelStage, Gender, TouchKind } from '../../domain/types.js';
-import { AiSettingsService } from '../../services/ai-settings.service.js';
+import { AiSettingsService } from '../../settings/ai-settings.service.js';
 import type { HistoryMessage, SlotsSnapshot } from '../agent.types.js';
 import { defaultRng } from '../lib/random.js';
 import { formatSimilarCases } from '../learning/similar-cases.js';
 import { plan, stageAfterTurn, stageForTouch } from '../planner/planner.js';
-import { AgentService, snapshot } from './agent.service.js';
+import { snapshot } from '../lib/turn-slots.js';
 import { ChatStateService } from './chat-state.service.js';
 import { SimilarCasesService } from './similar-cases.service.js';
 import { TurnContextService } from './turn-context.service.js';
+import { TurnGenerationService } from './turn-generation.service.js';
 
 export interface SandboxHistoryItem {
   role: 'client' | 'bot' | 'manager';
@@ -63,7 +64,7 @@ export class SandboxService {
     private readonly chatState: ChatStateService,
     private readonly context: TurnContextService,
     private readonly similar: SimilarCasesService,
-    private readonly agent: AgentService,
+    private readonly generation: TurnGenerationService,
   ) {}
 
   async run(accountId: string, request: SandboxRequest): Promise<SandboxResult> {
@@ -192,7 +193,7 @@ export class SandboxService {
       stage,
       categoryKey: slots.requestCategoryKey,
     });
-    const gen = await this.agent.generate({
+    const gen = await this.generation.generate({
       system: { persona: settings.persona, facts: ctx.facts, stages: ctx.stages, categories: ctx.categories },
       turn: { task, playbook: ctx.playbook, examples: ctx.examples, blocks: ctx.blocks, history, batch, slots, notes: ctx.notes, similarCases: formatSimilarCases(cases), now },
       guard: {

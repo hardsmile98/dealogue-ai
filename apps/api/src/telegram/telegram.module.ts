@@ -7,6 +7,7 @@ import { TelegramChatEntity } from './entities/telegram-chat.entity.js';
 import { TelegramDialogStartEntity } from './entities/telegram-dialog-start.entity.js';
 import { TelegramLoginAttemptEntity } from './entities/telegram-login-attempt.entity.js';
 import { TelegramMessageEntity } from './entities/telegram-message.entity.js';
+import { AccountAccessGuard } from './guards/account-access.guard.js';
 import { TelegramAccountsService } from './services/telegram-accounts.service.js';
 import { TelegramAuthService } from './services/telegram-auth.service.js';
 import { TelegramDialogStartsService } from './services/telegram-dialog-starts.service.js';
@@ -41,6 +42,7 @@ import { TelegramController } from './telegram.controller.js';
     TelegramOutboundService,
     TelegramAuthService,
     TelegramAccountsService,
+    AccountAccessGuard,
   ],
   // Наружу — только то, что нужно другим модулям (ИИ-агент): события,
   // отправка, доступ к аккаунтам/чатам с проверкой владельца и запись сообщений.
@@ -51,6 +53,7 @@ import { TelegramController } from './telegram.controller.js';
     TelegramRuntimeService,
     TelegramIngestService,
     TelegramAccountsService,
+    AccountAccessGuard,
     TypeOrmModule,
   ],
 })

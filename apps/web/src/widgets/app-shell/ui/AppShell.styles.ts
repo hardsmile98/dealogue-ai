@@ -3,6 +3,28 @@ import type { SxStyles } from '@/shared/types'
 export const SIDEBAR_WIDTH = 256
 
 export const appShellStyles = {
+  mobileDrawer: {
+    display: { xs: 'block', md: 'none' },
+  },
+  desktopDrawer: {
+    display: { xs: 'none', md: 'block' },
+    width: SIDEBAR_WIDTH,
+    flexShrink: 0,
+  },
+  mobileBrand: {
+    alignItems: 'center',
+    ml: 1,
+  },
+  mobileBrandMark: {
+    width: 28,
+    height: 28,
+  },
+  navLabel: {
+    fontWeight: 500,
+  },
+  pageLoader: {
+    borderRadius: 1,
+  },
   root: {
     display: 'flex',
     minHeight: '100dvh',

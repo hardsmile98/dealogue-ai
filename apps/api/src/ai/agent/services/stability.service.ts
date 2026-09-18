@@ -1,8 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AiConfig } from '../../ai.config.js';
-import { AiSettingsService } from '../../services/ai-settings.service.js';
-import { AlertsService } from '../../services/alerts.service.js';
+import { AiSettingsService } from '../../settings/ai-settings.service.js';
+import { AlertsService } from '../../alerts/alerts.service.js';
 import { detectAnomalies } from '../stability/anomaly.js';
 import type { Anomaly, AnomalyCode } from '../stability/anomaly.js';
 

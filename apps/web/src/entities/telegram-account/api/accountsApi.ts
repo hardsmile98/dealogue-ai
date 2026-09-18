@@ -1,9 +1,6 @@
-import { baseApi } from '@/shared/api'
+import { ACCOUNT_STATS_TAG, TELEGRAM_ACCOUNT_TAG, baseApi } from '@/shared/api'
 import type { AccountStatsQuery } from '@/shared/api'
 import type { AccountStats, TelegramAccount } from '../model/types'
-
-export const TELEGRAM_ACCOUNT_TAG = 'TelegramAccount' as const
-export const ACCOUNT_STATS_TAG = 'AccountStats' as const
 
 /** Дни статистики считаются в зоне пользователя, а не сервера. */
 const BROWSER_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone

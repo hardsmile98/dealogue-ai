@@ -4,6 +4,15 @@ export const accountStatsStyles = {
   filters: {
     mb: 3,
   },
+  loadError: {
+    mb: 3,
+  },
+  skeletonRow: {
+    mb: 2,
+  },
+  chartSkeleton: {
+    mb: 2,
+  },
   /** Пока грузится новый период — держим старый рендер, слегка приглушив. */
   refetching: {
     opacity: 0.55,
@@ -72,6 +81,12 @@ export const accountStatsStyles = {
   },
   numberCell: {
     fontVariantNumeric: 'tabular-nums',
+  },
+  dayCell: {
+    whiteSpace: 'nowrap',
+  },
+  totalCell: {
+    fontWeight: 600,
   },
   shareCell: {
     display: 'flex',

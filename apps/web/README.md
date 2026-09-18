@@ -60,30 +60,74 @@ src/
   pages/
     login/                 форма входа
     accounts/              список аккаунтов Telegram
-    account/               шапка аккаунта + вкладки (stats, chats)
+    account/               шапка аккаунта + вкладки (stats, chats, ai)
+    attention/             раздел «Требуют внимания»
     not-found/
-  widgets/
+  widgets/                 готовые блоки, из которых собраны страницы
     app-shell/             боковое меню + Outlet для авторизованной части
     account-stats/         дашборд статистики: фильтр периода, плитки, график, таблицы
     chat-panel/            список чатов + переписка
-  features/
+    chat-agent/            панель ИИ в шапке чата и журнал ходов с оценками
+    agent-overview/        обзор агента и чек-лист готовности
+    agent-library/         разделы библиотеки: тексты, факты, диагностики, категории, заметки, плейбуки
+    agent-sandbox/         песочница хода
+    agent-stats/           вкладка «Статистика» ИИ-агента
+    attention-list/        список алертов
+    draft-queue/           очередь черновиков по всем аккаунтам
+  features/                действия пользователя
     auth/login/, auth/logout/
     telegram-account/connect/   диалог подключения (номер → код → 2FA)
     telegram-account/remove/    удаление с подтверждением
+    ai-agent/draft/             решение менеджера по черновику
+    ai-agent/edit-settings/     форма настроек агента
+    alerts/manage/              ack / resolve алерта
+    realtime/                   SSE-подключение и реакция на события
   entities/
     session/               слайс сессии, селекторы, хуки, персист в storage
     telegram-account/      аккаунт: типы, RTK Query (список, карточка, статистика), чип статуса, аватар
     chat/                  чат и сообщение: типы, RTK Query, чип кода, пузырь сообщения
+    ai-agent/              настройки, обзор, состояние чата, ходы; метаданные режимов и этапов
+    ai-draft/              черновики менеджера
+    ai-library/            библиотека аккаунта
+    ai-stats/              статистика агента
+    alert/                 алерты
   shared/
     api/                   baseApi (единственный createApi), провайдер токена,
-                           contracts/ (DTO backend-API раздела Telegram)
+                           tags.ts (реестр тегов кэша), contracts/ (DTO backend-API)
     config/                env, ROUTES, палитра графиков
-    lib/                   даты, форматирование, извлечение кода, ошибки API
+    lib/                   даты, форматирование, ошибки API, хелперы RTK Query
     types/                 SxStyles
-    ui/                    BrandMark, PageHeader, EmptyState, StatTile, StackedColumnChart
+    ui/                    BrandMark, PageHeader, EmptyState, StatTile, StackedColumnChart,
+                           QueryBoundary, SectionCard, FormDialog, ConfirmAction
 ```
 
 Алиас `@/*` указывает на `src/*` (настроен в `vite.config.ts` и `tsconfig.app.json`).
+
+### Что где лежит
+
+Слой определяется не темой, а ролью:
+
+- **entities** — данные: RTK Query-эндпоинты, типы, метаданные (подписи режимов,
+  этапов, статусов) и мелкие представления одной записи (чип, аватар, пузырь).
+- **features** — действие пользователя: войти, подключить аккаунт, решить
+  по черновику, сохранить настройки.
+- **widgets** — собранный блок экрана из нескольких сущностей и фич.
+  Панели ИИ-агента (обзор, библиотека, песочница, статистика, панель в чате)
+  живут здесь, а не в `features`: они ничего не «делают», они компонуют.
+- **pages** — маршрут: собирает виджеты и отдаёт им `accountId` из URL.
+
+### Общие примитивы `shared/ui`
+
+Четыре компонента убирают обвязку, которая иначе расползается по панелям:
+
+- `QueryBoundary` — три состояния запроса RTK Query (ошибка, загрузка, пусто)
+  одинаково во всём приложении. Дети — функция от данных, поэтому внутри
+  не нужны проверки на `undefined`; хуки в ней вызывать нельзя.
+- `SectionCard` — карточка-раздел с заголовком и пояснением.
+- `FormDialog` — диалог создания/правки: поля, ошибка мутации, две кнопки,
+  Enter отправляет форму.
+- `ConfirmAction` — подтверждение необратимого действия вместо `window.confirm`.
+  Триггер передаётся функцией, поэтому одинаково работает с кнопкой и иконкой.
 
 ### Стили
 
@@ -96,6 +140,9 @@ ui/
   LoginPage.styles.ts
 ```
 
+Скругления карточек, бумаги и скелетонов задаёт тема (`shape.borderRadius`),
+дублировать их через `sx={{ borderRadius: 3 }}` не нужно.
+
 ### Пара тонкостей, которые легко сломать
 
 - `entities/session` не импортирует `RootState` из `app` (это был бы импорт
@@ -104,11 +151,17 @@ ui/
 - Токен нужен `shared/api`, но лежит в store. Поэтому `app/store` прокидывает
   getter через `setAuthTokenProvider`, а не наоборот.
 - Сессия пишется в storage не из компонентов, а слушателем
-  (`entities/session/model/persistence.ts`) на экшены `sessionEstablished` /
+  (`entities/session/model/lifecycle.ts`) на экшены `sessionEstablished` /
   `sessionCleared`.
-- Теги RTK Query для Telegram объявляет `entities/telegram-account`
-  (`enhanceEndpoints`), а мутации из `features/telegram-account/*` инжектятся
-  в тот же `accountsApi`, чтобы инвалидировать список теми же тегами.
+- Теги кэша объявлены в одном месте — `shared/api/tags.ts`. На приложение один
+  `createApi`, поэтому пространство тегов общее, и сущности не импортируют друг
+  друга ради тега. Мутации из `features/*` инжектятся в api той же сущности,
+  чтобы инвалидировать кэш теми же тегами.
+- Разделы библиотеки (категории, тексты, факты, диагностики, заметки)
+  отличаются только адресом и типами, поэтому их эндпоинты собирает фабрика
+  `crud` внутри `entities/ai-library/api/libraryApi.ts`.
+- Страницы за логином подключены через `React.lazy`: в первый чанк попадает
+  только форма входа. Заглушку на время загрузки даёт `Suspense` в `AppShell`.
 - Цвета серий на графике закреплены за кодом по его числовому порядку среди
   показанных, а не по рангу (`widgets/account-stats/lib/buildSeries.ts`):
   при смене периода код не меняет цвет. Больше 6 кодов сворачиваются в
@@ -189,7 +242,9 @@ VITE_API_URL=http://localhost:3000
 
 ## ИИ-агент (что где лежит)
 
-- `shared/api/contracts/{ai,alerts,realtime}.ts` — зеркала backend-контрактов;
+- `shared/api/contracts/ai/` — зеркало backend-контракта, разбитое по темам
+  (`common`, `settings`, `library`, `drafts`, `chat`, `stats`);
+  `contracts/{alerts,realtime}.ts` — остальные разделы;
   `shared/api/realtime.ts` — SSE-подключение по тикету.
 - `entities/ai-agent` — RTK Query для настроек, обзора и состояния чата
   (инжектится в `chatsApi`, чтобы включение ИИ инвалидировало список чатов),
@@ -197,11 +252,12 @@ VITE_API_URL=http://localhost:3000
   черновиков и решения менеджера; `entities/ai-library` — библиотека, там же
   доля ответов и пометка «переписать»; `entities/ai-stats` — статистика
   аккаунта. `entities/alert` — алерты.
-- `features/ai-agent/chat-ai` — панель чата и журнал ходов с оценками;
-  `draft` — карточка черновика (правки, «свой ответ», похожие случаи);
-  `edit-settings` — настройки аккаунта; `overview` — сводка и чек-лист
-  готовности; `sandbox` — песочница; `stats` — вкладка «Статистика».
-  `features/ai-library` — редактирование библиотеки.
+- `widgets/chat-agent` — панель ИИ в шапке чата и журнал ходов с оценками;
+  `widgets/agent-overview` — сводка и чек-лист готовности;
+  `widgets/agent-library` — разделы библиотеки; `widgets/agent-sandbox` —
+  песочница; `widgets/agent-stats` — вкладка «Статистика».
+- `features/ai-agent/draft` — карточка черновика (правки, «свой ответ»,
+  похожие случаи); `features/ai-agent/edit-settings` — настройки аккаунта.
 - `features/realtime` — `RealtimeProvider` (SSE → инвалидация кэшей, тост и
   браузерное уведомление на алерт, без звука). `features/alerts/manage` — ack/resolve.
 - `widgets/attention-list`, `widgets/draft-queue`, `pages/attention` — раздел

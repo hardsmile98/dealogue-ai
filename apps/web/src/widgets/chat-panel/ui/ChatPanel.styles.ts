@@ -1,6 +1,17 @@
 import type { SxStyles } from '@/shared/types'
 
 export const chatPanelStyles = {
+  backButton: {
+    mr: -0.5,
+  },
+  messagesError: {
+    mx: 2,
+  },
+  messageSkeletonRow: {
+    display: 'flex',
+    px: 2,
+    py: 0.5,
+  },
   root: {
     display: 'grid',
     gridTemplateColumns: { xs: '1fr', md: '360px 1fr' },

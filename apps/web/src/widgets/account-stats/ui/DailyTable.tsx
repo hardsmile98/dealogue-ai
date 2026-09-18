@@ -16,9 +16,13 @@ interface DailyTableProps {
 
 /** Табличный двойник графика: те же дни и серии, читается без наведения. */
 export function DailyTable({ stats, model }: DailyTableProps) {
-  const totalsByKey = model.series.map((s) =>
-    model.columns.reduce((sum, column) => sum + (column.values[s.key] ?? 0), 0),
-  )
+  // Столбцы графика и дни ответа связаны ключом дня, а не порядком:
+  // сортировка одного из них не должна разъезжаться с другим.
+  const totalByDay = new Map(stats.days.map((day) => [day.date, day.total]))
+  const seriesTotals = model.series.map((series) => ({
+    key: series.key,
+    total: model.columns.reduce((sum, column) => sum + (column.values[series.key] ?? 0), 0),
+  }))
 
   return (
     <Box sx={styles.tableScroll}>
@@ -27,33 +31,35 @@ export function DailyTable({ stats, model }: DailyTableProps) {
           <TableRow>
             <TableCell>Дата</TableCell>
             <TableCell align="right">Всего</TableCell>
-            {model.series.map((s) => (
-              <TableCell key={s.key} align="right">
+            {model.series.map((series) => (
+              <TableCell key={series.key} align="right">
                 <Box sx={styles.headerWithSwatch}>
-                  <Box sx={[styles.swatch, { bgcolor: s.color }]} />
-                  {s.label}
+                  <Box sx={[styles.swatch, { bgcolor: series.color }]} />
+                  {series.label}
                 </Box>
               </TableCell>
             ))}
           </TableRow>
         </TableHead>
         <TableBody>
-          {[...model.columns].reverse().map((column, index) => {
-            const day = stats.days[stats.days.length - 1 - index]
-            const isEmpty = day.total === 0
+          {[...model.columns].reverse().map((column) => {
+            const total = totalByDay.get(column.key) ?? 0
             return (
-              <TableRow key={column.key} hover sx={isEmpty ? styles.emptyRow : undefined}>
-                <TableCell sx={{ whiteSpace: 'nowrap' }}>
+              <TableRow key={column.key} hover sx={total === 0 ? styles.emptyRow : undefined}>
+                <TableCell sx={styles.dayCell}>
                   {formatWeekdayDayMonth(fromDayKey(column.key))}
                 </TableCell>
-                <TableCell align="right" sx={[styles.numberCell, { fontWeight: 600 }]}>
-                  {formatNumber(day.total)}
+                <TableCell align="right" sx={[styles.numberCell, styles.totalCell]}>
+                  {formatNumber(total)}
                 </TableCell>
-                {model.series.map((s) => (
-                  <TableCell key={s.key} align="right" sx={styles.numberCell}>
-                    {column.values[s.key] ? formatNumber(column.values[s.key]) : '·'}
-                  </TableCell>
-                ))}
+                {model.series.map((series) => {
+                  const value = column.values[series.key] ?? 0
+                  return (
+                    <TableCell key={series.key} align="right" sx={styles.numberCell}>
+                      {value === 0 ? '·' : formatNumber(value)}
+                    </TableCell>
+                  )
+                })}
               </TableRow>
             )
           })}
@@ -62,9 +68,9 @@ export function DailyTable({ stats, model }: DailyTableProps) {
             <TableCell align="right" sx={styles.numberCell}>
               {formatNumber(stats.totals.total)}
             </TableCell>
-            {totalsByKey.map((value, index) => (
-              <TableCell key={model.series[index].key} align="right" sx={styles.numberCell}>
-                {formatNumber(value)}
+            {seriesTotals.map((series) => (
+              <TableCell key={series.key} align="right" sx={styles.numberCell}>
+                {formatNumber(series.total)}
               </TableCell>
             ))}
           </TableRow>

@@ -1,26 +1,17 @@
 /**
  * Доменные типы ИИ-агента v2 (см. docs/ai-agent-spec.md). Здесь только
- * то, что хранится в базе или ходит между слоями; DTO наружу — в ai.types.ts.
+ * то, что хранится в базе или ходит между слоями; DTO наружу лежат рядом
+ * с модулем, который их отдаёт (settings/, alerts/, library/, agent/dto/).
  */
 
 /** Режим чата: кто пишет клиенту. */
 export type ChatMode = 'off' | 'auto' | 'supervised' | 'manager';
 
-/** Этап воронки (раздел 5.2 ТЗ). */
-export type FunnelStage =
-  | 'greeting'
-  | 'collect_birth'
-  | 'collect_request'
-  | 'ack_request'
-  | 'diagnostics'
-  | 'post_diagnostics'
-  | 'offer'
-  | 'price'
-  | 'discount'
-  | 'reminders'
-  | 'closed_silent';
-
-export const FUNNEL_STAGES: FunnelStage[] = [
+/**
+ * Этап воронки (раздел 5.2 ТЗ). Порядок значим: он же порядок движения по
+ * воронке. Список — источник истины и для типа, и для zod-схем.
+ */
+export const FUNNEL_STAGES = [
   'greeting',
   'collect_birth',
   'collect_request',
@@ -32,7 +23,9 @@ export const FUNNEL_STAGES: FunnelStage[] = [
   'discount',
   'reminders',
   'closed_silent',
-];
+] as const;
+
+export type FunnelStage = (typeof FUNNEL_STAGES)[number];
 
 /** Цель касания по таймеру. */
 export type TouchKind =
@@ -52,25 +45,7 @@ export type GenderSource = 'text' | 'name' | 'manual';
 
 export type PhraseUsage = 'example' | 'block';
 
-export type PhraseKind =
-  | 'greeting'
-  | 'birth_nudge'
-  | 'intro'
-  | 'empathy'
-  | 'ack_request'
-  | 'links'
-  | 'diag_closing'
-  | 'reengage'
-  | 'offer'
-  | 'offer_question'
-  | 'price'
-  | 'price_question'
-  | 'objection'
-  | 'discount'
-  | 'reminder'
-  | 'quick_reply';
-
-export const PHRASE_KINDS: PhraseKind[] = [
+export const PHRASE_KINDS = [
   'greeting',
   'birth_nudge',
   'intro',
@@ -87,7 +62,9 @@ export const PHRASE_KINDS: PhraseKind[] = [
   'discount',
   'reminder',
   'quick_reply',
-];
+] as const;
+
+export type PhraseKind = (typeof PHRASE_KINDS)[number];
 
 /** Условия применимости примера или блока (фильтр до подмешивания в промпт). */
 export interface PhraseConditions {

@@ -9,7 +9,7 @@ import Typography from '@mui/material/Typography'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined'
 import SendIcon from '@mui/icons-material/Send'
-import { formatDateTime, formatDayDivider, getApiErrorMessage, toDayKey } from '@/shared/lib'
+import { formatDateTime, formatDayDivider, getApiErrorMessage, isMutationSuccess, toDayKey } from '@/shared/lib'
 import type { TurnDto } from '@/shared/api'
 import { ALERT_TYPE_META } from '@/entities/alert'
 import { TURN_OUTCOME_META, useGetChatTurnsQuery } from '@/entities/ai-agent'
@@ -24,7 +24,7 @@ import {
 } from '@/entities/chat'
 import type { Chat, Message } from '@/entities/chat'
 import { AccountAvatar } from '@/entities/telegram-account'
-import { ChatAiPanel, RateTurn, TurnsJournal } from '@/features/ai-agent/chat-ai'
+import { ChatAiPanel, RateTurn, TurnsJournal } from '@/widgets/chat-agent'
 import { chatPanelStyles as styles } from './ChatPanel.styles'
 
 interface ChatThreadProps {
@@ -107,7 +107,7 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
     const text = draft.trim()
     if (!text || sending) return
     const result = await sendMessage({ accountId, chatId: chat.id, text })
-    if (!('error' in result)) setDraft('')
+    if (isMutationSuccess(result)) setDraft('')
   }
 
   const peerMeta = [chat.peer.username ? `@${chat.peer.username}` : null, chat.peer.phone]
@@ -126,7 +126,7 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
     <Box sx={styles.threadPane}>
       <Box sx={styles.threadHeader}>
         {onBack && (
-          <IconButton size="small" onClick={onBack} aria-label="К списку чатов" sx={{ mr: -0.5 }}>
+          <IconButton size="small" onClick={onBack} aria-label="К списку чатов" sx={styles.backButton}>
             <ArrowBackIcon fontSize="small" />
           </IconButton>
         )}
@@ -165,18 +165,15 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
 
       <Box ref={scrollRef} sx={styles.messages}>
         {error && (
-          <Alert severity="error" sx={{ mx: 2 }}>
+          <Alert severity="error" sx={styles.messagesError}>
             {getApiErrorMessage(error, 'Не удалось загрузить сообщения')}
           </Alert>
         )}
 
         {isLoading &&
           [0, 1, 2, 3].map((i) => (
-            <Box
-              key={i}
-              sx={{ display: 'flex', justifyContent: i % 2 ? 'flex-end' : 'flex-start', px: 2, py: 0.5 }}
-            >
-              <Skeleton variant="rounded" width={`${40 + (i % 3) * 12}%`} height={48} sx={{ borderRadius: 3 }} />
+            <Box key={i} sx={[styles.messageSkeletonRow, { justifyContent: i % 2 ? 'flex-end' : 'flex-start' }]}>
+              <Skeleton variant="rounded" width={`${40 + (i % 3) * 12}%`} height={48} />
             </Box>
           ))}
 

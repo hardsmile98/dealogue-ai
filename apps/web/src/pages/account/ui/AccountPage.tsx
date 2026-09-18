@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link as RouterLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -26,6 +27,18 @@ import { RemoveAccountButton } from '@/features/telegram-account/remove'
 import { accountPageStyles as styles } from './AccountPage.styles'
 
 type AccountTab = 'stats' | 'chats' | 'ai'
+
+/** Вкладки аккаунта: подпись, иконка и как собрать ссылку. */
+const TABS: { key: AccountTab; label: string; icon: ReactNode; link: (accountId: string) => string }[] = [
+  {
+    key: 'stats',
+    label: 'Статистика',
+    icon: <InsightsOutlinedIcon fontSize="small" />,
+    link: accountLinks.stats,
+  },
+  { key: 'chats', label: 'Чаты', icon: <ForumOutlinedIcon fontSize="small" />, link: accountLinks.chats },
+  { key: 'ai', label: 'ИИ-агент', icon: <SmartToyOutlinedIcon fontSize="small" />, link: accountLinks.ai },
+]
 
 /** Шапка аккаунта и вкладки; содержимое вкладки — во вложенном роуте. */
 export function AccountPage() {
@@ -67,9 +80,9 @@ export function AccountPage() {
       </Box>
 
       {isLoading || !account ? (
-        <Stack direction="row" spacing={2} sx={{ alignItems: 'center', mb: 3 }}>
+        <Stack direction="row" spacing={2} sx={styles.headerSkeleton}>
           <Skeleton variant="circular" width={56} height={56} />
-          <Box sx={{ flexGrow: 1 }}>
+          <Box sx={styles.headerSkeletonText}>
             <Skeleton width={240} height={36} />
             <Skeleton width={180} />
           </Box>
@@ -118,39 +131,20 @@ export function AccountPage() {
           )}
 
           <Tabs value={tab} sx={styles.tabs}>
-            <Tab
-              value="stats"
-              component={RouterLink}
-              to={accountLinks.stats(account.id)}
-              label={
-                <Box sx={styles.tabLabel}>
-                  <InsightsOutlinedIcon fontSize="small" />
-                  Статистика
-                </Box>
-              }
-            />
-            <Tab
-              value="chats"
-              component={RouterLink}
-              to={accountLinks.chats(account.id)}
-              label={
-                <Box sx={styles.tabLabel}>
-                  <ForumOutlinedIcon fontSize="small" />
-                  Чаты
-                </Box>
-              }
-            />
-            <Tab
-              value="ai"
-              component={RouterLink}
-              to={accountLinks.ai(account.id)}
-              label={
-                <Box sx={styles.tabLabel}>
-                  <SmartToyOutlinedIcon fontSize="small" />
-                  ИИ-агент
-                </Box>
-              }
-            />
+            {TABS.map((item) => (
+              <Tab
+                key={item.key}
+                value={item.key}
+                component={RouterLink}
+                to={item.link(account.id)}
+                label={
+                  <Box sx={styles.tabLabel}>
+                    {item.icon}
+                    {item.label}
+                  </Box>
+                }
+              />
+            ))}
           </Tabs>
 
           <Outlet />

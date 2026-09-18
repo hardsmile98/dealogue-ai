@@ -1,7 +1,5 @@
-import { baseApi } from '@/shared/api'
+import { AI_STATS_TAG, baseApi } from '@/shared/api'
 import type { DraftStatsDto, FunnelStatsDto, LibraryStatsDto, StatsQuery, TurnStatsDto } from '@/shared/api'
-
-export const AI_STATS_TAG = 'AiStats' as const
 
 /** Статистика аккаунта: воронка, касания и тексты, черновики, ходы. */
 export const statsApi = baseApi.enhanceEndpoints({ addTagTypes: [AI_STATS_TAG] }).injectEndpoints({

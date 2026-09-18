@@ -25,6 +25,5 @@ setupListeners(store.dispatch)
 // Отдаём shared/api доступ к токену, не импортируя store снизу вверх.
 setAuthTokenProvider(() => selectAccessToken(store.getState()))
 
-export type AppStore = typeof store
 export type RootState = ReturnType<typeof store.getState>
 export type AppDispatch = typeof store.dispatch

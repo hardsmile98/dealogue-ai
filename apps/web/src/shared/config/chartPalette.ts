@@ -18,4 +18,11 @@ export const CHART_SERIES_COLORS = [
 /** Нейтральный серый для «фоновой» серии (например, «без кода»). */
 export const CHART_NEUTRAL_COLOR = '#b9b8b0'
 
-export const CHART_MAX_SERIES = CHART_SERIES_COLORS.length
+/**
+ * Цвет слота по индексу. За пределами палитры — нейтральный серый: серия
+ * останется читаемой, даже если вызывающий код попросит больше слотов,
+ * чем есть цветов.
+ */
+export function chartSeriesColor(index: number): string {
+  return CHART_SERIES_COLORS[index] ?? CHART_NEUTRAL_COLOR
+}

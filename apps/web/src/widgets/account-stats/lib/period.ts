@@ -39,8 +39,8 @@ export const PERIOD_PRESETS: PeriodPreset[] = [
 export const DEFAULT_PERIOD: PeriodPresetKey = 'today'
 
 export function presetRange(key: PeriodPresetKey, now = new Date()): DateRange {
-  const preset = PERIOD_PRESETS.find((item) => item.key === key) ?? PERIOD_PRESETS[2]
-  return preset.range(now)
+  const preset = PERIOD_PRESETS.find((item) => item.key === key)
+  return preset ? preset.range(now) : lastDaysRange(7, now)
 }
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/

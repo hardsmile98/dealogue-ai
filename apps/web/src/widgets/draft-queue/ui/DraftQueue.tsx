@@ -9,6 +9,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { accountLinks } from '@/shared/config'
 import { formatRelative, getApiErrorMessage } from '@/shared/lib'
+import { QueryBoundary } from '@/shared/ui'
 import type { DraftListItemDto } from '@/shared/api'
 import { FUNNEL_STAGE_META } from '@/entities/ai-agent'
 import {
@@ -19,6 +20,10 @@ import {
 } from '@/entities/ai-draft'
 import { HANDOFF_REASON_LABELS } from '@/entities/alert'
 import { AccountAvatar } from '@/entities/telegram-account'
+import { draftQueueStyles as styles } from './DraftQueue.styles'
+
+/** Цитату клиента показываем одной репликой: полная переписка — в чате. */
+const CLIENT_TEXT_LIMIT = 200
 
 /**
  * Очередь черновиков по всем аккаунтам (раздел 12.3 ТЗ): кто написал, почему
@@ -26,81 +31,89 @@ import { AccountAvatar } from '@/entities/telegram-account'
  * в чате.
  */
 export function DraftQueue() {
-  const { data, isLoading, error } = useGetDraftsQuery({ limit: 30 }, { pollingInterval: 30_000 })
-
-  if (error) {
-    return <Alert severity="error">{getApiErrorMessage(error, 'Не удалось загрузить черновики')}</Alert>
-  }
-  if (isLoading) {
-    return (
-      <Stack spacing={1.5}>
-        {[0, 1].map((i) => (
-          <Skeleton key={i} variant="rounded" height={112} sx={{ borderRadius: 3 }} />
-        ))}
-      </Stack>
-    )
-  }
-  if (!data || data.length === 0) return null
+  const query = useGetDraftsQuery({ limit: 30 }, { pollingInterval: 30_000 })
 
   return (
-    <Stack spacing={1.5} sx={{ mb: 3 }}>
-      <Typography variant="subtitle2" color="text.secondary">
-        Черновики ответов · {data.length}
-      </Typography>
-      {data.map((draft) => (
-        <DraftRow key={draft.id} draft={draft} />
-      ))}
-    </Stack>
+    <QueryBoundary
+      query={query}
+      errorText="Не удалось загрузить черновики"
+      skeleton={
+        <Stack spacing={1.5}>
+          {[0, 1].map((index) => (
+            <Skeleton key={index} variant="rounded" height={112} />
+          ))}
+        </Stack>
+      }
+      // Пустая очередь — это норма, а не состояние, о котором надо сообщать:
+      // ниже на странице идёт список алертов со своей заглушкой.
+      empty={null}
+    >
+      {(drafts) => (
+        <Stack spacing={1.5} sx={styles.root}>
+          <Typography variant="subtitle2" color="text.secondary">
+            Черновики ответов · {drafts.length}
+          </Typography>
+          {drafts.map((draft) => (
+            <DraftRow key={draft.id} draft={draft} />
+          ))}
+        </Stack>
+      )}
+    </QueryBoundary>
   )
 }
 
 function DraftRow({ draft }: { draft: DraftListItemDto }) {
   const [send, { isLoading: sending, error: sendError }] = useSendDraftMutation()
   const [dismiss, { isLoading: dismissing, error: dismissError }] = useDismissDraftMutation()
+
   const meta = DRAFT_KIND_META[draft.kind]
-  const suggested = draft.messages.map((m) => m.text)
-  const who = [draft.chat?.peerName, draft.chat?.peerUsername ? `@${draft.chat.peerUsername}` : null].filter(Boolean).join(' ')
+  const suggested = draft.messages.map((message) => message.text)
+  const who = [draft.chat?.peerName, draft.chat?.peerUsername ? `@${draft.chat.peerUsername}` : null]
+    .filter(Boolean)
+    .join(' ')
   const args = { accountId: draft.accountId, draftId: draft.id, chatId: draft.chatId }
   const busy = sending || dismissing
   const error = sendError ?? dismissError
 
   return (
-    <Card variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+    <Card variant="outlined" sx={styles.card}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
         <AccountAvatar name={draft.chat?.peerName ?? '?'} size={44} />
-        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mb: 0.5 }}>
+        <Box sx={styles.body}>
+          <Stack direction="row" spacing={1} sx={styles.chips}>
             <Chip size="small" color={meta.color} label={meta.label} />
             {draft.handoffReason && (
-              <Chip size="small" variant="outlined" label={HANDOFF_REASON_LABELS[draft.handoffReason] ?? draft.handoffReason} />
+              <Chip
+                size="small"
+                variant="outlined"
+                label={HANDOFF_REASON_LABELS[draft.handoffReason] ?? draft.handoffReason}
+              />
             )}
             {draft.stage && <Chip size="small" variant="outlined" label={FUNNEL_STAGE_META[draft.stage].short} />}
-            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{formatRelative(draft.createdAt)}</Typography>
+            <Typography sx={styles.meta}>{formatRelative(draft.createdAt)}</Typography>
           </Stack>
-          <Typography sx={{ fontWeight: 600 }}>{who || 'Клиент'}</Typography>
-          {draft.account && (
-            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>аккаунт {draft.account.displayName}</Typography>
-          )}
+          <Typography sx={styles.who}>{who || 'Клиент'}</Typography>
+          {draft.account && <Typography sx={styles.meta}>аккаунт {draft.account.displayName}</Typography>}
           {draft.clientText && (
-            <Typography sx={{ fontSize: 13, mt: 0.75, fontStyle: 'italic', color: 'text.secondary' }}>
-              «{draft.clientText.length > 200 ? `${draft.clientText.slice(0, 200)}…` : draft.clientText}»
+            <Typography sx={styles.quote}>
+              «
+              {draft.clientText.length > CLIENT_TEXT_LIMIT
+                ? `${draft.clientText.slice(0, CLIENT_TEXT_LIMIT)}…`
+                : draft.clientText}
+              »
             </Typography>
           )}
-          {suggested.length > 0 && (
-            <Box sx={{ mt: 0.75, px: 1, py: 0.75, borderRadius: 1.5, bgcolor: 'rgba(16, 24, 40, 0.04)', whiteSpace: 'pre-wrap', fontSize: 13 }}>
-              {suggested.join('\n\n')}
-            </Box>
-          )}
+          {suggested.length > 0 && <Box sx={styles.suggestion}>{suggested.join('\n\n')}</Box>}
           {draft.rationale && suggested.length === 0 && (
-            <Typography sx={{ fontSize: 13, mt: 0.75, color: 'text.secondary' }}>{draft.rationale}</Typography>
+            <Typography sx={styles.rationale}>{draft.rationale}</Typography>
           )}
           {error && (
-            <Alert severity="error" sx={{ mt: 1 }}>
+            <Alert severity="error" sx={styles.error}>
               {getApiErrorMessage(error, 'Не удалось выполнить действие')}
             </Alert>
           )}
         </Box>
-        <Stack spacing={1} sx={{ alignItems: { xs: 'stretch', sm: 'flex-end' }, flexShrink: 0 }}>
+        <Stack spacing={1} sx={styles.actions}>
           <Button
             component={RouterLink}
             to={accountLinks.chat(draft.accountId, draft.chatId)}
@@ -110,7 +123,12 @@ function DraftRow({ draft }: { draft: DraftListItemDto }) {
             Открыть чат
           </Button>
           {suggested.length > 0 && (
-            <Button size="small" variant="outlined" disabled={busy} onClick={() => void send({ ...args, body: { messages: suggested } })}>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={busy}
+              onClick={() => void send({ ...args, body: { messages: suggested } })}
+            >
               Отправить как есть
             </Button>
           )}

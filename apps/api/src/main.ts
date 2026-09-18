@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 
 const DEFAULT_CORS_ORIGIN = 'http://localhost:5173';
 
@@ -25,6 +26,11 @@ async function bootstrap() {
       stopAtFirstError: true,
     }),
   );
+
+  // Одна форма ответа на ошибку: тело HttpException не меняем (веб читает
+  // `message`), ошибка провайдера модели становится 503, остальное — 500
+  // со стеком в логе.
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // SIGTERM/SIGINT → onModuleDestroy: воркер ИИ дожидается заданий и возвращает
   // недоделанное в очередь, Telegram-клиенты закрываются штатно.

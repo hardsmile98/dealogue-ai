@@ -1,7 +1,5 @@
+import { lazy } from 'react'
 import { Navigate, createBrowserRouter, RouterProvider } from 'react-router-dom'
-import { AccountAiPage, AccountChatsPage, AccountPage, AccountStatsPage } from '@/pages/account'
-import { AccountsPage } from '@/pages/accounts'
-import { AttentionPage } from '@/pages/attention'
 import { LoginPage } from '@/pages/login'
 import { NotFoundPage } from '@/pages/not-found'
 import { ROUTES } from '@/shared/config'
@@ -9,6 +7,22 @@ import { RealtimeProvider } from '@/features/realtime'
 import { AppShell } from '@/widgets/app-shell'
 import { GuestRoute } from './GuestRoute'
 import { ProtectedRoute } from './ProtectedRoute'
+
+/**
+ * Разделы за логином грузятся своими чанками: первый экран — это форма входа,
+ * тянуть ради неё графики, переписку и весь раздел ИИ незачем. Заглушку на
+ * время загрузки показывает `Suspense` внутри AppShell.
+ */
+const AccountsPage = lazy(async () => ({ default: (await import('@/pages/accounts')).AccountsPage }))
+const AttentionPage = lazy(async () => ({ default: (await import('@/pages/attention')).AttentionPage }))
+const AccountPage = lazy(async () => ({ default: (await import('@/pages/account')).AccountPage }))
+const AccountStatsPage = lazy(async () => ({
+  default: (await import('@/pages/account')).AccountStatsPage,
+}))
+const AccountChatsPage = lazy(async () => ({
+  default: (await import('@/pages/account')).AccountChatsPage,
+}))
+const AccountAiPage = lazy(async () => ({ default: (await import('@/pages/account')).AccountAiPage }))
 
 const router = createBrowserRouter([
   {

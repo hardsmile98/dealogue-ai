@@ -1,10 +1,6 @@
 import { useState } from 'react'
-import type { ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Grid from '@mui/material/Grid'
@@ -15,7 +11,8 @@ import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined'
-import { getApiErrorMessage } from '@/shared/lib'
+import { formatDateTime, getApiErrorMessage } from '@/shared/lib'
+import { QueryBoundary, SectionCard } from '@/shared/ui'
 import type {
   AiSettingsDto,
   GuardDto,
@@ -30,6 +27,7 @@ import {
   useGetAiSettingsQuery,
   useUpdateAiSettingsMutation,
 } from '@/entities/ai-agent'
+import { aiSettingsStyles as styles } from './AiSettingsForm.styles'
 
 interface AiSettingsFormProps {
   accountId: string
@@ -107,8 +105,8 @@ function toPatch(form: FormState): UpdateAiSettingsRequest {
     persona: {
       ...persona,
       links: lines(linksText).map((line) => {
-        const [title, url] = line.split('|').map((part) => part.trim())
-        return url ? { title, url } : { title, url: title }
+        const [title = '', url] = line.split('|').map((part) => part.trim())
+        return { title, url: url || title }
       }),
     },
     timings: form.timings,
@@ -147,23 +145,24 @@ const LIMIT_FIELDS: { key: keyof LimitsDto; label: string }[] = [
 
 /** Настройки ИИ-агента аккаунта: включение, персона, таймеры, лимиты, guard, уведомления. */
 export function AiSettingsForm({ accountId }: AiSettingsFormProps) {
-  const { data, isLoading, error } = useGetAiSettingsQuery(accountId, { skip: accountId === '' })
+  const query = useGetAiSettingsQuery(accountId, { skip: accountId === '' })
 
-  if (error) {
-    return <Alert severity="error">{getApiErrorMessage(error, 'Не удалось загрузить настройки ИИ')}</Alert>
-  }
-  if (isLoading || !data) {
-    return (
-      <Stack spacing={2}>
-        {[0, 1, 2].map((i) => (
-          <Skeleton key={i} variant="rounded" height={160} sx={{ borderRadius: 3 }} />
-        ))}
-      </Stack>
-    )
-  }
-
-  // key по updatedAt: после сохранения форма пересоздаётся из свежих данных.
-  return <SettingsEditor key={data.updatedAt} accountId={accountId} data={data} />
+  return (
+    <QueryBoundary
+      query={query}
+      errorText="Не удалось загрузить настройки ИИ"
+      skeleton={
+        <Stack spacing={2}>
+          {[0, 1, 2].map((index) => (
+            <Skeleton key={index} variant="rounded" height={160} />
+          ))}
+        </Stack>
+      }
+    >
+      {/* key по updatedAt: после сохранения форма пересоздаётся из свежих данных. */}
+      {(data) => <SettingsEditor key={data.updatedAt} accountId={accountId} data={data} />}
+    </QueryBoundary>
+  )
 }
 
 function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettingsDto }) {
@@ -197,7 +196,7 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
         </Alert>
       )}
 
-      <Section title="Включение">
+      <SectionCard title="Включение">
         <Stack spacing={1}>
           <FormControlLabel
             control={<Switch checked={form.enabled} onChange={(e) => patch('enabled', e.target.checked)} />}
@@ -214,7 +213,7 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
             value={form.defaultChatMode}
             onChange={(e) => patch('defaultChatMode', e.target.value as 'auto' | 'supervised')}
             helperText={CHAT_MODE_META[form.defaultChatMode].description}
-            sx={{ maxWidth: 420 }}
+            sx={styles.narrowField}
           >
             <MenuItem value="auto">{CHAT_MODE_META.auto.label}</MenuItem>
             <MenuItem value="supervised">{CHAT_MODE_META.supervised.label}</MenuItem>
@@ -229,9 +228,9 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
             label="В старых чатах готовить черновики менеджеру (иначе бот их не трогает)"
           />
         </Stack>
-      </Section>
+      </SectionCard>
 
-      <Section title="Персона" subtitle="От чьего лица пишет бот. Тексты библиотеки должны совпадать по полу.">
+      <SectionCard title="Персона" subtitle="От чьего лица пишет бот. Тексты библиотеки должны совпадать по полу.">
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, sm: 6 }}>
             <TextField
@@ -319,9 +318,9 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
             />
           </Grid>
         </Grid>
-      </Section>
+      </SectionCard>
 
-      <Section title="Таймеры" subtitle="Интервалы воронки. Касания получают случайный разброс автоматически.">
+      <SectionCard title="Таймеры" subtitle="Интервалы воронки. Касания получают случайный разброс автоматически.">
         <Grid container spacing={2}>
           {TIMING_FIELDS.map((field) => (
             <Grid key={field.key} size={{ xs: 12, sm: 6, md: 4 }}>
@@ -337,9 +336,9 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
             </Grid>
           ))}
         </Grid>
-      </Section>
+      </SectionCard>
 
-      <Section title="Лимиты и проверки">
+      <SectionCard title="Лимиты и проверки">
         <Grid container spacing={2}>
           {LIMIT_FIELDS.map((field) => (
             <Grid key={field.key} size={{ xs: 12, sm: 6, md: 4 }}>
@@ -400,9 +399,9 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
             />
           </Grid>
         </Grid>
-      </Section>
+      </SectionCard>
 
-      <Section title="Уведомления и мелочи">
+      <SectionCard title="Уведомления и мелочи">
         <Stack spacing={1}>
           <FormControlLabel
             control={<Switch checked={form.markRead} onChange={(e) => patch('markRead', e.target.checked)} />}
@@ -420,7 +419,7 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
             helperText="@username или телефон; пусто — в «Избранное» аккаунта."
             value={form.handoffPeer}
             onChange={(e) => patch('handoffPeer', e.target.value)}
-            sx={{ maxWidth: 420 }}
+            sx={styles.narrowField}
           />
           <TextField
             size="small"
@@ -428,42 +427,22 @@ function SettingsEditor({ accountId, data }: { accountId: string; data: AiSettin
             helperText="IANA-зона: в ней считается статистика по дням."
             value={form.tz}
             onChange={(e) => patch('tz', e.target.value)}
-            sx={{ maxWidth: 420 }}
+            sx={styles.narrowField}
           />
         </Stack>
-      </Section>
+      </SectionCard>
 
       {saveError && <Alert severity="error">{getApiErrorMessage(saveError, 'Не удалось сохранить')}</Alert>}
 
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+      <Stack direction="row" spacing={2} sx={styles.footer}>
         <Button type="submit" variant="contained" loading={saving}>
           Сохранить
         </Button>
         {isSuccess && !saving && <Chip size="small" color="success" variant="outlined" label="Сохранено" />}
-        {data && (
-          <Typography variant="caption" color="text.secondary">
-            Обновлено {new Date(data.updatedAt).toLocaleString('ru-RU')}
-          </Typography>
-        )}
+        <Typography variant="caption" color="text.secondary">
+          Обновлено {formatDateTime(data.updatedAt)}
+        </Typography>
       </Stack>
     </Stack>
-  )
-}
-
-function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
-  return (
-    <Card variant="outlined" sx={{ borderRadius: 3 }}>
-      <CardContent>
-        <Box sx={{ mb: 2 }}>
-          <Typography sx={{ fontWeight: 700 }}>{title}</Typography>
-          {subtitle && (
-            <Typography variant="body2" color="text.secondary">
-              {subtitle}
-            </Typography>
-          )}
-        </Box>
-        {children}
-      </CardContent>
-    </Card>
   )
 }

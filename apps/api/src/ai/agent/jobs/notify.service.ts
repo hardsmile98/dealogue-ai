@@ -5,9 +5,9 @@ import { TelegramChatEntity } from '../../../telegram/entities/telegram-chat.ent
 import { TelegramOutboundService } from '../../../telegram/services/telegram-outbound.service.js';
 import { AiConfig } from '../../ai.config.js';
 import { AiDraftEntity } from '../../entities/ai-draft.entity.js';
-import type { JobContext, JobOutcome } from '../../services/ai-job-worker.service.js';
-import { AiJobWorker } from '../../services/ai-job-worker.service.js';
-import { AiSettingsService } from '../../services/ai-settings.service.js';
+import type { JobContext, JobOutcome } from '../../jobs/ai-job-worker.service.js';
+import { AiJobWorker } from '../../jobs/ai-job-worker.service.js';
+import { AiSettingsService } from '../../settings/ai-settings.service.js';
 import { buildNotifyText, isOpen } from '../drafts/draft-decision.js';
 
 const OFFLINE_RETRY_MS = 60_000;

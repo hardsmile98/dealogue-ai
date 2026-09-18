@@ -1,4 +1,10 @@
-import { baseApi } from '@/shared/api'
+import {
+  AI_CHAT_TAG,
+  AI_DRAFT_TAG,
+  AI_OVERVIEW_TAG,
+  AI_TURNS_TAG,
+  baseApi,
+} from '@/shared/api'
 import type {
   DraftDto,
   DraftListItemDto,
@@ -7,10 +13,6 @@ import type {
   DraftsQuery,
   SendDraftRequest,
 } from '@/shared/api'
-import { AI_CHAT_TAG, AI_OVERVIEW_TAG, AI_TURNS_TAG } from '@/entities/ai-agent'
-
-/** Очередь черновиков: id = accountId для аккаунта, 'ALL' — по всем аккаунтам. */
-export const AI_DRAFT_TAG = 'AiDraft' as const
 
 interface DraftArgs {
   accountId: string

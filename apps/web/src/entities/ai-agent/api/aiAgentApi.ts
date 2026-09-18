@@ -1,4 +1,11 @@
-import { baseApi } from '@/shared/api'
+import {
+  AI_CHAT_TAG,
+  AI_HEALTH_TAG,
+  AI_OVERVIEW_TAG,
+  AI_SETTINGS_TAG,
+  AI_TURNS_TAG,
+  baseApi,
+} from '@/shared/api'
 import type {
   AiHealthDto,
   AiOverviewDto,
@@ -15,14 +22,6 @@ import type {
   TurnDto,
   UpdateAiSettingsRequest,
 } from '@/shared/api'
-
-export const AI_SETTINGS_TAG = 'AiSettings' as const
-export const AI_HEALTH_TAG = 'AiHealth' as const
-/** Состояние одного чата (id = chatId) и сводка по аккаунту (id = accountId). */
-export const AI_CHAT_TAG = 'AiChat' as const
-/** Журнал ходов чата (id = chatId). */
-export const AI_TURNS_TAG = 'AiTurns' as const
-export const AI_OVERVIEW_TAG = 'AiOverview' as const
 
 interface ChatArgs {
   accountId: string

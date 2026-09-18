@@ -13,17 +13,20 @@ import { AiDraftEntity } from '../../entities/ai-draft.entity.js';
 import { AiPhraseEntity } from '../../entities/ai-phrase.entity.js';
 import { AiTurnEntity } from '../../entities/ai-turn.entity.js';
 import type { TurnMessage } from '../../entities/ai-turn.entity.js';
-import type { DraftToExampleInput, DraftToNoteInput, DraftsQueryInput, SendDraftInput } from '../../dto/ai-drafts.schema.js';
+import type { DraftToExampleInput, DraftToNoteInput, DraftsQueryInput, SendDraftInput } from '../dto/drafts.schema.js';
 import { AiLibraryService } from '../../library/library.service.js';
-import { AiJobsService } from '../../services/ai-jobs.service.js';
-import { AiSettingsService } from '../../services/ai-settings.service.js';
-import { toDraftDto, toDraftListItemDto } from '../agent.dto.js';
-import type { DraftDto, DraftListItemDto } from '../agent.dto.js';
+import { AiJobsService } from '../../jobs/ai-jobs.service.js';
+import { AiSettingsService } from '../../settings/ai-settings.service.js';
+import { toDraftDto, toDraftListItemDto } from '../dto/agent.dto.js';
+import type { DraftDto, DraftListItemDto } from '../dto/agent.dto.js';
 import type { ComposedMessage } from '../agent.types.js';
 import { OPEN_DRAFT_STATUSES, decideStatus, isOpen, sameMessages } from '../drafts/draft-decision.js';
 import { OutboundInterruptedError, OutboundService } from '../outbound/outbound.service.js';
-import { AgentService, toTurnMessage } from './agent.service.js';
+import { toTurnMessage } from '../lib/turn-message.js';
 import { ChatStateService, StaleStateError } from './chat-state.service.js';
+import { ManagerDraftService } from './manager-draft.service.js';
+import { TouchSchedulerService } from './touch-scheduler.service.js';
+import { TurnFinalizerService } from './turn-finalizer.service.js';
 
 const DEFAULT_LIMIT = 30;
 
@@ -59,7 +62,9 @@ export class DraftsService {
     private readonly library: AiLibraryService,
     private readonly jobs: AiJobsService,
     private readonly realtime: RealtimeService,
-    private readonly agent: AgentService,
+    private readonly managerDrafts: ManagerDraftService,
+    private readonly finalizer: TurnFinalizerService,
+    private readonly touches: TouchSchedulerService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -210,7 +215,7 @@ export class DraftsService {
     if (draft.kind === 'supervised' && turn?.touchKind && turn.trigger !== 'inbound') {
       const state = await this.chatState.find(draft.chatId);
       if (state && state.mode === 'supervised') {
-        const at = await this.agent.postponeTouch(state, turn.touchKind, 'draft_dismissed', { draftId: draft.id });
+        const at = await this.touches.postpone(state, turn.touchKind, 'draft_dismissed', { draftId: draft.id });
         this.logger.log(`Черновик ${draft.id}: отклонён, касание ${turn.touchKind} перенесено на ${at.toISOString()}`);
       }
     }
@@ -223,7 +228,7 @@ export class DraftsService {
   /** Переписать черновик заново — тем же вызовом модели, что готовил его. */
   async regenerate(accountId: string, draftId: string): Promise<DraftDto> {
     const draft = await this.requireOpen(accountId, draftId);
-    const updated = await this.agent.regenerateDraft(draft);
+    const updated = await this.managerDrafts.regenerate(draft);
     return toDraftDto(updated);
   }
 
@@ -298,7 +303,7 @@ export class DraftsService {
     await this.jobs.cancel('touch', chat.accountId, chat.id);
     const progress = typeof turn.analysis?.stageProgress === 'string' ? turn.analysis.stageProgress : 'stay';
     const stageBefore = turn.stageBefore ?? state.stage;
-    const stageAfter = this.agent.stageAfter({
+    const stageAfter = this.finalizer.stageAfter({
       state,
       stage: stageBefore,
       trigger: turn.trigger,
@@ -315,7 +320,7 @@ export class DraftsService {
     turn.outcome = settings.dryRun ? 'dry_run' : 'sent';
     await this.turns.save(turn);
 
-    await this.agent.finishTurn({
+    await this.finalizer.finish({
       chat,
       state,
       settings,

@@ -8,7 +8,7 @@ import type { AiEventKind, ChatMode, FunnelStage } from '../../domain/types.js';
 import { AiAccountSettingsEntity } from '../../entities/ai-account-settings.entity.js';
 import { AiChatStateEntity } from '../../entities/ai-chat-state.entity.js';
 import { AiEventEntity } from '../../entities/ai-event.entity.js';
-import { AiJobsService } from '../../services/ai-jobs.service.js';
+import { AiJobsService } from '../../jobs/ai-jobs.service.js';
 import { guessGenderByName } from '../lib/slots.js';
 
 /** Состояние изменилось под нами (ход и таймер наперегонки) — ход повторяется заново. */

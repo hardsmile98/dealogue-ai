@@ -8,9 +8,11 @@ import { AiDiagnosticEntity } from '../../entities/ai-diagnostic.entity.js';
 import { AiFactEntity } from '../../entities/ai-fact.entity.js';
 import { AiNoteEntity } from '../../entities/ai-note.entity.js';
 import { AiPhraseEntity } from '../../entities/ai-phrase.entity.js';
+import { AiTurnEntity } from '../../entities/ai-turn.entity.js';
 import { AiLibraryService } from '../../library/library.service.js';
 import type { HistoryMessage, LibraryBlock, LibraryExample, PlaybookSnapshot, SlotsSnapshot } from '../agent.types.js';
 import { buildAllowlists } from '../guard/guard.js';
+import type { RecentTurnSummary } from '../planner/planner.js';
 import type { Allowlists } from '../guard/guard.js';
 import { pickWeighted } from '../lib/random.js';
 import type { Rng } from '../lib/random.js';
@@ -68,6 +70,7 @@ export interface LoadContextParams {
 }
 
 const HISTORY_LIMIT = 40;
+const RECENT_TURNS = 6;
 const EXAMPLES_PER_KIND = 2;
 const EXAMPLES_MAX = 6;
 
@@ -87,6 +90,8 @@ export class TurnContextService {
     private readonly notes: Repository<AiNoteEntity>,
     @InjectRepository(TelegramMessageEntity)
     private readonly messages: Repository<TelegramMessageEntity>,
+    @InjectRepository(AiTurnEntity)
+    private readonly turns: Repository<AiTurnEntity>,
     private readonly library: AiLibraryService,
   ) {}
 
@@ -195,6 +200,17 @@ export class TurnContextService {
       .slice(0, limit)
       .reverse()
       .map(toHistoryMessage);
+  }
+
+  /** Последние ходы чата — Planner по ним видит, что бот уже пробовал. */
+  async recentTurns(chatId: string, limit = RECENT_TURNS): Promise<RecentTurnSummary[]> {
+    const rows = await this.turns.find({ where: { chatId }, order: { createdAt: 'DESC' }, take: limit });
+    return rows.reverse().map((t) => ({
+      stageBefore: t.stageBefore,
+      stageAfter: t.stageAfter,
+      clientIntent: typeof t.analysis?.clientIntent === 'string' ? (t.analysis.clientIntent as string) : null,
+      trigger: t.trigger,
+    }));
   }
 
   /** Диагностика: категория+пол → категория → универсальная+пол → универсальная; язык совпадает. */

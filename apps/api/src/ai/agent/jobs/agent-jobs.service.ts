@@ -1,14 +1,15 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AiConfig } from '../../ai.config.js';
 import type { TouchKind } from '../../domain/types.js';
-import { AiJobWorker } from '../../services/ai-job-worker.service.js';
-import type { JobContext, JobOutcome } from '../../services/ai-job-worker.service.js';
-import { AiSettingsService } from '../../services/ai-settings.service.js';
+import { AiJobWorker } from '../../jobs/ai-job-worker.service.js';
+import type { JobContext, JobOutcome } from '../../jobs/ai-job-worker.service.js';
+import { AiSettingsService } from '../../settings/ai-settings.service.js';
 import { defaultRng } from '../lib/random.js';
 import { firstReplyDelayMs } from '../outbound/timing.js';
 import { AgentService } from '../services/agent.service.js';
-import type { TurnRunResult } from '../services/agent.service.js';
 import { ChatStateService } from '../services/chat-state.service.js';
+import { TouchSchedulerService } from '../services/touch-scheduler.service.js';
+import type { TurnRunResult } from '../services/turn-result.js';
 
 const RESUME_RETRY_MS = 60_000;
 
@@ -25,6 +26,7 @@ export class AgentJobsService implements OnModuleInit {
     private readonly agent: AgentService,
     private readonly settings: AiSettingsService,
     private readonly chatState: ChatStateService,
+    private readonly touches: TouchSchedulerService,
     private readonly config: AiConfig,
   ) {}
 
@@ -72,7 +74,7 @@ export class AgentJobsService implements OnModuleInit {
     const manual = job.payload.manual === true;
     const resume = resumeOf(job.payload);
     if (job.payload.superviseTimeout === true && kind && typeof job.payload.draftId === 'string') {
-      const detail = await this.agent.superviseTimeout(job.accountId, job.chatId, job.payload.draftId, kind);
+      const detail = await this.touches.superviseTimeout(job.accountId, job.chatId, job.payload.draftId, kind);
       this.logger.log(`Чат ${job.chatId}: таймаут подтверждения — ${detail}`);
       return { kind: 'done' };
     }

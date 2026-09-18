@@ -1,4 +1,4 @@
-import { isFetchBaseQueryError } from './isFetchBaseQueryError'
+import { isFetchBaseQueryError } from './rtkQuery'
 
 interface ErrorBody {
   message?: string | string[]

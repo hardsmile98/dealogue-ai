@@ -6,7 +6,8 @@ import type {
   SubmitPasswordRequest,
   SubmitPasswordResponse,
 } from '@/shared/api'
-import { TELEGRAM_ACCOUNT_TAG, accountsApi } from '@/entities/telegram-account'
+import { TELEGRAM_ACCOUNT_TAG } from '@/shared/api'
+import { accountsApi } from '@/entities/telegram-account'
 
 const LIST_TAG = { type: TELEGRAM_ACCOUNT_TAG, id: 'LIST' } as const
 

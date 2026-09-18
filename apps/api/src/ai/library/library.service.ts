@@ -18,7 +18,7 @@ import type {
   UpdateNoteInput,
   UpdatePhraseInput,
   UpdatePlaybookInput,
-} from '../dto/ai-library.schema.js';
+} from './library.schema.js';
 import { AiCategoryEntity } from '../entities/ai-category.entity.js';
 import { AiDiagnosticEntity } from '../entities/ai-diagnostic.entity.js';
 import { AiFactEntity } from '../entities/ai-fact.entity.js';

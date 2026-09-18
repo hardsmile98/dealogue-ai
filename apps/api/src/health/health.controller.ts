@@ -2,8 +2,8 @@ import { Controller, Get } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AiConfig } from '../ai/ai.config.js';
 import { LlmProviderFactory } from '../ai/llm/llm-provider.factory.js';
-import { AiJobWorker } from '../ai/services/ai-job-worker.service.js';
-import { AiJobsService } from '../ai/services/ai-jobs.service.js';
+import { AiJobWorker } from '../ai/jobs/ai-job-worker.service.js';
+import { AiJobsService } from '../ai/jobs/ai-jobs.service.js';
 import { TelegramRuntimeService } from '../telegram/services/telegram-runtime.service.js';
 
 /** Живость сервиса: база, воркер очереди, предохранители провайдеров, аккаунты. */

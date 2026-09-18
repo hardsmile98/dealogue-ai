@@ -13,7 +13,8 @@ const AVATAR_COLORS = ['#4f46e5', '#0e7490', '#b45309', '#be185d', '#047857', '#
 function colorFor(name: string): string {
   let hash = 0
   for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+  // Остаток от деления всегда попадает в границы непустого массива.
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]!
 }
 
 function initials(name: string): string {

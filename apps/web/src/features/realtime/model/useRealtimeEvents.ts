@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { useDispatch } from 'react-redux'
-import { connectRealtime, unauthorized } from '@/shared/api'
+import {
+  AI_CHAT_TAG,
+  AI_DRAFT_TAG,
+  AI_OVERVIEW_TAG,
+  AI_SETTINGS_TAG,
+  AI_TURNS_TAG,
+  ALERT_TAG,
+  CHAT_TAG,
+  MESSAGE_TAG,
+  connectRealtime,
+  unauthorized,
+} from '@/shared/api'
 import type { RealtimeEvent } from '@/shared/api'
-import { AI_CHAT_TAG, AI_OVERVIEW_TAG, AI_SETTINGS_TAG, AI_TURNS_TAG, aiAgentApi } from '@/entities/ai-agent'
-import { AI_DRAFT_TAG, draftsApi } from '@/entities/ai-draft'
-import { ALERT_TAG, alertsApi } from '@/entities/alert'
-import { CHAT_TAG, MESSAGE_TAG, chatsApi } from '@/entities/chat'
+import { aiAgentApi } from '@/entities/ai-agent'
+import { draftsApi } from '@/entities/ai-draft'
+import { alertsApi } from '@/entities/alert'
+import { chatsApi } from '@/entities/chat'
 
 type ChatTags = Parameters<typeof chatsApi.util.invalidateTags>[0]
 type AlertTags = Parameters<typeof alertsApi.util.invalidateTags>[0]

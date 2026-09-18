@@ -1,9 +1,6 @@
-import { baseApi } from '@/shared/api'
+import { CHAT_TAG, MESSAGE_TAG, baseApi } from '@/shared/api'
 import type { ChatDto, ChatQuery, ChatsQuery, SendMessageRequest } from '@/shared/api'
 import type { Chat, Message, MessagesQuery } from '../model/types'
-
-export const CHAT_TAG = 'Chat' as const
-export const MESSAGE_TAG = 'Message' as const
 
 export const chatsApi = baseApi
   .enhanceEndpoints({ addTagTypes: [CHAT_TAG, MESSAGE_TAG] })

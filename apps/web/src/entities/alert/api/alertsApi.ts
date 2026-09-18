@@ -1,7 +1,5 @@
-import { baseApi } from '@/shared/api'
+import { ALERT_TAG, baseApi } from '@/shared/api'
 import type { AlertDto, AlertsCountDto, AlertsQuery } from '@/shared/api'
-
-export const ALERT_TAG = 'Alert' as const
 
 export const alertsApi = baseApi.enhanceEndpoints({ addTagTypes: [ALERT_TAG] }).injectEndpoints({
   endpoints: (build) => ({

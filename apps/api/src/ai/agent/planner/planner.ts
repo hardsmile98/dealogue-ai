@@ -252,7 +252,7 @@ export function advanceStage(stage: FunnelStage, ctx: StageContext): FunnelStage
 }
 
 export function isFunnelStage(value: string): value is FunnelStage {
-  return (FUNNEL_STAGES as string[]).includes(value);
+  return FUNNEL_STAGES.includes(value as FunnelStage);
 }
 
 /** Этап после хода: решение модели + структурные правила, которым модель не указ. */

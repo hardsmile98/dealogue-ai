@@ -16,8 +16,6 @@ export const ROUTES = {
   attention: '/attention',
 } as const
 
-export type AppRoute = (typeof ROUTES)[keyof typeof ROUTES]
-
 /** Готовые ссылки на страницы аккаунта — чтобы не собирать пути руками. */
 export const accountLinks = {
   root: (accountId: string) => `${ROUTES.accounts}/${accountId}`,

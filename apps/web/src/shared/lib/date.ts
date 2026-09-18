@@ -34,7 +34,7 @@ export function toDayKey(value: string | Date): string {
 
 /** Обратная операция: `YYYY-MM-DD` → Date в локальной полуночи. */
 export function fromDayKey(key: string): Date {
-  const [y, m, d] = key.split('-').map(Number)
+  const [y = 0, m = 1, d = 1] = key.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
 
@@ -44,22 +44,15 @@ export function addDays(value: string | Date, days: number): Date {
   return d
 }
 
+/** Ключ дня, с которого начинается отрезок из `days` дней, включая сегодня. */
+export function daysAgoKey(days: number, now = new Date()): string {
+  return toDayKey(addDays(now, -(days - 1)))
+}
+
 /** Количество календарных дней между ключами включительно. */
 export function daysBetween(fromKey: string, toKey: string): number {
   const ms = fromDayKey(toKey).getTime() - fromDayKey(fromKey).getTime()
   return Math.round(ms / 86_400_000) + 1
-}
-
-/** Все дни отрезка `[from, to]` в виде ключей. */
-export function eachDayKey(fromKey: string, toKey: string): string[] {
-  const result: string[] = []
-  let cursor = fromDayKey(fromKey)
-  const end = fromDayKey(toKey)
-  while (cursor <= end) {
-    result.push(toDayKey(cursor))
-    cursor = addDays(cursor, 1)
-  }
-  return result
 }
 
 /** «3 сент» */

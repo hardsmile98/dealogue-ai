@@ -1,4 +1,5 @@
-import { TELEGRAM_ACCOUNT_TAG, accountsApi } from '@/entities/telegram-account'
+import { TELEGRAM_ACCOUNT_TAG } from '@/shared/api'
+import { accountsApi } from '@/entities/telegram-account'
 
 export const removeApi = accountsApi.injectEndpoints({
   endpoints: (build) => ({

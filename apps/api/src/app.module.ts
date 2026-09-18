@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiModule } from './ai/ai.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { buildTypeOrmOptions } from './database/database.config.js';
+import { HealthModule } from './health/health.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
 import { UsersModule } from './users/users.module.js';
 
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module.js';
     AuthModule,
     TelegramModule,
     AiModule,
+    HealthModule,
   ],
   controllers: [],
   providers: [],

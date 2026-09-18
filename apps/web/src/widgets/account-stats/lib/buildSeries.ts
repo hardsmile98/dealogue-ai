@@ -1,4 +1,4 @@
-import { CHART_NEUTRAL_COLOR, CHART_SERIES_COLORS } from '@/shared/config'
+import { CHART_NEUTRAL_COLOR, chartSeriesColor } from '@/shared/config'
 import { formatDayMonth, formatWeekdayDayMonth, fromDayKey } from '@/shared/lib'
 import type { ChartColumn, ChartSeries } from '@/shared/ui'
 import type { AccountStats } from '@/entities/telegram-account'
@@ -31,13 +31,13 @@ export function buildStatsSeries(stats: AccountStats): StatsSeriesModel {
   const series: ChartSeries[] = shown.map((code, index) => ({
     key: code,
     label: `Код ${code}`,
-    color: CHART_SERIES_COLORS[index],
+    color: chartSeriesColor(index),
   }))
   if (otherCodes.length > 0) {
     series.push({
       key: OTHER_CODES_KEY,
       label: 'Другие коды',
-      color: CHART_SERIES_COLORS[MAX_CODE_SERIES],
+      color: chartSeriesColor(MAX_CODE_SERIES),
     })
   }
   series.push({ key: NO_CODE_KEY, label: 'Без кода', color: CHART_NEUTRAL_COLOR })

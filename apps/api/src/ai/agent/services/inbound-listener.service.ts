@@ -15,9 +15,9 @@ import type {
 import { AiConfig } from '../../ai.config.js';
 import { AiChatStateEntity } from '../../entities/ai-chat-state.entity.js';
 import { AiDraftEntity } from '../../entities/ai-draft.entity.js';
-import { AiJobWorker } from '../../services/ai-job-worker.service.js';
-import { AiJobsService } from '../../services/ai-jobs.service.js';
-import { AiSettingsService } from '../../services/ai-settings.service.js';
+import { AiJobWorker } from '../../jobs/ai-job-worker.service.js';
+import { AiJobsService } from '../../jobs/ai-jobs.service.js';
+import { AiSettingsService } from '../../settings/ai-settings.service.js';
 import { OPEN_DRAFT_STATUSES, glueFinalText, shouldGlue } from '../drafts/draft-decision.js';
 import { reengageAfterRead } from '../funnel/touch-planner.js';
 import { inboundRunAt, typingRunAt } from '../lib/debounce.js';
