@@ -93,6 +93,16 @@ export function formatDayDivider(dayKey: string, now = new Date()): string {
   return formatDayMonthYear(fromDayKey(dayKey))
 }
 
+/** «через 25 мин», «через 13 ч», «через 2 дн.» — для будущих сроков. */
+export function formatAhead(value: string | Date, now: string | Date = new Date()): string {
+  const minutes = Math.round((toDate(value).getTime() - toDate(now).getTime()) / 60_000)
+  if (minutes <= 0) return 'сейчас'
+  if (minutes < 60) return `через ${minutes} мин`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `через ${hours} ч`
+  return `через ${Math.round(hours / 24)} дн.`
+}
+
 /** «5 мин назад», «2 ч назад», «вчера», иначе дата. */
 export function formatRelative(value: string | Date, now = new Date()): string {
   const diffMs = now.getTime() - toDate(value).getTime()

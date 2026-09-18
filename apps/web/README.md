@@ -70,7 +70,7 @@ src/
     chat-agent/            панель ИИ в шапке чата и журнал ходов с оценками
     agent-overview/        обзор агента и чек-лист готовности
     agent-library/         разделы библиотеки: тексты, факты, диагностики, категории, заметки, плейбуки
-    agent-sandbox/         песочница хода
+    agent-sandbox/         песочница: моделирование диалога с клиентом
     agent-stats/           вкладка «Статистика» ИИ-агента
     attention-list/        список алертов
     draft-queue/           очередь черновиков по всем аккаунтам
@@ -255,7 +255,9 @@ VITE_API_URL=http://localhost:3000
 - `widgets/chat-agent` — панель ИИ в шапке чата и журнал ходов с оценками;
   `widgets/agent-overview` — сводка и чек-лист готовности;
   `widgets/agent-library` — разделы библиотеки; `widgets/agent-sandbox` —
-  песочница; `widgets/agent-stats` — вкладка «Статистика».
+  песочница (диалог с выдуманным клиентом на виртуальных часах; состояние
+  сценария живёт в `localStorage`, сервер его не хранит);
+  `widgets/agent-stats` — вкладка «Статистика».
 - `features/ai-agent/draft` — карточка черновика (правки, «свой ответ»,
   похожие случаи); `features/ai-agent/edit-settings` — настройки аккаунта.
 - `features/realtime` — `RealtimeProvider` (SSE → инвалидация кэшей, тост и

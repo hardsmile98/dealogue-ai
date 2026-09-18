@@ -14,7 +14,7 @@ import { LlmError } from '../../llm/llm-provider.interface.js';
 import { AiSettingsService } from '../../settings/ai-settings.service.js';
 import type { ComposedMessage, HistoryMessage, TurnTask } from '../agent.types.js';
 import { PROMPT_VERSION } from '../composer/prompt-builder.js';
-import { pickInterval } from '../funnel/touch-planner.js';
+import { MAX_TOUCH_POSTPONES, postponedTouchAt } from '../funnel/touch-planner.js';
 import { defaultRng } from '../lib/random.js';
 import type { Rng } from '../lib/random.js';
 import { toTurnMessage } from '../lib/turn-message.js';
@@ -41,10 +41,6 @@ const HOUR_MS = 3_600_000;
 const OFFLINE_RETRY_MS = 60_000;
 /** Состояние чата обогнали — перечитаем почти сразу. */
 const STALE_STATE_RETRY_MS = 5_000;
-/** Касание, которое модель сочла неуместным, переносим не больше двух раз. */
-const MAX_TOUCH_POSTPONES = 2;
-/** Короткие касания переносим на минуты, остальные — на интервал воронки. */
-const SHORT_TOUCH_KINDS: TouchKind[] = ['birth_nudge', 'diagnostics', 'reengage'];
 
 /**
  * Ход агента целиком (раздел 4 ТЗ): Planner → Composer → Guard → Outbound →
@@ -442,9 +438,7 @@ export class AgentService {
 
     const postponed = state.touchPostponedCount + 1;
     if (postponed <= MAX_TOUCH_POSTPONES) {
-      const wanted = SHORT_TOUCH_KINDS.includes(touchKind)
-        ? new Date(now.getTime() + settings.timings.diagnosticsDelayMin * 60_000)
-        : new Date(now.getTime() + pickInterval({ timings: settings.timings, lastIntervalHours: lastInterval(state), rng }) * HOUR_MS);
+      const wanted = postponedTouchAt(touchKind, { timings: settings.timings, lastIntervalHours: lastInterval(state), now, rng });
       const at = await this.touches.schedule(state, touchKind, wanted);
       Object.assign(patch, { touchPostponedCount: postponed, nextTouchKind: touchKind, nextTouchAt: at });
       await this.chatState.apply(state, patch);

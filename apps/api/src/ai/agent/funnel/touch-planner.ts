@@ -78,6 +78,22 @@ export function planNextTouch(input: TouchPlanInput): TouchPlan | null {
   }
 }
 
+/** Короткие касания переносим на минуты, остальные — на интервал воронки. */
+export const SHORT_TOUCH_KINDS: TouchKind[] = ['birth_nudge', 'diagnostics', 'reengage'];
+
+/** Касание, которое модель сочла неуместным, переносим не больше двух раз. */
+export const MAX_TOUCH_POSTPONES = 2;
+
+/** Куда сдвинуть касание, которое модель сочла неуместным (раздел 5.4 ТЗ). */
+export function postponedTouchAt(
+  kind: TouchKind,
+  input: Pick<TouchPlanInput, 'timings' | 'lastIntervalHours' | 'now' | 'rng'>,
+): Date {
+  const { timings, now } = input;
+  if (SHORT_TOUCH_KINDS.includes(kind)) return new Date(now.getTime() + timings.diagnosticsDelayMin * 60_000);
+  return new Date(now.getTime() + pickInterval(input) * 3_600_000);
+}
+
 /** Прочтение диагностики: касание reengage переносится на «после прочтения». */
 export function reengageAfterRead(readAt: Date, timings: TimingsConfig, rng: Rng): Date {
   return new Date(readAt.getTime() + uniform(rng, timings.reengageAfterReadMin - 15, timings.reengageAfterReadMin + 15) * 60_000);

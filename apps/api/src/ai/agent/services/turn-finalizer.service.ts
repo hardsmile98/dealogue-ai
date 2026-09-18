@@ -15,7 +15,7 @@ import { planNextTouch } from '../funnel/touch-planner.js';
 import { defaultRng } from '../lib/random.js';
 import type { Rng } from '../lib/random.js';
 import { startsWithGreeting } from '../lib/reply-text.js';
-import { stageAfterTurn } from '../planner/planner.js';
+import { stageAfterFinished } from '../planner/planner.js';
 import { ChatStateService } from './chat-state.service.js';
 import { TouchSchedulerService, lastInterval } from './touch-scheduler.service.js';
 import type { TurnLibraryRefs } from './turn-context.service.js';
@@ -74,17 +74,18 @@ export class TurnFinalizerService {
 
   /** Этап после хода: решение модели плюс структурные правила (раздел 5.2 ТЗ). */
   stageAfter(params: StageAfterParams): FunnelStage {
-    const { state, stage, trigger, touchKind, settings } = params;
-    const after = stageAfterTurn(stage, trigger, trigger === 'inbound' ? null : touchKind, params.progress, {
+    const { state, settings } = params;
+    return stageAfterFinished({
+      stage: params.stage,
+      trigger: params.trigger,
+      touchKind: params.touchKind,
+      progress: params.progress,
       birthKnown: Boolean(state.birthDate || state.birthDateText),
       requestKnown: params.requestKnown,
       hasDiscountBlock: params.hasDiscountBlock,
+      remindersSent: state.remindersSent,
+      maxReminders: settings.timings.maxReminders,
     });
-    // Последнее напоминание из отведённых — дальше только тишина.
-    if (trigger !== 'inbound' && touchKind === 'reminder' && state.remindersSent + 1 >= settings.timings.maxReminders) {
-      return 'closed_silent';
-    }
-    return after;
   }
 
   async finish(params: FinishTurnParams): Promise<void> {

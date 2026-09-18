@@ -128,31 +128,76 @@ export interface AiOverviewDto {
   provider: { name: string; model: string; ready: boolean; breakerOpen: boolean }
 }
 
-export interface SandboxRequest {
-  chatId?: string | null
-  history?: { role: 'client' | 'bot' | 'manager'; text: string }[]
-  message?: string | null
-  touchKind?: TouchKind | null
-  stage?: FunnelStage | null
-  slots?: Partial<{
-    birthDate: string | null
-    birthPlace: string | null
-    gender: Gender | null
-    language: string
-    requestSummary: string | null
-    requestCategoryKey: string | null
-  }> | null
+// --- песочница ---------------------------------------------------------------
+
+/**
+ * Песочница моделирует диалог целиком: состояние живёт в браузере и ходит в
+ * каждом запросе, сервер между шагами ничего не помнит. Время виртуальное —
+ * шаг «клиент молчит» двигает часы и выполняет наступившие касания.
+ */
+export interface SimMessage {
+  role: 'client' | 'bot' | 'manager'
+  text: string
+  at: string
+  readAt: string | null
+  blockKind: string | null
 }
 
-export interface SandboxResponse {
+export interface SimTurnSummary {
+  stageBefore: FunnelStage
+  stageAfter: FunnelStage
+  clientIntent: string | null
+  trigger: TurnTrigger
+}
+
+export interface SimState {
+  now: string
+  startedAt: string
   stage: FunnelStage
+  stageEnteredAt: string
+  card: ChatAiCardDto
+  messages: SimMessage[]
+  sentBlockIds: string[]
+  usedExampleIds: string[]
+  autoMessagesSinceClient: number
+  remindersSent: number
+  touchPostponedCount: number
+  lastIntervalHours: number | null
+  diagnosticsSentAt: string | null
+  diagnosticsReadAt: string | null
+  lastGreetingAt: string | null
+  lastClientMessageAt: string | null
+  lastBotMessageAt: string | null
+  nextTouchKind: TouchKind | null
+  nextTouchAt: string | null
+  /** Чат передан менеджеру — бот молчит, пока его не вернут. */
+  handoff: { reason: HandoffReason; detail: string; at: string } | null
+  closedAt: string | null
+  turns: SimTurnSummary[]
+  turnCount: number
+}
+
+/** Карточка клиента в песочнице — те же поля, что ведёт модель в настоящем чате. */
+export interface ChatAiCardDto {
+  birthDate: string | null
+  birthDateText: string | null
+  birthPlace: string | null
+  gender: Gender | null
+  language: string
+  requestSummary: string | null
+  requestCategoryKey: string | null
+  minorHint: boolean
+  openThreads: string[]
+}
+
+/** Разбор одного хода: то же, что в настоящем чате видно в журнале ходов. */
+export interface SimTurnInfo {
+  trigger: TurnTrigger
+  touchKind: TouchKind | null
+  stageBefore: FunnelStage
   stageAfter: FunnelStage
   task: string | null
-  verdict: { kind: string; reason?: string; detail?: string }
   analysis: Record<string, unknown> | null
-  messages: { text: string; blockKind: string | null }[]
-  send: boolean
-  silentReason: string | null
   guardNotes: Record<string, unknown>[]
   guardOk: boolean
   examples: { kind: string; title: string }[]
@@ -161,4 +206,43 @@ export interface SandboxResponse {
   similarCases: { source: string; clientText: string; answerText: string }[]
   usage: { tokensIn: number; tokensOut: number; durationMs: number; model: string }
   prompts: { system: string; user: string } | null
+}
+
+export type SimTouchState = 'fired' | 'planned' | 'postponed' | 'dropped'
+
+export type SimEvent =
+  | { kind: 'client'; at: string; text: string }
+  | { kind: 'bot'; at: string; messages: { text: string; blockKind: string | null }[]; turn: SimTurnInfo }
+  | { kind: 'silent'; at: string; text: string; turn: SimTurnInfo }
+  | { kind: 'handoff'; at: string; reason: HandoffReason; text: string; turn: SimTurnInfo | null }
+  | { kind: 'skip'; at: string; text: string }
+  | { kind: 'stage'; at: string; from: FunnelStage; to: FunnelStage }
+  | { kind: 'touch'; at: string; touchKind: TouchKind | null; touchAt: string | null; state: SimTouchState }
+  | { kind: 'note'; at: string; text: string }
+
+export interface SimStartSlots {
+  birthDate?: string | null
+  birthPlace?: string | null
+  gender?: Gender | null
+  language?: string | null
+  requestSummary?: string | null
+  requestCategoryKey?: string | null
+}
+
+export type SimAction =
+  | { kind: 'start'; stage?: FunnelStage | null; slots?: SimStartSlots | null }
+  | { kind: 'client'; text: string }
+  | { kind: 'wait'; minutes: number; read?: boolean }
+  | { kind: 'touch'; touchKind?: TouchKind | null }
+  | { kind: 'resume' }
+
+export interface SandboxRequest {
+  action: SimAction
+  state?: SimState | null
+}
+
+export interface SandboxResponse {
+  state: SimState
+  /** Что произошло на этом шаге — дописывается в конец ленты. */
+  events: SimEvent[]
 }

@@ -1,32 +1,50 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
+import Chip from '@mui/material/Chip'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import Grid from '@mui/material/Grid'
 import IconButton from '@mui/material/IconButton'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
-import { getApiErrorMessage } from '@/shared/lib'
-import { SectionCard } from '@/shared/ui'
-import { FUNNEL_STAGES } from '@/shared/api'
-import type { FunnelStage, Gender, TouchKind } from '@/shared/api'
+import FastForwardIcon from '@mui/icons-material/FastForward'
+import RestartAltIcon from '@mui/icons-material/RestartAlt'
+import SendIcon from '@mui/icons-material/Send'
+import { formatAhead, formatDateTime, getApiErrorMessage, isMutationSuccess } from '@/shared/lib'
+import { ConfirmAction, SectionCard } from '@/shared/ui'
+import type { FunnelStage, SimAction, SimEvent, SimStartSlots, SimState, TouchKind } from '@/shared/api'
 import { FUNNEL_STAGE_META, TOUCH_KIND_META, useRunSandboxMutation } from '@/entities/ai-agent'
-import { SandboxResult } from './SandboxResult'
+import { SandboxStart } from './SandboxStart'
+import { SandboxState } from './SandboxState'
+import { SandboxTimeline } from './SandboxTimeline'
 import { agentSandboxStyles as styles } from './AgentSandbox.styles'
 
 interface SandboxPanelProps {
   accountId: string
 }
 
-interface HistoryItem {
-  role: 'client' | 'bot' | 'manager'
-  text: string
+interface Session {
+  state: SimState
+  events: SimEvent[]
 }
 
-/** Касания, которые имеет смысл прогонять вручную: у `first_reply` нет своего сценария. */
+/** Насколько промотать время. Двадцать часов — типичная ночь молчания лида. */
+const WAIT_OPTIONS: { minutes: number; label: string }[] = [
+  { minutes: 30, label: '30 минут' },
+  { minutes: 120, label: '2 часа' },
+  { minutes: 360, label: '6 часов' },
+  { minutes: 720, label: '12 часов' },
+  { minutes: 1200, label: '20 часов' },
+  { minutes: 1440, label: 'сутки' },
+  { minutes: 4320, label: '3 дня' },
+  { minutes: 10_080, label: 'неделю' },
+]
+
+/** Касания, которые имеет смысл запускать вручную: у `first_reply` нет своего сценария. */
 const TOUCH_KINDS: TouchKind[] = [
   'birth_nudge',
   'diagnostics',
@@ -39,175 +57,203 @@ const TOUCH_KINDS: TouchKind[] = [
   'reminder',
 ]
 
-/** Песочница: история + сообщение клиента (или касание) → анализ, ответ, guard, без отправки. */
+/** Сценарий переживает перезагрузку страницы; версия ключа отсекает старый формат. */
+const STORAGE_KEY = (accountId: string) => `dealogue.sandbox.v1.${accountId}`
+
+function loadSession(accountId: string): Session | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY(accountId))
+    const parsed = raw ? (JSON.parse(raw) as Session) : null
+    return parsed?.state?.now && Array.isArray(parsed.events) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function saveSession(accountId: string, session: Session | null): void {
+  try {
+    if (session) localStorage.setItem(STORAGE_KEY(accountId), JSON.stringify(session))
+    else localStorage.removeItem(STORAGE_KEY(accountId))
+  } catch {
+    // Приватный режим или переполненное хранилище — сценарий просто не переживёт перезагрузку.
+  }
+}
+
+/**
+ * Песочница: полноценный диалог с выдуманным клиентом. Пишете за клиента —
+ * бот отвечает тем же ходом, что и в настоящем чате; «клиент молчит» двигает
+ * виртуальные часы и показывает касания по таймеру; «очистить» — заново.
+ *
+ * У каждого аккаунта свой сценарий, поэтому смена аккаунта пересоздаёт
+ * панель целиком — состояние одного чата не утекает в другой.
+ */
 export function SandboxPanel({ accountId }: SandboxPanelProps) {
-  const [run, { data, isLoading, error }] = useRunSandboxMutation()
-  const [history, setHistory] = useState<HistoryItem[]>([])
-  const [message, setMessage] = useState('Здравствуйте! Хочу разбор по отношениям')
-  const [stage, setStage] = useState<FunnelStage | ''>('')
-  const [touchKind, setTouchKind] = useState<TouchKind>('reengage')
-  const [mode, setMode] = useState<'inbound' | 'touch'>('inbound')
-  const [gender, setGender] = useState<Gender | ''>('')
-  const [requestSummary, setRequestSummary] = useState('')
-  const [showPrompts, setShowPrompts] = useState(false)
+  return <SandboxSession key={accountId} accountId={accountId} />
+}
 
-  const patchHistory = (index: number, patch: Partial<HistoryItem>) =>
-    setHistory((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+function SandboxSession({ accountId }: SandboxPanelProps) {
+  const [run, { isLoading, error }] = useRunSandboxMutation()
+  const [session, setSession] = useState<Session | null>(() => loadSession(accountId))
+  const [text, setText] = useState('')
+  const [waitMinutes, setWaitMinutes] = useState(1200)
+  const [read, setRead] = useState(false)
+  const [manualTouch, setManualTouch] = useState<TouchKind | ''>('')
 
-  const submit = () =>
-    void run({
-      accountId,
-      body: {
-        history: history.filter((item) => item.text.trim()),
-        message: mode === 'inbound' ? message : null,
-        touchKind: mode === 'touch' ? touchKind : null,
-        stage: stage || null,
-        slots: { gender: gender || null, requestSummary: requestSummary.trim() || null },
-      },
-    })
+  useEffect(() => saveSession(accountId, session), [accountId, session])
+
+  const step = async (action: SimAction) => {
+    const result = await run({ accountId, body: { action, state: action.kind === 'start' ? null : session?.state } })
+    if (!isMutationSuccess(result)) return
+    setSession((prev) => ({
+      state: result.data.state,
+      events: action.kind === 'start' ? result.data.events : [...(prev?.events ?? []), ...result.data.events],
+    }))
+  }
+
+  const start = (stage: FunnelStage | null, slots: SimStartSlots) => void step({ kind: 'start', stage, slots })
+
+  const send = () => {
+    const value = text.trim()
+    if (!value || isLoading) return
+    setText('')
+    void step({ kind: 'client', text: value })
+  }
+
+  const errorText = error ? getApiErrorMessage(error, 'Песочница не сработала') : null
+  if (!session) return <SandboxStart onStart={start} loading={isLoading} error={errorText} />
+
+  const { state } = session
+  const toNextTouch = state.nextTouchAt
+    ? Math.max(1, Math.ceil((new Date(state.nextTouchAt).getTime() - new Date(state.now).getTime()) / 60_000) + 1)
+    : null
 
   return (
     <Grid container spacing={2}>
-      <Grid size={{ xs: 12, md: 5 }}>
+      <Grid size={{ xs: 12, md: 8 }}>
         <SectionCard
-          title="Сценарий"
-          subtitle="Ход проходит Planner → Composer → Guard как настоящий, но ничего не отправляет и не запоминает."
+          title="Диалог с клиентом"
+          subtitle="Пишите за клиента и смотрите, что ответил бы бот. Ничего не отправляется в Telegram."
         >
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1}>
+          <Stack direction="row" sx={styles.toolbar}>
+            <Chip size="small" label={FUNNEL_STAGE_META[state.stage].label} />
+            <Chip size="small" variant="outlined" label={`в песочнице ${formatDateTime(state.now)}`} />
+            {state.nextTouchKind && state.nextTouchAt && (
+              <Chip
+                size="small"
+                variant="outlined"
+                color="info"
+                label={`${TOUCH_KIND_META[state.nextTouchKind]} ${formatAhead(state.nextTouchAt, state.now)}`}
+              />
+            )}
+            <Box sx={styles.spacer} />
+            <ConfirmAction
+              question="Очистить песочницу?"
+              description="Диалог и всё состояние воронки будут забыты, начнётся новый сценарий."
+              confirmLabel="Очистить"
+              destructive
+              onConfirm={() => setSession(null)}
+            >
+              {(ask) => (
+                <Button size="small" color="inherit" startIcon={<RestartAltIcon />} onClick={ask}>
+                  Очистить
+                </Button>
+              )}
+            </ConfirmAction>
+          </Stack>
+
+          <SandboxTimeline events={session.events} busy={isLoading} />
+
+          <Box sx={styles.composer}>
+            {errorText && (
+              <Alert severity="error" sx={styles.startHint}>
+                {errorText}
+              </Alert>
+            )}
+            <Box sx={styles.composerRow}>
+              <TextField
+                fullWidth
+                multiline
+                maxRows={5}
+                size="small"
+                placeholder="Что напишет клиент… (Ctrl+Enter — отправить)"
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                    event.preventDefault()
+                    send()
+                  }
+                }}
+              />
+              <IconButton color="primary" aria-label="Отправить за клиента" disabled={!text.trim() || isLoading} onClick={send}>
+                <SendIcon />
+              </IconButton>
+            </Box>
+
+            <Box sx={styles.actionsRow}>
               <TextField
                 select
                 size="small"
-                fullWidth
-                label="Что проверяем"
-                value={mode}
-                onChange={(e) => setMode(e.target.value as 'inbound' | 'touch')}
+                label="Клиент молчит"
+                value={waitMinutes}
+                sx={styles.waitSelect}
+                onChange={(event) => setWaitMinutes(Number(event.target.value))}
               >
-                <MenuItem value="inbound">ответ на сообщение клиента</MenuItem>
-                <MenuItem value="touch">касание по таймеру</MenuItem>
-              </TextField>
-              <TextField
-                select
-                size="small"
-                fullWidth
-                label="Этап"
-                value={stage}
-                onChange={(e) => setStage(e.target.value as FunnelStage | '')}
-              >
-                <MenuItem value="">по умолчанию</MenuItem>
-                {FUNNEL_STAGES.map((key) => (
-                  <MenuItem key={key} value={key}>
-                    {FUNNEL_STAGE_META[key].label}
+                {WAIT_OPTIONS.map((option) => (
+                  <MenuItem key={option.minutes} value={option.minutes}>
+                    {option.label}
                   </MenuItem>
                 ))}
               </TextField>
-            </Stack>
-            {mode === 'touch' && (
+              <FormControlLabel
+                control={<Checkbox size="small" checked={read} onChange={(event) => setRead(event.target.checked)} />}
+                label="прочитал"
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<FastForwardIcon />}
+                loading={isLoading}
+                onClick={() => void step({ kind: 'wait', minutes: waitMinutes, read })}
+              >
+                Промотать
+              </Button>
+              {toNextTouch !== null && (
+                <Button size="small" loading={isLoading} onClick={() => void step({ kind: 'wait', minutes: toNextTouch, read })}>
+                  До касания
+                </Button>
+              )}
+            </Box>
+
+            <Box sx={styles.actionsRow}>
               <TextField
                 select
                 size="small"
-                fullWidth
-                label="Касание"
-                value={touchKind}
-                onChange={(e) => setTouchKind(e.target.value as TouchKind)}
+                label="Ход бота вручную"
+                value={manualTouch}
+                sx={styles.turnSelect}
+                onChange={(event) => setManualTouch(event.target.value as TouchKind | '')}
               >
+                <MenuItem value="">следующий шаг по этапу</MenuItem>
                 {TOUCH_KINDS.map((kind) => (
                   <MenuItem key={kind} value={kind}>
                     {TOUCH_KIND_META[kind]}
                   </MenuItem>
                 ))}
               </TextField>
-            )}
-            <Stack direction="row" spacing={1}>
-              <TextField
-                select
-                size="small"
-                fullWidth
-                label="Пол клиента"
-                value={gender}
-                onChange={(e) => setGender(e.target.value as Gender | '')}
-              >
-                <MenuItem value="">неизвестен</MenuItem>
-                <MenuItem value="f">женский</MenuItem>
-                <MenuItem value="m">мужской</MenuItem>
-              </TextField>
-              <TextField
-                size="small"
-                fullWidth
-                label="Известный запрос"
-                value={requestSummary}
-                onChange={(e) => setRequestSummary(e.target.value)}
-              />
-            </Stack>
-
-            <Typography variant="caption" color="text.secondary">
-              История переписки (необязательно)
-            </Typography>
-            {history.map((item, index) => (
-              <Stack key={index} direction="row" spacing={1} sx={styles.historyRow}>
-                <TextField
-                  select
-                  size="small"
-                  value={item.role}
-                  onChange={(e) => patchHistory(index, { role: e.target.value as HistoryItem['role'] })}
-                  sx={styles.roleSelect}
-                >
-                  <MenuItem value="client">клиент</MenuItem>
-                  <MenuItem value="bot">бот</MenuItem>
-                  <MenuItem value="manager">менеджер</MenuItem>
-                </TextField>
-                <TextField
-                  size="small"
-                  fullWidth
-                  multiline
-                  value={item.text}
-                  onChange={(e) => patchHistory(index, { text: e.target.value })}
-                />
-                <IconButton
-                  size="small"
-                  aria-label="Убрать реплику"
-                  onClick={() => setHistory(history.filter((_, i) => i !== index))}
-                >
-                  <DeleteOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Stack>
-            ))}
-            <Button
-              size="small"
-              onClick={() =>
-                setHistory([...history, { role: history.length % 2 === 0 ? 'bot' : 'client', text: '' }])
-              }
-            >
-              + реплика
-            </Button>
-
-            {mode === 'inbound' && (
-              <TextField
-                size="small"
-                fullWidth
-                multiline
-                minRows={2}
-                label="Новое сообщение клиента"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-              />
-            )}
-            <Button variant="contained" startIcon={<PlayArrowIcon />} loading={isLoading} onClick={submit}>
-              Прогнать ход
-            </Button>
-            {error && <Alert severity="error">{getApiErrorMessage(error, 'Песочница не сработала')}</Alert>}
-          </Stack>
+              <Button size="small" loading={isLoading} onClick={() => void step({ kind: 'touch', touchKind: manualTouch || null })}>
+                Сделать ход
+              </Button>
+              <Typography variant="caption" color="text.secondary">
+                Как кнопка «Диагностика сейчас» в чате: бот ходит, не дожидаясь таймера.
+              </Typography>
+            </Box>
+          </Box>
         </SectionCard>
       </Grid>
 
-      <Grid size={{ xs: 12, md: 7 }}>
-        {data ? (
-          <SandboxResult data={data} showPrompts={showPrompts} onTogglePrompts={() => setShowPrompts((v) => !v)} />
-        ) : (
-          <Typography variant="body2" sx={styles.placeholder}>
-            Результат появится здесь: что бот понял, что ответил бы, что заметил guard.
-          </Typography>
-        )}
+      <Grid size={{ xs: 12, md: 4 }}>
+        <SandboxState state={state} busy={isLoading} onResume={() => void step({ kind: 'resume' })} />
       </Grid>
     </Grid>
   )

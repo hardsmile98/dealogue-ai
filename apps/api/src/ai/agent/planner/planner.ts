@@ -295,6 +295,28 @@ export function stageAfterTurn(
   return next;
 }
 
+export interface FinishedStageInput extends StageContext {
+  stage: FunnelStage;
+  trigger: TurnTrigger;
+  touchKind: TouchKind | null;
+  /** Что вернула модель: `stay`, `advance`, `jump:<этап>`. */
+  progress: string;
+  remindersSent: number;
+  maxReminders: number;
+}
+
+/**
+ * Этап после завершённого хода: `stageAfterTurn` плюс правило конца воронки —
+ * последнее напоминание из отведённых, дальше только тишина. Одинаково для
+ * настоящего хода и песочницы.
+ */
+export function stageAfterFinished(input: FinishedStageInput): FunnelStage {
+  const touchKind = input.trigger === 'inbound' ? null : input.touchKind;
+  const after = stageAfterTurn(input.stage, input.trigger, touchKind, input.progress, input);
+  if (touchKind === 'reminder' && input.remindersSent + 1 >= input.maxReminders) return 'closed_silent';
+  return after;
+}
+
 /** Прыжок только вперёд и только на этапы после диагностики, с этапов после неё. */
 export function canJump(from: FunnelStage, to: FunnelStage): boolean {
   const fromIndex = FUNNEL_STAGES.indexOf(from);

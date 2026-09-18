@@ -7,7 +7,7 @@ import { sandboxSchema } from '../dto/chat.schema.js';
 import type { AiOverviewDto, ChatAiSummaryDto } from '../dto/agent.dto.js';
 import { ChatAiService } from '../services/chat-ai.service.js';
 import { SandboxService } from '../services/sandbox.service.js';
-import type { SandboxRequest, SandboxResult } from '../services/sandbox.service.js';
+import type { SimRequest, SimResponse } from '../sandbox/sandbox.types.js';
 
 /** Обзор агента по аккаунту, сводка по чатам и песочница. */
 @Controller('telegram/accounts/:id/ai')
@@ -28,13 +28,16 @@ export class AgentController {
     return this.chatAi.listSummaries(accountId);
   }
 
-  /** Ошибку провайдера в 503 превращает AllExceptionsFilter. */
+  /**
+   * Шаг песочницы: состояние диалога приходит и уходит целиком, на сервере
+   * ничего не хранится. Ошибку провайдера в 503 превращает AllExceptionsFilter.
+   */
   @Post('sandbox')
   @HttpCode(HttpStatus.OK)
   runSandbox(
     @AccountId() accountId: string,
-    @Body(zod(sandboxSchema)) body: SandboxRequest,
-  ): Promise<SandboxResult> {
+    @Body(zod(sandboxSchema)) body: SimRequest,
+  ): Promise<SimResponse> {
     return this.sandbox.run(accountId, body);
   }
 }

@@ -4,6 +4,7 @@ export {
   addDays,
   daysAgoKey,
   daysBetween,
+  formatAhead,
   formatChatListTime,
   formatDateTime,
   formatDayDivider,
