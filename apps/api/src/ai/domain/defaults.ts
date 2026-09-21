@@ -1,4 +1,5 @@
 import type {
+  ChatMode,
   GuardConfig,
   LimitsConfig,
   PersonaConfig,
@@ -64,6 +65,28 @@ export const DEFAULT_GUARD: GuardConfig = {
 
 /** Таймзона аккаунта: в ней считаются дневные метрики. */
 export const DEFAULT_TZ = 'Europe/Moscow';
+
+/**
+ * Настройки «как у только что заведённого аккаунта»: ими заполняется новая
+ * строка и к ним же возвращает сброс. Блоки клонируются — иначе строка в
+ * памяти делила бы массивы с константами.
+ */
+export function accountDefaults(dryRun: boolean) {
+  return {
+    enabled: false,
+    dryRun,
+    defaultChatMode: 'auto' as ChatMode,
+    assistantForExistingChats: true,
+    markRead: true,
+    notifyTelegram: true,
+    handoffPeer: null,
+    tz: DEFAULT_TZ,
+    persona: structuredClone(DEFAULT_PERSONA),
+    timings: structuredClone(DEFAULT_TIMINGS),
+    limits: structuredClone(DEFAULT_LIMITS),
+    guard: structuredClone(DEFAULT_GUARD),
+  };
+}
 
 /** Мягкое слияние: недостающие ключи берутся из дефолта, лишние отбрасываются. */
 export function withDefaults<T extends object>(defaults: T, value: Partial<T> | null | undefined): T {

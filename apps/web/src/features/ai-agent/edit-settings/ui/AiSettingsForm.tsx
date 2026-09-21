@@ -28,6 +28,7 @@ import {
   useUpdateAiSettingsMutation,
 } from '@/entities/ai-agent'
 import { aiSettingsStyles as styles } from './AiSettingsForm.styles'
+import { ResetAgentCard } from './ResetAgentCard'
 
 interface AiSettingsFormProps {
   accountId: string
@@ -148,20 +149,23 @@ export function AiSettingsForm({ accountId }: AiSettingsFormProps) {
   const query = useGetAiSettingsQuery(accountId, { skip: accountId === '' })
 
   return (
-    <QueryBoundary
-      query={query}
-      errorText="Не удалось загрузить настройки ИИ"
-      skeleton={
-        <Stack spacing={2}>
-          {[0, 1, 2].map((index) => (
-            <Skeleton key={index} variant="rounded" height={160} />
-          ))}
-        </Stack>
-      }
-    >
-      {/* key по updatedAt: после сохранения форма пересоздаётся из свежих данных. */}
-      {(data) => <SettingsEditor key={data.updatedAt} accountId={accountId} data={data} />}
-    </QueryBoundary>
+    <Stack spacing={2.5}>
+      <QueryBoundary
+        query={query}
+        errorText="Не удалось загрузить настройки ИИ"
+        skeleton={
+          <Stack spacing={2}>
+            {[0, 1, 2].map((index) => (
+              <Skeleton key={index} variant="rounded" height={160} />
+            ))}
+          </Stack>
+        }
+      >
+        {/* key по updatedAt: после сохранения форма пересоздаётся из свежих данных. */}
+        {(data) => <SettingsEditor key={data.updatedAt} accountId={accountId} data={data} />}
+      </QueryBoundary>
+      <ResetAgentCard accountId={accountId} />
+    </Stack>
   )
 }
 

@@ -259,7 +259,9 @@ VITE_API_URL=http://localhost:3000
   сценария живёт в `localStorage`, сервер его не хранит);
   `widgets/agent-stats` — вкладка «Статистика».
 - `features/ai-agent/draft` — карточка черновика (правки, «свой ответ»,
-  похожие случаи); `features/ai-agent/edit-settings` — настройки аккаунта.
+  похожие случаи); `features/ai-agent/edit-settings` — настройки аккаунта
+  (внизу карточка «Сброс»: полный сброс агента с подтверждением и отчётом,
+  `ResetAgentCard` живёт вне формы, чтобы отчёт пережил её пересоздание).
 - `features/realtime` — `RealtimeProvider` (SSE → инвалидация кэшей, тост и
   браузерное уведомление на алерт, без звука). `features/alerts/manage` — ack/resolve.
 - `widgets/attention-list`, `widgets/draft-queue`, `pages/attention` — раздел

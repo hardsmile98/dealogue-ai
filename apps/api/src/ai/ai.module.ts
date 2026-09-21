@@ -5,6 +5,7 @@ import { AlertsModule } from './alerts/alerts.module.js';
 import { AiJobsModule } from './jobs/ai-jobs.module.js';
 import { AiLibraryModule } from './library/library.module.js';
 import { LlmModule } from './llm/llm.module.js';
+import { AiResetModule } from './reset/ai-reset.module.js';
 import { AiSettingsModule } from './settings/ai-settings.module.js';
 import { AiStatsModule } from './stats/stats.module.js';
 
@@ -18,6 +19,7 @@ import { AiStatsModule } from './stats/stats.module.js';
  *   LlmModule        — провайдеры модели и предохранители
  *   AiJobsModule     — очередь отложенной работы и воркер
  *   AiSettingsModule — настройки агента на аккаунте
+ *   AiResetModule    — сброс аккаунта к состоянию «из коробки»
  *   AiLibraryModule  — тексты, из которых собирается промпт
  *   AlertsModule     — алерты менеджеру и пометка «требует внимания»
  *   AgentModule      — сам ход: Planner → Composer → Guard → Outbound
@@ -29,6 +31,7 @@ import { AiStatsModule } from './stats/stats.module.js';
     LlmModule,
     AiJobsModule,
     AiSettingsModule,
+    AiResetModule,
     AiLibraryModule,
     AlertsModule,
     AgentModule,

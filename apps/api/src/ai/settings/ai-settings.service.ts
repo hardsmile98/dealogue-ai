@@ -9,6 +9,7 @@ import {
   DEFAULT_PERSONA,
   DEFAULT_TIMINGS,
   DEFAULT_TZ,
+  accountDefaults,
   withDefaults,
 } from '../domain/defaults.js';
 import type { UpdateSettingsInput } from './ai-settings.schema.js';
@@ -32,15 +33,7 @@ export class AiSettingsService {
     if (existing) return this.normalize(existing);
     try {
       const created = await this.settings.save(
-        this.settings.create({
-          accountId,
-          dryRun: this.config.defaultDryRun,
-          persona: DEFAULT_PERSONA,
-          timings: DEFAULT_TIMINGS,
-          limits: DEFAULT_LIMITS,
-          guard: DEFAULT_GUARD,
-          tz: DEFAULT_TZ,
-        }),
+        this.settings.create({ accountId, ...accountDefaults(this.config.defaultDryRun) }),
       );
       return this.normalize(created);
     } catch {

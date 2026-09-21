@@ -85,6 +85,29 @@ export interface UpdateAiSettingsRequest {
   handoffPeer?: string | null
 }
 
+/** Сколько строк снёс сброс аккаунта — по разделам. */
+export interface AiResetCountsDto {
+  phrases: number
+  facts: number
+  diagnostics: number
+  categories: number
+  notes: number
+  playbooks: number
+  chatStates: number
+  turns: number
+  drafts: number
+  events: number
+  jobs: number
+  stats: number
+  alerts: number
+}
+
+/** Ответ `POST …/ai/reset`: свежие настройки и отчёт об удалённом. */
+export interface AiResetResultDto {
+  settings: AiSettingsDto
+  deleted: AiResetCountsDto
+}
+
 export interface AiProviderInfoDto {
   name: string
   models: string[]

@@ -8,4 +8,8 @@ export const aiSettingsStyles = {
   footer: {
     alignItems: 'center',
   },
+  /** Кнопка сброса не тянется на всю ширину карточки. */
+  resetCard: {
+    alignItems: 'flex-start',
+  },
 } satisfies SxStyles

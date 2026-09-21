@@ -1,15 +1,22 @@
 import {
   AI_CHAT_TAG,
+  AI_DRAFT_TAG,
   AI_HEALTH_TAG,
+  AI_LIBRARY_TAG,
   AI_OVERVIEW_TAG,
   AI_SETTINGS_TAG,
+  AI_STATS_TAG,
   AI_TURNS_TAG,
+  ALERT_TAG,
+  CHAT_TAG,
+  MESSAGE_TAG,
   baseApi,
 } from '@/shared/api'
 import type {
   AiHealthDto,
   AiOverviewDto,
   AiProvidersResponse,
+  AiResetResultDto,
   AiSettingsDto,
   ChatAiStateDto,
   ChatAiSummaryDto,
@@ -29,7 +36,22 @@ interface ChatArgs {
 }
 
 export const aiAgentApi = baseApi
-  .enhanceEndpoints({ addTagTypes: [AI_SETTINGS_TAG, AI_HEALTH_TAG, AI_CHAT_TAG, AI_TURNS_TAG, AI_OVERVIEW_TAG] })
+  // Сброс сносит данные всех разделов, поэтому слайс знает и чужие теги.
+  .enhanceEndpoints({
+    addTagTypes: [
+      AI_SETTINGS_TAG,
+      AI_HEALTH_TAG,
+      AI_CHAT_TAG,
+      AI_TURNS_TAG,
+      AI_OVERVIEW_TAG,
+      AI_DRAFT_TAG,
+      AI_LIBRARY_TAG,
+      AI_STATS_TAG,
+      ALERT_TAG,
+      CHAT_TAG,
+      MESSAGE_TAG,
+    ],
+  })
   .injectEndpoints({
     endpoints: (build) => ({
       getAiSettings: build.query<AiSettingsDto, string>({
@@ -46,6 +68,31 @@ export const aiAgentApi = baseApi
         invalidatesTags: (_result, _error, { accountId }) => [
           { type: AI_SETTINGS_TAG, id: accountId },
           { type: AI_OVERVIEW_TAG, id: accountId },
+        ],
+      }),
+
+      /**
+       * Полный сброс агента на аккаунте: настройки — к значениям по умолчанию,
+       * библиотека и журналы — в ноль. Инвалидируем теги целиком, без id:
+       * после сброса устарел кэш всех разделов, включая чужие аккаунты в
+       * общих очередях («Требуют внимания», черновики по всем аккаунтам).
+       */
+      resetAiAccount: build.mutation<AiResetResultDto, string>({
+        query: (accountId) => ({
+          url: `/telegram/accounts/${accountId}/ai/reset`,
+          method: 'POST',
+        }),
+        invalidatesTags: [
+          AI_SETTINGS_TAG,
+          AI_OVERVIEW_TAG,
+          AI_CHAT_TAG,
+          AI_TURNS_TAG,
+          AI_DRAFT_TAG,
+          AI_LIBRARY_TAG,
+          AI_STATS_TAG,
+          ALERT_TAG,
+          CHAT_TAG,
+          MESSAGE_TAG,
         ],
       }),
 
@@ -141,6 +188,7 @@ export const aiAgentApi = baseApi
 export const {
   useGetAiSettingsQuery,
   useUpdateAiSettingsMutation,
+  useResetAiAccountMutation,
   useGetAiProvidersQuery,
   useGetAiHealthQuery,
   useGetAiOverviewQuery,
