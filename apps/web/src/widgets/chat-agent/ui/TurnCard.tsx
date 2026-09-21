@@ -71,6 +71,11 @@ export function TurnCard({ accountId, chatId, turn }: TurnCardProps) {
           {typeof analysis.confidence === 'number' && ` (уверенность ${analysis.confidence.toFixed(2)})`}
         </Typography>
       )}
+      {typeof analysis.replyPlan === 'string' && analysis.replyPlan && (
+        <Typography variant="body2" sx={styles.turnLine}>
+          <strong>План:</strong> {analysis.replyPlan}
+        </Typography>
+      )}
       {escalation?.reason && (
         <Typography variant="body2" color="warning.main">
           Эскалация: {escalation.reason}

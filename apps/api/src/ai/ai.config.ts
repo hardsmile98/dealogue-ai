@@ -43,6 +43,14 @@ export class AiConfig {
   /** HTTP CONNECT-прокси для запросов к провайдеру (http://user:pass@host:port). */
   readonly httpProxy: string | null;
   readonly maxOutputTokens: number;
+  /**
+   * Температура Composer. Один вызов делает две работы сразу — извлекает
+   * данные клиента в карточку и пишет живой текст, — а извлечению нужна
+   * низкая температура. Живость добираем образцами тона из библиотеки.
+   */
+  readonly temperature: number;
+  /** Смысловой разбор ответа второй моделью перед отправкой. */
+  readonly criticEnabled: boolean;
   readonly requestTimeoutMs: number;
   readonly workerConcurrency: number;
   readonly workerPollMs: number;
@@ -63,6 +71,8 @@ export class AiConfig {
     this.httpProxy = config.get<string>('AI_HTTP_PROXY') || null;
     this.model = config.get<string>('AI_MODEL') || defaultModelFor(this.provider);
     this.maxOutputTokens = readInt(config, 'AI_MAX_OUTPUT_TOKENS', 2048);
+    this.temperature = readFloat(config, 'AI_TEMPERATURE', 0.5, 0, 3);
+    this.criticEnabled = (config.get<string>('AI_CRITIC_ENABLED') ?? 'true') !== 'false';
     this.requestTimeoutMs = readInt(config, 'AI_REQUEST_TIMEOUT_SEC', 60) * 1000;
     this.workerConcurrency = readInt(config, 'AI_WORKER_CONCURRENCY', 3);
     this.workerPollMs = readInt(config, 'AI_WORKER_POLL_SEC', 3) * 1000;
@@ -115,4 +125,12 @@ function readInt(config: ConfigService, key: string, fallback: number): number {
   const raw = config.get<string>(key);
   const value = raw === undefined ? NaN : Number(raw);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** В отличие от readInt допускает ноль — температура 0 осмысленна. */
+function readFloat(config: ConfigService, key: string, fallback: number, min: number, max: number): number {
+  const raw = config.get<string>(key);
+  const value = raw === undefined || raw === '' ? NaN : Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(value, min), max);
 }

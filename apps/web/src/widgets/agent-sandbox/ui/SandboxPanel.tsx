@@ -57,8 +57,13 @@ const TOUCH_KINDS: TouchKind[] = [
   'reminder',
 ]
 
-/** Сценарий переживает перезагрузку страницы; версия ключа отсекает старый формат. */
-const STORAGE_KEY = (accountId: string) => `dealogue.sandbox.v1.${accountId}`
+/**
+ * Сценарий переживает перезагрузку страницы; версия ключа отсекает старый
+ * формат. Поднимайте её, когда меняется форма `SimState` или карточки
+ * клиента: сохранённый сценарий рисуется до первого запроса к серверу, и
+ * поля, которых в нём нет, роняют панель.
+ */
+const STORAGE_KEY = (accountId: string) => `dealogue.sandbox.v2.${accountId}`
 
 function loadSession(accountId: string): Session | null {
   try {

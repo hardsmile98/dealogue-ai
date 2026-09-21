@@ -68,6 +68,7 @@ export function SandboxState({ state, onResume, busy }: SandboxStateProps) {
       <Line label="Запрос" value={card.requestSummary ?? dash} />
       <Line label="Категория" value={card.requestCategoryKey ?? dash} />
       {card.openThreads.length > 0 && <Line label="Открытые нитки" value={card.openThreads.join('; ')} />}
+      {card.facts.length > 0 && <Line label="О клиенте" value={card.facts.join('; ')} />}
 
       <Typography sx={styles.stateGroup}>Счётчики</Typography>
       <Line label="Ходов сделано" value={state.turnCount} />

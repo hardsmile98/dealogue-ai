@@ -114,6 +114,20 @@ describe('mergeCard: чистка значений от модели', () => {
     expect(merge(card({ openThreads: ['старое'] }), { openThreads: [] }).card.openThreads).toEqual([]);
     expect(merge(card({ openThreads: ['старое'] }), {}).card.openThreads).toEqual(['старое']);
   });
+
+  it('заметки о клиенте живут по тем же правилам, что и нитки', () => {
+    const { card: next } = merge(card(), { facts: ['муж Сергей', 'муж Сергей', '  ', 'была у двух тарологов'] });
+    expect(next.facts).toEqual(['муж Сергей', 'была у двух тарологов']);
+
+    // Пропуск — «не знаю», прежнее остаётся; пустой список стирает.
+    expect(merge(card({ facts: ['старое'] }), {}).card.facts).toEqual(['старое']);
+    expect(merge(card({ facts: ['старое'] }), { facts: [] }).card.facts).toEqual([]);
+  });
+
+  it('заметок о клиенте не больше пятнадцати', () => {
+    const many = Array.from({ length: 30 }, (_, i) => `факт ${i}`);
+    expect(merge(card(), { facts: many }).card.facts).toHaveLength(15);
+  });
 });
 
 describe('cardToColumns', () => {
@@ -140,10 +154,15 @@ describe('normalizeCard и cardFromColumns', () => {
   });
 
   it('выбрасывает мусор из базы', () => {
-    const next = normalizeCard({ gender: 'x', language: 42, openThreads: 'не массив', meta: { gender: { source: 'кто-то' } } }, 'ru', NOW);
+    const next = normalizeCard(
+      { gender: 'x', language: 42, openThreads: 'не массив', facts: 42, meta: { gender: { source: 'кто-то' } } },
+      'ru',
+      NOW,
+    );
     expect(next.gender).toBeNull();
     expect(next.language).toBe('ru');
     expect(next.openThreads).toEqual([]);
+    expect(next.facts).toEqual([]);
     expect(next.meta).toEqual({});
   });
 

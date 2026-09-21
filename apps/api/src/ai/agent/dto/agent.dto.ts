@@ -31,6 +31,8 @@ export interface ChatAiSlotsDto {
   manualSlots: string[];
   /** Открытые нитки разговора: неотвеченные вопросы, возражения, обещания. */
   openThreads: string[];
+  /** Что клиент рассказал о себе — свободные заметки модели. */
+  facts: string[];
   /** Откуда взялось поле карточки: источник и слова клиента, из которых это следует. */
   sources: Record<string, { source: string; evidence: string | null; at: string }>;
 }
@@ -171,6 +173,7 @@ export function toChatAiStateDto(
       requestSummary: row.requestSummary,
       manualSlots: row.manualSlots,
       openThreads: card.openThreads,
+      facts: card.facts,
       sources: card.meta as Record<string, { source: string; evidence: string | null; at: string }>,
     },
     handoffReason: row.handoffReason,

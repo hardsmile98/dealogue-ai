@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CASES_LIMIT, caseQuery, formatSimilarCases, rankCases } from './similar-cases.js';
+import { CASES_LIMIT, caseQuery, badOf, formatBadCases, formatSimilarCases, rankCases } from './similar-cases.js';
 import type { SimilarCaseRow } from './similar-cases.js';
 
 function row(patch: Partial<SimilarCaseRow> & { id: string }): SimilarCaseRow {
@@ -11,6 +11,8 @@ function row(patch: Partial<SimilarCaseRow> & { id: string }): SimilarCaseRow {
     categoryKey: null,
     createdAt: new Date('2026-09-01T10:00:00Z'),
     score: 0.5,
+    outcome: 'good',
+    note: null,
     ...patch,
   };
 }
@@ -60,6 +62,29 @@ describe('похожие случаи', () => {
   it('случай без ответа не подмешивается', () => {
     const cases = rankCases([row({ id: 'a', answerText: '   ' })], { stage: null, categoryKey: null });
     expect(cases).toEqual([]);
+  });
+
+  it('забракованные ходы идут отдельным блоком и несут пометку менеджера', () => {
+    const cases = rankCases(
+      [
+        row({ id: 'good', source: 'turn' }),
+        row({
+          id: 'bad',
+          source: 'turn',
+          outcome: 'bad',
+          note: 'слишком напористо',
+          clientText: 'а сколько это будет стоить',
+          answerText: 'Давайте оплатим сегодня',
+        }),
+      ],
+      { stage: null, categoryKey: null },
+    );
+    expect(formatSimilarCases(cases)).toHaveLength(1);
+    expect(badOf(cases).map((c) => c.id)).toEqual(['bad']);
+
+    const [line] = formatBadCases(cases);
+    expect(line).toContain('так ответили, и это не сработало');
+    expect(line).toContain('слишком напористо');
   });
 
   it('запрос склеивает пачку и режет длинный текст', () => {

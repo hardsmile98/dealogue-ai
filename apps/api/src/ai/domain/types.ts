@@ -237,5 +237,10 @@ export interface ClientCard {
   minorHint: boolean;
   /** Открытые нитки разговора: неотвеченные вопросы, возражения, обещания. */
   openThreads: string[];
+  /**
+   * Что клиент рассказал о себе: имена, обстоятельства, опыт, ограничения.
+   * Свободные короткие фразы — память, которая переживает обрезку истории.
+   */
+  facts: string[];
   meta: Partial<Record<CardField, CardFieldMeta>>;
 }

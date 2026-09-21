@@ -13,8 +13,6 @@ export interface ComposeResult {
   durationMs: number;
 }
 
-const TEMPERATURE = 0.6;
-
 /**
  * Composer (раздел 4.2 ТЗ): один structured-вызов модели на ход.
  * Провайдер и предохранитель — из фабрики; повтор при невалидном JSON —
@@ -50,7 +48,7 @@ export class ComposerService {
           maxTokens: this.config.maxOutputTokens,
           timeoutMs: this.config.requestTimeoutMs,
           model: this.config.model,
-          temperature: TEMPERATURE,
+          temperature: this.config.temperature,
         },
         composerOutputSchema,
         'composer',

@@ -51,6 +51,11 @@ export function SandboxTurnDetails({ turn }: SandboxTurnDetailsProps) {
               <strong>Понял так:</strong> {analysis.clientIntent}
             </Box>
           )}
+          {typeof analysis.replyPlan === 'string' && analysis.replyPlan && (
+            <Box sx={styles.detailsLine}>
+              <strong>План ответа:</strong> {analysis.replyPlan}
+            </Box>
+          )}
           <Box sx={styles.detailsLine}>
             Уверенность {typeof analysis.confidence === 'number' ? analysis.confidence.toFixed(2) : '—'} · продвижение{' '}
             {String(analysis.stageProgress ?? 'stay')} · этап {turn.stageBefore} → {turn.stageAfter}
@@ -70,7 +75,10 @@ export function SandboxTurnDetails({ turn }: SandboxTurnDetailsProps) {
             <Box sx={styles.detailsMuted}>
               Похожие случаи ({turn.similarCases.length}):{' '}
               {turn.similarCases
-                .map((item) => `«${item.clientText.slice(0, 60)}» → «${item.answerText.slice(0, 60)}»`)
+                .map(
+                  (item) =>
+                    `«${item.clientText.slice(0, 60)}» → ${item.outcome === 'bad' ? 'так не надо: ' : ''}«${item.answerText.slice(0, 60)}»`,
+                )
                 .join('; ')}
             </Box>
           )}

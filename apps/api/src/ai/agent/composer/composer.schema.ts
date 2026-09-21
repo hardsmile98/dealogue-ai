@@ -10,6 +10,11 @@ import { CARD_FIELDS } from '../../domain/types.js';
  * возвращает всё, что знает о человеке, и вправе исправлять записанное
  * раньше. `null` в поле значит «не знаю» — прежнее значение останется;
  * стереть поле можно только через `cleared`. Слияние — в agent/card.
+ *
+ * Порядок полей в схеме — это порядок, в котором модель их пишет, поэтому
+ * `analysis` идёт до `reply`, а `replyPlan` — последним в разборе: сначала
+ * модель понимает клиента, потом решает, что сделает ходом, и только потом
+ * пишет сами сообщения.
  */
 
 export const ESCALATION_REASONS = [
@@ -26,9 +31,16 @@ export const ESCALATION_REASONS = [
 
 export type EscalationReason = (typeof ESCALATION_REASONS)[number];
 
+/**
+ * Строка, которой может не быть. `.optional()` здесь обязателен: в zod 4
+ * пропущенный ключ — это ошибка типа, а не `undefined` в объединении, и без
+ * него забытое моделью поле роняло бы весь `analysis` в значения по
+ * умолчанию — вместе с карточкой клиента и эскалацией.
+ */
 const nullableText = (max: number) =>
   z
     .union([z.string(), z.null(), z.undefined()])
+    .optional()
     .transform((value) => (typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null));
 
 const cardSchema = z
@@ -42,6 +54,7 @@ const cardSchema = z
     requestCategoryKey: nullableText(64),
     minorHint: z.boolean().nullable().catch(null),
     openThreads: z.array(z.unknown()).nullable().catch(null),
+    facts: z.array(z.unknown()).nullable().catch(null),
     cleared: z.array(z.string()).nullable().catch(null),
     evidence: z
       .array(z.object({ field: z.string(), quote: z.string() }))
@@ -65,6 +78,7 @@ export const composerOutputSchema = z.object({
         .catch(null),
       stageProgress: z.string().max(64).catch('stay'),
       confidence: z.coerce.number().min(0).max(1).catch(0.7),
+      replyPlan: nullableText(300),
     })
     .catch({
       clientIntent: null,
@@ -72,6 +86,7 @@ export const composerOutputSchema = z.object({
       escalation: null,
       stageProgress: 'stay',
       confidence: 0.7,
+      replyPlan: null,
     }),
   reply: z.object({
     send: z.boolean().catch(true),
@@ -94,14 +109,14 @@ export const COMPOSER_JSON_SCHEMA: Record<string, unknown> = {
     analysis: {
       type: 'object',
       additionalProperties: false,
-      required: ['clientIntent', 'card', 'escalation', 'stageProgress', 'confidence'],
+      required: ['clientIntent', 'card', 'escalation', 'stageProgress', 'confidence', 'replyPlan'],
       properties: {
         clientIntent: { type: ['string', 'null'], description: 'Коротко: чего хочет клиент' },
         card: {
           type: 'object',
           additionalProperties: false,
           description: 'Карточка клиента целиком: всё, что ты о нём знаешь сейчас. null — не знаю, прежнее значение останется',
-          required: [...CARD_FIELDS, 'openThreads', 'cleared', 'evidence'],
+          required: [...CARD_FIELDS, 'openThreads', 'facts', 'cleared', 'evidence'],
           properties: {
             birthDate: { type: ['string', 'null'], description: 'YYYY-MM-DD; год неизвестен — null' },
             birthDateText: { type: ['string', 'null'], description: 'Как написал клиент' },
@@ -115,6 +130,12 @@ export const COMPOSER_JSON_SCHEMA: Record<string, unknown> = {
               type: ['array', 'null'],
               items: { type: 'string' },
               description: 'Открытые нитки: неотвеченные вопросы клиента, возражения, что ты обещал. Пустой список — всё закрыто',
+            },
+            facts: {
+              type: ['array', 'null'],
+              items: { type: 'string' },
+              description:
+                'Что клиент рассказал о себе: имена, обстоятельства, опыт, ограничения. Короткие фразы, до 15 штук. Возвращай список целиком',
             },
             cleared: {
               type: ['array', 'null'],
@@ -147,6 +168,10 @@ export const COMPOSER_JSON_SCHEMA: Record<string, unknown> = {
         },
         stageProgress: { type: 'string', description: '"stay" | "advance" | "jump:<этап>"' },
         confidence: { type: 'number', minimum: 0, maximum: 1 },
+        replyPlan: {
+          type: ['string', 'null'],
+          description: 'Одна-две фразы: на что отвечаешь, что спрашиваешь и почему именно это. Пишется до текста ответа',
+        },
       },
     },
     reply: {

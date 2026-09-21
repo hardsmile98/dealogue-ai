@@ -8,7 +8,7 @@ import { slotsOf } from '../card/turn-card.js';
 import { MAX_TOUCH_POSTPONES, postponedTouchAt, reengageAfterRead } from '../funnel/touch-planner.js';
 import { describeViolations } from '../guard/guard.js';
 import { defaultRng } from '../lib/random.js';
-import { formatSimilarCases } from '../learning/similar-cases.js';
+import { formatBadCases, formatSimilarCases } from '../learning/similar-cases.js';
 import { plan, stageAfterFinished, stageForTouch } from '../planner/planner.js';
 import { stopReason } from '../planner/stop-reason.js';
 import {
@@ -71,6 +71,11 @@ export class SandboxService {
 
     const state = clone(request.state);
     if (!state) return this.start(settings, { kind: 'start' });
+
+    // Сценарий лежит в браузере и мог быть сохранён кодом постарше: карточку
+    // приводим к нынешнему виду на входе, а не только внутри хода, — иначе
+    // «вернуть боту» и передача менеджеру отдают наружу карточку без новых полей.
+    state.card = normalizeCard(state.card, settings.persona.language, new Date(state.now));
 
     switch (action.kind) {
       case 'client':
@@ -271,6 +276,7 @@ export class SandboxService {
         peer: { name: null, username: null },
         notes: ctx.notes,
         similarCases: formatSimilarCases(cases),
+        badCases: formatBadCases(cases),
         now,
       },
       guard: {
@@ -311,7 +317,12 @@ export class SandboxService {
       guardOk: gen.guardOk,
       examples: ctx.examples.map((e) => ({ kind: e.kind, title: e.title })),
       blocks: gen.blocks.map((b) => ({ kind: b.kind, title: b.title })),
-      similarCases: cases.map((item) => ({ source: item.source, clientText: item.clientText, answerText: item.answerText })),
+      similarCases: cases.map((item) => ({
+        source: item.source,
+        outcome: item.outcome,
+        clientText: item.clientText,
+        answerText: item.answerText,
+      })),
       usage: { tokensIn: gen.tokensIn, tokensOut: gen.tokensOut, durationMs: gen.durationMs, model: gen.model },
       prompts: gen.prompts,
     });

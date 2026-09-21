@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { FunnelStage } from '../../domain/types.js';
-import { CASES_LIMIT, caseQuery, rankCases } from '../learning/similar-cases.js';
+import { BAD_CASES_LIMIT, CASES_LIMIT, caseQuery, rankCases } from '../learning/similar-cases.js';
 import type { SimilarCase, SimilarCaseRow } from '../learning/similar-cases.js';
 
 export interface FindSimilarParams {
@@ -15,14 +15,17 @@ export interface FindSimilarParams {
 }
 
 /** Сколько кандидатов тянем из базы до ранжирования в коде. */
-const CANDIDATES = 20;
+const CANDIDATES = 30;
 /** Порог отбора кандидата: триграммы по лучшему совпадающему куску. */
 const WORD_THRESHOLD = 0.3;
 
 /**
  * Поиск похожих прошлых случаев (раздел 9.3 ТЗ): решённые черновики
- * менеджера и ходы с оценкой «хорошо». Кандидатов отбирает Postgres
- * (FTS `russian` + `pg_trgm`), ранжирует чистый модуль.
+ * менеджера и ходы с оценкой «хорошо» и «плохо». Кандидатов отбирает
+ * Postgres (FTS `russian` + `pg_trgm`), ранжирует чистый модуль.
+ *
+ * Удачные и забракованные ранжируются порознь: в общем списке двух-трёх
+ * плохих хватило бы, чтобы вытеснить образцы, а нужны и те и другие.
  */
 @Injectable()
 export class SimilarCasesService {
@@ -35,11 +38,12 @@ export class SimilarCasesService {
     if (query.length < 8) return [];
     try {
       const rows = await this.dataSource.query<RawRow[]>(SQL, [params.accountId, query, params.chatId, CANDIDATES, WORD_THRESHOLD]);
-      return rankCases(rows.map(toRow), {
-        stage: params.stage,
-        categoryKey: params.categoryKey,
-        limit: params.limit ?? CASES_LIMIT,
-      });
+      const all = rows.map(toRow);
+      const rank = { stage: params.stage, categoryKey: params.categoryKey };
+      return [
+        ...rankCases(all.filter((row) => row.outcome === 'good'), { ...rank, limit: params.limit ?? CASES_LIMIT }),
+        ...rankCases(all.filter((row) => row.outcome === 'bad'), { ...rank, limit: BAD_CASES_LIMIT }),
+      ];
     } catch (error) {
       // Похожие случаи — подсказка, а не условие хода: молча идём без них.
       this.logger.warn(`Поиск похожих случаев не удался: ${error instanceof Error ? error.message : String(error)}`);
@@ -69,6 +73,8 @@ interface RawRow {
   category_key: string | null;
   created_at: string | Date;
   score: string | number | null;
+  outcome: string | null;
+  note: string | null;
 }
 
 function toRow(row: RawRow): SimilarCaseRow {
@@ -81,6 +87,8 @@ function toRow(row: RawRow): SimilarCaseRow {
     categoryKey: row.category_key,
     createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
     score: Number(row.score ?? 0),
+    outcome: row.outcome === 'bad' ? 'bad' : 'good',
+    note: row.note ?? null,
   };
 }
 
@@ -112,7 +120,9 @@ WITH drafts AS (
          COALESCE(t."stage_before", cs."stage") AS "stage",
          cs."request_category_key" AS "category_key",
          d."created_at",
-         ${SCORE('d."client_text"')} AS "score"
+         ${SCORE('d."client_text"')} AS "score",
+         'good'::text AS "outcome",
+         NULL::text AS "note"
     FROM "ai_drafts" d
     LEFT JOIN "ai_turns" t ON t."id" = d."turn_id"
     LEFT JOIN "ai_chat_state" cs ON cs."chat_id" = d."chat_id"
@@ -133,12 +143,14 @@ turns AS (
          t."stage_before" AS "stage",
          cs."request_category_key" AS "category_key",
          t."created_at",
-         ${SCORE('t."client_text"')} AS "score"
+         ${SCORE('t."client_text"')} AS "score",
+         t."rating"::text AS "outcome",
+         t."rating_note" AS "note"
     FROM "ai_turns" t
     LEFT JOIN "ai_chat_state" cs ON cs."chat_id" = t."chat_id"
    WHERE t."account_id" = $1
      AND t."chat_id" <> $3
-     AND t."rating" = 'good'
+     AND t."rating" IN ('good', 'bad')
      AND t."client_text" <> ''
      AND ${MATCHES('t."client_text"')}
    ORDER BY "score" DESC
@@ -151,10 +163,12 @@ SELECT * FROM turns
 
 const BY_IDS_SQL = `
 SELECT d."id", 'draft'::text AS "source", d."client_text", d."final_text" AS "answer_text",
-       NULL::varchar AS "stage", NULL::varchar AS "category_key", d."created_at", 1 AS "score"
+       NULL::varchar AS "stage", NULL::varchar AS "category_key", d."created_at", 1 AS "score",
+       'good'::text AS "outcome", NULL::text AS "note"
   FROM "ai_drafts" d WHERE d."id" = ANY($1::uuid[])
 UNION ALL
 SELECT t."id", 'turn'::text AS "source", t."client_text", ${TURN_ANSWER} AS "answer_text",
-       t."stage_before" AS "stage", NULL::varchar AS "category_key", t."created_at", 1 AS "score"
+       t."stage_before" AS "stage", NULL::varchar AS "category_key", t."created_at", 1 AS "score",
+       COALESCE(t."rating"::text, 'good') AS "outcome", t."rating_note" AS "note"
   FROM "ai_turns" t WHERE t."id" = ANY($1::uuid[])
 `;

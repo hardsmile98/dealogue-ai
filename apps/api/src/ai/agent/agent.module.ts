@@ -19,6 +19,7 @@ import { AiLibraryModule } from '../library/library.module.js';
 import { LlmModule } from '../llm/llm.module.js';
 import { AiSettingsModule } from '../settings/ai-settings.module.js';
 import { ComposerService } from './composer/composer.service.js';
+import { CriticService } from './guard/critic.service.js';
 import { AgentController } from './controllers/agent.controller.js';
 import { ChatAiController } from './controllers/chat-ai.controller.js';
 import { DraftsController, DraftsQueueController } from './controllers/drafts.controller.js';
@@ -83,6 +84,7 @@ import { TurnContextService } from './services/turn-context.service.js';
     SimilarCasesService,
     LearningService,
     ComposerService,
+    CriticService,
     OutboundService,
     TurnGenerationService,
     TurnLimitsService,

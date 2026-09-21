@@ -8,7 +8,7 @@ import type { CardField, ClientCard, FactGroup, PersonaConfig } from '../../doma
 import { lockedFields } from '../card/client-card.js';
 import type { HistoryMessage, LibraryBlock, LibraryExample, PlaybookSnapshot, TurnTask } from '../agent.types.js';
 
-export const PROMPT_VERSION = 'v4.0';
+export const PROMPT_VERSION = 'v4.2';
 
 export interface PromptFact {
   group: FactGroup;
@@ -48,6 +48,8 @@ export interface TurnPromptInput {
   notes: string[];
   /** Похожие прошлые случаи «клиент → ответ» (раздел 9.3 ТЗ), уже отформатированные. */
   similarCases?: string[];
+  /** Забракованные менеджером ответы на похожее — как отвечать не надо. */
+  badCases?: string[];
   now: Date;
   /** Замечание guard при регенерации. */
   guardRemark?: string | null;
@@ -88,6 +90,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   lines.push('10. Дословные блоки вставляешь маркером вида [[BLOCK:kind]] отдельным элементом массива messages — текст блока подставит система, менять его нельзя. Образцы (примеры) — не копируешь, а перефразируешь под контекст.');
   lines.push('11. Если по контексту уместно промолчать (клиент написал «ок, жду»), ставь reply.send = false и объясни в silentReason.');
   lines.push('12. Передавай менеджеру (escalation) только в крайних случаях: готов оплатить / спрашивает реквизиты (ready_to_pay), подозревает бота (suspects_bot), просит живого человека (wants_human), агрессия, угрозы, требование вернуть деньги (aggression), острое горе, угроза жизни, здоровью (crisis), несовершеннолетний (minor), просит не писать (refusal), вопрос вне фактов, от которого нельзя уйти (out_of_scope). Возражения, сомнения, «дорого», «подумаю», вопросы о формате и эмоциональные рассказы — ведёшь сам.');
+  lines.push('13. Первое сообщение клиента часто приходит из рекламы готовым шаблоном: «Здравствуйте! Хочу бесплатный расклад, код 5», «#13», «промокод 7». Число после «код», «#» или «№» — метка объявления, по которому клиент пришёл: она нужна нам для статистики, сам клиент просто нажал кнопку и не знает, что это. Не спрашивай, что значит код, не уточняй и не повторяй его в ответе, не заноси в карточку и в открытые нитки — просто игнорируй. Остальной текст шаблона тоже не считай словами клиента: настоящий запрос выясняй отдельно.');
 
   lines.push('');
   lines.push('ФАКТЫ (единственный источник утверждений об услугах, ценах, ссылках):');
@@ -123,10 +126,12 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   lines.push('- gender — пол клиента, а не твой: выводи по имени, самоописанию и грамматике («я сама зашла» — женщина). Не уверен — null, тогда текст будет нейтральным.');
   lines.push('- language — язык, на котором клиент ведёт переписку, кодом (ru, en, kk, uk). Одно случайное слово латиницей язык не меняет.');
   lines.push('- openThreads — что в разговоре осталось открытым: неотвеченные вопросы клиента, его возражения, твои обещания. Закрыл — убери из списка.');
+  lines.push('- facts — что клиент рассказал о себе: имена, обстоятельства, опыт, ограничения («муж Сергей», «была у двух тарологов», «работает в найме»). Короткими фразами, до 15 штук. Это твоя память: старая переписка из промпта выпадает, карточка остаётся. Не записывай сюда свои догадки и то, что клиент не говорил; устаревшее убирай.');
   lines.push('- Поля с пометкой «правил менеджер» не меняй: они всё равно останутся прежними.');
 
   lines.push('');
-  lines.push('ФОРМАТ ОТВЕТА: один JSON-объект {analysis, reply}. analysis — {clientIntent, card, escalation или null, stageProgress: "stay" | "advance" | "jump:<этап>", confidence 0–1}. reply — {send, messages[], silentReason}. Каждый элемент messages — отдельное сообщение в Telegram.');
+  lines.push('ФОРМАТ ОТВЕТА: один JSON-объект {analysis, reply}. analysis — {clientIntent, card, escalation или null, stageProgress: "stay" | "advance" | "jump:<этап>", confidence 0–1, replyPlan}. reply — {send, messages[], silentReason}. Каждый элемент messages — отдельное сообщение в Telegram.');
+  lines.push('Поля заполняй по порядку: сначала разбираешь клиента и карточку, потом в replyPlan одной-двумя фразами решаешь, что сделаешь этим ходом (на что отвечаешь, что спрашиваешь и почему именно это), и только потом пишешь сами сообщения. Ответ должен следовать плану.');
   return lines.join('\n');
 }
 
@@ -168,6 +173,12 @@ export function buildTurnPrompt(input: TurnPromptInput): string {
     lines.push('');
     lines.push('ПОХОЖИЕ СЛУЧАИ ИЗ ПРОШЛЫХ ПЕРЕПИСОК (как отвечали на похожее — ориентир по смыслу и тону, не текст для копирования):');
     input.similarCases.forEach((line, index) => lines.push(`${index + 1}. ${line}`));
+  }
+
+  if (input.badCases && input.badCases.length > 0) {
+    lines.push('');
+    lines.push('ТАК ОТВЕЧАТЬ НЕ НАДО (эти ответы на похожее менеджер забраковал — не повторяй ни формулировки, ни ход мысли):');
+    input.badCases.forEach((line, index) => lines.push(`${index + 1}. ${line}`));
   }
 
   if (input.notes.length > 0) {
@@ -230,6 +241,7 @@ function cardLines(input: TurnPromptInput): string[] {
       ? `- открытые нитки: ${card.openThreads.map((thread, index) => `${index + 1}) ${thread}`).join(' ')}`
       : '- открытых ниток нет',
   );
+  if (card.facts.length > 0) lines.push(`- клиент рассказал о себе: ${card.facts.map((fact, index) => `${index + 1}) ${fact}`).join(' ')}`);
   return lines;
 }
 

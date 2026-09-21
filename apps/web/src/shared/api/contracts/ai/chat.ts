@@ -27,6 +27,8 @@ export interface ChatAiSlotsDto {
   manualSlots: string[]
   /** Открытые нитки разговора: неотвеченные вопросы, возражения, обещания. */
   openThreads: string[]
+  /** Что клиент рассказал о себе — свободные заметки модели. */
+  facts: string[]
   /** Откуда взялось поле карточки и на каких словах клиента это основано. */
   sources: Record<string, { source: string; evidence: string | null; at: string }>
 }
@@ -188,6 +190,7 @@ export interface ChatAiCardDto {
   requestCategoryKey: string | null
   minorHint: boolean
   openThreads: string[]
+  facts: string[]
 }
 
 /** Разбор одного хода: то же, что в настоящем чате видно в журнале ходов. */
@@ -203,7 +206,7 @@ export interface SimTurnInfo {
   examples: { kind: string; title: string }[]
   blocks: { kind: string; title: string }[]
   /** Похожие прошлые случаи, подмешанные в промпт. */
-  similarCases: { source: string; clientText: string; answerText: string }[]
+  similarCases: { source: string; outcome: string; clientText: string; answerText: string }[]
   usage: { tokensIn: number; tokensOut: number; durationMs: number; model: string }
   prompts: { system: string; user: string } | null
 }

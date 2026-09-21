@@ -62,6 +62,7 @@ export class MockProvider implements LlmProvider {
       requestCategoryKey: null,
       minorHint: false,
       openThreads: [],
+      facts: [],
       cleared: [],
       evidence: [],
     };
@@ -77,6 +78,7 @@ export class MockProvider implements LlmProvider {
         escalation: null,
         stageProgress: 'stay',
         confidence: 0.9,
+        replyPlan: `mock: план ответа на этапе ${stage}`,
         ...analysis,
       },
       reply,

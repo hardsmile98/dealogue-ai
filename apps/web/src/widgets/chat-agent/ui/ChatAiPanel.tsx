@@ -170,6 +170,7 @@ function describeSlots(data: ChatAiStateDto): string {
   ]
   if (slots.requestCategoryKey) parts.push(`категория ${slots.requestCategoryKey}`)
   if (slots.openThreads.length > 0) parts.push(`открыто: ${slots.openThreads.join('; ')}`)
+  if (slots.facts.length > 0) parts.push(`о клиенте: ${slots.facts.join('; ')}`)
   return parts.join(' · ')
 }
 

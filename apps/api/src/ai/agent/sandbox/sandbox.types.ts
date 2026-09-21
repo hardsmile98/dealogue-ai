@@ -70,7 +70,7 @@ export interface SimTurnInfo {
   examples: { kind: string; title: string }[];
   blocks: { kind: string; title: string }[];
   /** Похожие прошлые случаи, подмешанные в промпт (раздел 9.3 ТЗ). */
-  similarCases: { source: string; clientText: string; answerText: string }[];
+  similarCases: { source: string; outcome: string; clientText: string; answerText: string }[];
   usage: { tokensIn: number; tokensOut: number; durationMs: number; model: string };
   prompts: { system: string; user: string } | null;
 }

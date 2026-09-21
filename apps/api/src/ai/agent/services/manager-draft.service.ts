@@ -104,7 +104,7 @@ export class ManagerDraftService {
     let gen: GenerateResult;
     try {
       gen = await this.generation.generate(
-        this.generation.paramsFor({ settings, ctx, task, history, batch, card, slots, peer: peerOf(chat), state, similarCases: similar.lines, now }),
+        this.generation.paramsFor({ settings, ctx, task, history, batch, card, slots, peer: peerOf(chat), state, similarCases: similar.lines, badCases: similar.badLines, now }),
       );
     } catch (error) {
       const retryable = error instanceof LlmError ? error.retryable : true;
@@ -219,7 +219,7 @@ export class ManagerDraftService {
 
     const similar = await this.generation.findSimilar(chat, state, stage, batch);
     const gen = await this.generation.generate(
-      this.generation.paramsFor({ settings, ctx, task, history, batch, card, slots, peer: peerOf(chat), state, similarCases: similar.lines, now }),
+      this.generation.paramsFor({ settings, ctx, task, history, batch, card, slots, peer: peerOf(chat), state, similarCases: similar.lines, badCases: similar.badLines, now }),
     );
     draft.draftMessages = gen.messages.map(toTurnMessage);
     draft.similarCaseIds = similar.ids;

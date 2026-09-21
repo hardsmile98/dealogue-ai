@@ -4,15 +4,16 @@ import type { FunnelStage } from '../../domain/types.js';
 import type { AiAccountSettingsEntity } from '../../entities/ai-account-settings.entity.js';
 import type { AiChatStateEntity } from '../../entities/ai-chat-state.entity.js';
 import type { ClientCard } from '../../domain/types.js';
-import type { BlockPool, ComposedMessage, GuardNote, HistoryMessage, LibraryBlock, SlotsSnapshot, TurnTask } from '../agent.types.js';
+import type { BlockPool, ComposedMessage, GuardNote, GuardViolation, HistoryMessage, LibraryBlock, SlotsSnapshot, TurnTask } from '../agent.types.js';
 import type { ComposerOutput } from '../composer/composer.schema.js';
 import { ComposerService } from '../composer/composer.service.js';
 import { buildSystemPrompt, buildTurnPrompt } from '../composer/prompt-builder.js';
 import type { SystemPromptInput, TurnPromptInput } from '../composer/prompt-builder.js';
 import { expandMarkers, joinMessages, resolveBlocks } from '../guard/blocks.js';
+import { CriticService } from '../guard/critic.service.js';
 import { buildAllowlists, describeViolations, runGuard } from '../guard/guard.js';
 import type { GuardInput } from '../guard/guard.js';
-import { formatSimilarCases } from '../learning/similar-cases.js';
+import { formatBadCases, formatSimilarCases } from '../learning/similar-cases.js';
 import { mergeFromOutput } from '../card/turn-card.js';
 import type { CardChange } from '../card/client-card.js';
 import { stopReason } from '../planner/stop-reason.js';
@@ -66,6 +67,8 @@ export interface TurnPromptContext {
   peer: { name: string | null; username: string | null };
   state: AiChatStateEntity;
   similarCases?: string[];
+  /** Забракованные ответы на похожее — как отвечать не надо. */
+  badCases?: string[];
   now: Date;
 }
 
@@ -82,6 +85,7 @@ export class TurnGenerationService {
   constructor(
     private readonly composer: ComposerService,
     private readonly similar: SimilarCasesService,
+    private readonly critic: CriticService,
   ) {}
 
   /** Модель по умолчанию — для записи хода, который до вызова не дошёл. */
@@ -145,11 +149,38 @@ export class TurnGenerationService {
         allowedBlockKinds: params.task.allowedBlockKinds,
         noQuestions: params.task.noQuestions,
       });
-      guardNotes.push({ attempt, violations: guard.violations, fixes: guard.fixes });
-      last = { output: result.output, messages: guard.messages, card: merged.card, changes: merged.changes, blocks };
-      if (guard.ok) return done(guard.messages, true);
+      const violations: GuardViolation[] = [...guard.violations];
 
-      remark = describeViolations(guard.violations);
+      // Смысловой разбор ответа второй моделью — там, где буквы в порядке, но
+      // ошибиться дорого. Только пока остаётся попытка переписать: на последней
+      // замечание всё равно некуда девать, а вызов стоит денег.
+      if (violations.length === 0 && attempt < ATTEMPTS) {
+        const critique = await this.critic.review({
+          stage: params.task.stage,
+          goal: params.turn.playbook.goal,
+          task: params.task.text,
+          card: merged.card,
+          age: params.turn.age,
+          history: params.turn.history,
+          batch: params.turn.batch,
+          confidence: result.output.analysis.confidence,
+          replyPlan: result.output.analysis.replyPlan,
+          reply: joinMessages(guard.messages),
+          firstReply: params.turn.history.length === 0,
+        });
+        if (critique) {
+          tokensIn += critique.tokensIn;
+          tokensOut += critique.tokensOut;
+          durationMs += critique.durationMs;
+          violations.push(...critique.violations);
+        }
+      }
+
+      guardNotes.push({ attempt, violations, fixes: guard.fixes });
+      last = { output: result.output, messages: guard.messages, card: merged.card, changes: merged.changes, blocks };
+      if (violations.length === 0) return done(guard.messages, true);
+
+      remark = describeViolations(violations);
       previous = joinMessages(resolved.messages);
     }
 
@@ -189,6 +220,7 @@ export class TurnGenerationService {
         peer,
         notes: ctx.notes,
         similarCases: input.similarCases ?? [],
+        badCases: input.badCases ?? [],
         now,
       },
       guard: {
@@ -215,8 +247,8 @@ export class TurnGenerationService {
     state: AiChatStateEntity,
     stage: FunnelStage,
     batch: HistoryMessage[],
-  ): Promise<{ lines: string[]; ids: string[] }> {
-    if (batch.length === 0) return { lines: [], ids: [] };
+  ): Promise<{ lines: string[]; badLines: string[]; ids: string[] }> {
+    if (batch.length === 0) return { lines: [], badLines: [], ids: [] };
     const cases = await this.similar.find({
       accountId: chat.accountId,
       chatId: chat.id,
@@ -224,7 +256,7 @@ export class TurnGenerationService {
       stage,
       categoryKey: state.requestCategoryKey,
     });
-    return { lines: formatSimilarCases(cases), ids: cases.map((c) => c.id) };
+    return { lines: formatSimilarCases(cases), badLines: formatBadCases(cases), ids: cases.map((c) => c.id) };
   }
 
   /** Стоп-триггеры по результату модели: escalation, язык, уверенность, несовершеннолетний, guard. */

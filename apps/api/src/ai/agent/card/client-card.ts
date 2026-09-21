@@ -27,6 +27,8 @@ export interface CardProposal {
   minorHint?: boolean | null;
   /** Элементы чистит `threads()` — от модели прилетает что угодно. */
   openThreads?: unknown[] | null;
+  /** Что клиент рассказал о себе; чистится так же, как нитки. */
+  facts?: unknown[] | null;
   /** Поля, которые нужно именно стереть: клиент поправил себя или отказался. */
   cleared?: string[] | null;
   /** Слова клиента, из которых следует новое значение поля. */
@@ -70,6 +72,8 @@ const MAX = {
   language: 8,
   thread: 200,
   threads: 10,
+  fact: 200,
+  facts: 15,
   evidence: 300,
 } as const;
 
@@ -115,6 +119,7 @@ export function emptyCard(defaultLanguage = DEFAULT_LANGUAGE): ClientCard {
     requestCategoryKey: null,
     minorHint: false,
     openThreads: [],
+    facts: [],
     meta: {},
   };
 }
@@ -130,7 +135,8 @@ export function normalizeCard(raw: unknown, defaultLanguage = DEFAULT_LANGUAGE, 
     const value = RULES[field].sanitize(source[field], now);
     if (value !== null) assign(card, field, value);
   }
-  card.openThreads = threads(source.openThreads);
+  card.openThreads = list(source.openThreads, MAX.thread, MAX.threads);
+  card.facts = list(source.facts, MAX.fact, MAX.facts);
   card.meta = readMeta(source.meta);
   return card;
 }
@@ -199,10 +205,9 @@ export function mergeCard(current: ClientCard, proposal: CardProposal, ctx: Merg
     card.meta[field] = { source: 'llm', evidence, turnId, at };
   }
 
-  card.openThreads =
-    proposal.openThreads === undefined || proposal.openThreads === null
-      ? base.openThreads
-      : threads(proposal.openThreads);
+  // Списки живут по тому же правилу, что и поля: null — «не знаю», пустой массив стирает.
+  card.openThreads = mergeList(base.openThreads, proposal.openThreads, MAX.thread, MAX.threads);
+  card.facts = mergeList(base.facts, proposal.facts, MAX.fact, MAX.facts);
   return { card, changes };
 }
 
@@ -284,15 +289,22 @@ function languageCode(raw: unknown): string | null {
   return LANGUAGE_RE.test(code) ? code : null;
 }
 
-function threads(raw: unknown): string[] {
+/** Список строк карточки: чистим, убираем дубли и лишнее — от модели прилетает что угодно. */
+function list(raw: unknown, maxItem: number, maxCount: number): string[] {
   if (!Array.isArray(raw)) return [];
-  const list: string[] = [];
+  const result: string[] = [];
   for (const item of raw) {
-    const value = text(item, MAX.thread);
-    if (value && !list.includes(value)) list.push(value);
-    if (list.length >= MAX.threads) break;
+    const value = text(item, maxItem);
+    if (value && !result.includes(value)) result.push(value);
+    if (result.length >= maxCount) break;
   }
-  return list;
+  return result;
+}
+
+/** Пропуск и null от модели — оставить прежнее; пустой массив — стереть. */
+function mergeList(before: string[], proposed: unknown, maxItem: number, maxCount: number): string[] {
+  if (proposed === undefined || proposed === null) return before;
+  return list(proposed, maxItem, maxCount);
 }
 
 function readMeta(raw: unknown): Partial<Record<CardField, CardFieldMeta>> {

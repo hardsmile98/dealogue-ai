@@ -118,7 +118,9 @@ export interface GuardViolation {
     | 'too_similar'
     | 'too_long'
     | 'question_forbidden'
-    | 'empty';
+    | 'empty'
+    // Смысловой промах, который нашла вторая модель (guard/critic.ts).
+    | 'critic';
   messageIndex: number | null;
   detail: string;
 }
