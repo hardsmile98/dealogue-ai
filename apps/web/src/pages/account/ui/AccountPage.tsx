@@ -12,7 +12,6 @@ import Typography from '@mui/material/Typography'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined'
 import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined'
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined'
 import { ROUTES, accountLinks } from '@/shared/config'
 import { formatPhone, formatRelative, getApiErrorMessage } from '@/shared/lib'
 import { EmptyState, PageHeader } from '@/shared/ui'
@@ -26,7 +25,7 @@ import { ConnectAccountDialog } from '@/features/telegram-account/connect'
 import { RemoveAccountButton } from '@/features/telegram-account/remove'
 import { accountPageStyles as styles } from './AccountPage.styles'
 
-type AccountTab = 'stats' | 'chats' | 'ai'
+type AccountTab = 'stats' | 'chats'
 
 /** Вкладки аккаунта: подпись, иконка и как собрать ссылку. */
 const TABS: { key: AccountTab; label: string; icon: ReactNode; link: (accountId: string) => string }[] = [
@@ -37,7 +36,6 @@ const TABS: { key: AccountTab; label: string; icon: ReactNode; link: (accountId:
     link: accountLinks.stats,
   },
   { key: 'chats', label: 'Чаты', icon: <ForumOutlinedIcon fontSize="small" />, link: accountLinks.chats },
-  { key: 'ai', label: 'ИИ-агент', icon: <SmartToyOutlinedIcon fontSize="small" />, link: accountLinks.ai },
 ]
 
 /** Шапка аккаунта и вкладки; содержимое вкладки — во вложенном роуте. */
@@ -52,11 +50,7 @@ export function AccountPage() {
     pollingInterval: 30_000,
   })
 
-  const tab: AccountTab = location.pathname.includes('/chats')
-    ? 'chats'
-    : location.pathname.includes('/ai')
-      ? 'ai'
-      : 'stats'
+  const tab: AccountTab = location.pathname.includes('/chats') ? 'chats' : 'stats'
 
   if (error) {
     return (

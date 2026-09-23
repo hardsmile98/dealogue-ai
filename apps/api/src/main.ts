@@ -28,12 +28,10 @@ async function bootstrap() {
   );
 
   // Одна форма ответа на ошибку: тело HttpException не меняем (веб читает
-  // `message`), ошибка провайдера модели становится 503, остальное — 500
-  // со стеком в логе.
+  // `message`), остальное — 500 со стеком в логе.
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  // SIGTERM/SIGINT → onModuleDestroy: воркер ИИ дожидается заданий и возвращает
-  // недоделанное в очередь, Telegram-клиенты закрываются штатно.
+  // SIGTERM/SIGINT → onModuleDestroy: Telegram-клиенты закрываются штатно.
   app.enableShutdownHooks();
 
   await app.listen(process.env.PORT ?? 3000);

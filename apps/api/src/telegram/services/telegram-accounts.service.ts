@@ -95,9 +95,9 @@ export class TelegramAccountsService {
   }
 
   /**
-   * Сообщение от менеджера из веб-интерфейса. Пишется в базу сразу как
-   * ручное (без ai_turn_id) и публикуется в шину как обычное исходящее —
-   * ИИ-агент реагирует на него так же, как на ответ из самого Telegram.
+   * Сообщение от менеджера из веб-интерфейса. Пишется в базу сразу и
+   * публикуется в шину как обычное исходящее — подписчики не отличают его
+   * от ответа из самого Telegram.
    */
   async sendMessage(userId: string, accountId: string, chatId: string, rawText: string): Promise<MessageDto> {
     const { account, chat } = await this.requireChat(userId, accountId, chatId);
@@ -110,7 +110,7 @@ export class TelegramAccountsService {
       throw new ServiceUnavailableException('Аккаунт не подключён к Telegram');
     }
     const sent = await this.outbound.sendText(account.id, chat, text);
-    const row = await this.ingest.storeOwnOutgoing(chat, sent, null);
+    const row = await this.ingest.storeOwnOutgoing(chat, sent);
     this.events.emit({ kind: 'message', accountId: account.id, chat, message: sent, direction: 'out' });
     return toMessageDto(row);
   }

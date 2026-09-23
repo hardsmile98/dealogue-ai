@@ -20,7 +20,6 @@
     "migration:show": "tsx ./node_modules/typeorm/cli.js migration:show -d ./src/database/data-source.ts",
     "migration:create": "tsx ./node_modules/typeorm/cli.js migration:create",
     "test": "vitest run",
-    "ai:fixtures": "tsx ./scripts/export-fixtures.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -39,7 +38,6 @@
     "rxjs": "^7.8.1",
     "teleproto": "^1.229.0",
     "typeorm": "^1.1.1",
-    "undici": "^8.10.2",
     "zod": "^4.5.4"
   },
   "devDependencies": {

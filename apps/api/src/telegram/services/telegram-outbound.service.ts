@@ -78,7 +78,7 @@ export class TelegramOutboundService {
 
   /**
    * Служебное сообщение от аккаунта: в «Избранное» (`'me'`) или указанному
-   * собеседнику (@username / телефон). Используется для алертов менеджеру.
+   * собеседнику (@username / телефон) — например, уведомление менеджеру.
    */
   async sendToPeer(accountId: string, target: string, text: string): Promise<Api.Message> {
     const client = this.requireClient(accountId);

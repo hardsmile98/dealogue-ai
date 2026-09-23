@@ -41,9 +41,6 @@ export const accountPageStyles = {
     alignItems: 'center',
     gap: 1,
   },
-  aiTabs: {
-    mb: 2.5,
-  },
   headerSkeleton: {
     alignItems: 'center',
     mb: 3,

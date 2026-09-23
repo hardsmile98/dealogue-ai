@@ -39,22 +39,6 @@ export interface ChatPeerDto {
   phone: string | null
 }
 
-/** Причина пометки «требует внимания» — тип открытого алерта. */
-export type AttentionReason =
-  | 'handoff'
-  | 'minor'
-  | 'media'
-  | 'stale_lead'
-  | 'library_incomplete'
-  | 'ai_error'
-  | 'anomaly'
-
-export interface ChatAttentionDto {
-  needed: boolean
-  reason: AttentionReason | null
-  at: string | null
-}
-
 export interface ChatDto {
   id: string
   accountId: string
@@ -71,7 +55,6 @@ export interface ChatDto {
   leadCode: string | null
   /** До какого id собеседник прочитал наши сообщения. */
   readOutboxMaxId: number
-  attention: ChatAttentionDto
 }
 
 export interface MessageDto {
@@ -84,9 +67,6 @@ export interface MessageDto {
   sentAt: string
   /** Когда собеседник прочитал наше исходящее. */
   readAt: string | null
-  /** Сообщение отправил бот (ход ИИ-агента), а не человек. */
-  byBot: boolean
-  aiTurnId: string | null
 }
 
 export interface SendMessageRequest {

@@ -10,11 +10,10 @@ import { ProtectedRoute } from './ProtectedRoute'
 
 /**
  * Разделы за логином грузятся своими чанками: первый экран — это форма входа,
- * тянуть ради неё графики, переписку и весь раздел ИИ незачем. Заглушку на
- * время загрузки показывает `Suspense` внутри AppShell.
+ * тянуть ради неё графики и переписку незачем. Заглушку на время загрузки
+ * показывает `Suspense` внутри AppShell.
  */
 const AccountsPage = lazy(async () => ({ default: (await import('@/pages/accounts')).AccountsPage }))
-const AttentionPage = lazy(async () => ({ default: (await import('@/pages/attention')).AttentionPage }))
 const AccountPage = lazy(async () => ({ default: (await import('@/pages/account')).AccountPage }))
 const AccountStatsPage = lazy(async () => ({
   default: (await import('@/pages/account')).AccountStatsPage,
@@ -22,7 +21,6 @@ const AccountStatsPage = lazy(async () => ({
 const AccountChatsPage = lazy(async () => ({
   default: (await import('@/pages/account')).AccountChatsPage,
 }))
-const AccountAiPage = lazy(async () => ({ default: (await import('@/pages/account')).AccountAiPage }))
 
 const router = createBrowserRouter([
   {
@@ -33,7 +31,7 @@ const router = createBrowserRouter([
     element: <ProtectedRoute />,
     children: [
       {
-        // Живые события (SSE) нужны всей авторизованной части: бейдж алертов, обновление чатов.
+        // Живые события (SSE) нужны всей авторизованной части: обновление чатов.
         element: (
           <RealtimeProvider>
             <AppShell />
@@ -42,7 +40,6 @@ const router = createBrowserRouter([
         children: [
           { path: ROUTES.home, element: <Navigate to={ROUTES.accounts} replace /> },
           { path: ROUTES.accounts, element: <AccountsPage /> },
-          { path: ROUTES.attention, element: <AttentionPage /> },
           {
             path: ROUTES.account,
             element: <AccountPage />,
@@ -51,7 +48,6 @@ const router = createBrowserRouter([
               { path: 'stats', element: <AccountStatsPage /> },
               { path: 'chats', element: <AccountChatsPage /> },
               { path: 'chats/:chatId', element: <AccountChatsPage /> },
-              { path: 'ai', element: <AccountAiPage /> },
             ],
           },
         ],

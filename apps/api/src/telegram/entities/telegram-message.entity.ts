@@ -40,10 +40,6 @@ export class TelegramMessageEntity {
   @Column({ name: 'read_at', type: 'timestamptz', nullable: true })
   readAt: Date | null;
 
-  /** Ход ИИ-агента, который отправил это сообщение; null — писал человек. */
-  @Column({ name: 'ai_turn_id', type: 'uuid', nullable: true })
-  aiTurnId: string | null;
-
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

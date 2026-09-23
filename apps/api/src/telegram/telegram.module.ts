@@ -44,7 +44,7 @@ import { TelegramController } from './telegram.controller.js';
     TelegramAccountsService,
     AccountAccessGuard,
   ],
-  // Наружу — только то, что нужно другим модулям (ИИ-агент): события,
+  // Наружу — то, на чём строятся другие модули (realtime, будущий бот): события,
   // отправка, доступ к аккаунтам/чатам с проверкой владельца и запись сообщений.
   exports: [
     TelegramConfig,

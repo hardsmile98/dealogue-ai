@@ -2,11 +2,7 @@ import type {
   TelegramAccountEntity,
   TelegramAccountStatus,
 } from './entities/telegram-account.entity.js';
-import type {
-  AttentionReason,
-  MessageDirection,
-  TelegramChatEntity,
-} from './entities/telegram-chat.entity.js';
+import type { MessageDirection, TelegramChatEntity } from './entities/telegram-chat.entity.js';
 import type { MediaKind, TelegramMessageEntity } from './entities/telegram-message.entity.js';
 
 /**
@@ -45,13 +41,6 @@ export interface ChatDto {
   leadCode: string | null;
   /** До какого id собеседник прочитал наши сообщения. */
   readOutboxMaxId: number;
-  attention: ChatAttentionDto;
-}
-
-export interface ChatAttentionDto {
-  needed: boolean;
-  reason: AttentionReason | null;
-  at: string | null;
 }
 
 export interface MessageDto {
@@ -64,9 +53,6 @@ export interface MessageDto {
   sentAt: string;
   /** Когда собеседник прочитал наше исходящее. */
   readAt: string | null;
-  /** Сообщение отправил бот (ход ИИ-агента), а не человек. */
-  byBot: boolean;
-  aiTurnId: string | null;
 }
 
 export interface DailyStatsDto {
@@ -142,11 +128,6 @@ export function toChatDto(chat: TelegramChatEntity): ChatDto {
     firstMessageAt: (chat.firstMessageAt ?? lastAt).toISOString(),
     leadCode: chat.leadCode,
     readOutboxMaxId: chat.readOutboxMaxId,
-    attention: {
-      needed: chat.needsAttention,
-      reason: chat.attentionReason,
-      at: chat.attentionAt?.toISOString() ?? null,
-    },
   };
 }
 
@@ -160,7 +141,5 @@ export function toMessageDto(message: TelegramMessageEntity): MessageDto {
     mediaKind: message.mediaKind ?? null,
     sentAt: message.sentAt.toISOString(),
     readAt: message.readAt?.toISOString() ?? null,
-    byBot: message.aiTurnId !== null && message.aiTurnId !== undefined,
-    aiTurnId: message.aiTurnId ?? null,
   };
 }

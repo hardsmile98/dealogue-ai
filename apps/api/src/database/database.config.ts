@@ -1,18 +1,4 @@
 import type { DataSourceOptions } from 'typeorm';
-import { AiAccountSettingsEntity } from '../ai/entities/ai-account-settings.entity.js';
-import { AiCategoryEntity } from '../ai/entities/ai-category.entity.js';
-import { AiChatStateEntity } from '../ai/entities/ai-chat-state.entity.js';
-import { AiDiagnosticEntity } from '../ai/entities/ai-diagnostic.entity.js';
-import { AiDraftEntity } from '../ai/entities/ai-draft.entity.js';
-import { AiEventEntity } from '../ai/entities/ai-event.entity.js';
-import { AiFactEntity } from '../ai/entities/ai-fact.entity.js';
-import { AiJobEntity } from '../ai/entities/ai-job.entity.js';
-import { AiNoteEntity } from '../ai/entities/ai-note.entity.js';
-import { AiPhraseEntity } from '../ai/entities/ai-phrase.entity.js';
-import { AiPlaybookEntity } from '../ai/entities/ai-playbook.entity.js';
-import { AiStatsDailyEntity } from '../ai/entities/ai-stats-daily.entity.js';
-import { AiTurnEntity } from '../ai/entities/ai-turn.entity.js';
-import { AlertEntity } from '../ai/entities/alert.entity.js';
 import { TelegramAccountEntity } from '../telegram/entities/telegram-account.entity.js';
 import { TelegramChatEntity } from '../telegram/entities/telegram-chat.entity.js';
 import { TelegramDialogStartEntity } from '../telegram/entities/telegram-dialog-start.entity.js';
@@ -32,6 +18,7 @@ import { AiLearning1700000000009 } from './migrations/1700000000009-AiLearning.j
 import { DropNightWindow1700000000010 } from './migrations/1700000000010-DropNightWindow.js';
 import { AiClientCard1700000000011 } from './migrations/1700000000011-AiClientCard.js';
 import { DropGenderSource1700000000012 } from './migrations/1700000000012-DropGenderSource.js';
+import { DropAiAgent1700000000013 } from './migrations/1700000000013-DropAiAgent.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -79,20 +66,6 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       TelegramChatEntity,
       TelegramMessageEntity,
       TelegramDialogStartEntity,
-      AiAccountSettingsEntity,
-      AiChatStateEntity,
-      AiTurnEntity,
-      AiEventEntity,
-      AiPlaybookEntity,
-      AiPhraseEntity,
-      AiFactEntity,
-      AiDiagnosticEntity,
-      AiCategoryEntity,
-      AiDraftEntity,
-      AiNoteEntity,
-      AiStatsDailyEntity,
-      AiJobEntity,
-      AlertEntity,
     ],
     migrations: [
       CreateUsersTable1700000000000,
@@ -108,6 +81,7 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       DropNightWindow1700000000010,
       AiClientCard1700000000011,
       DropGenderSource1700000000012,
+      DropAiAgent1700000000013,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

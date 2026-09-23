@@ -1,17 +1,14 @@
 import { Module } from '@nestjs/common';
-import { AiConfigModule } from '../ai/ai-config.module.js';
-import { AiJobsModule } from '../ai/jobs/ai-jobs.module.js';
-import { LlmModule } from '../ai/llm/llm.module.js';
+import { RealtimeModule } from '../realtime/realtime.module.js';
 import { TelegramModule } from '../telegram/telegram.module.js';
 import { HealthController } from './health.controller.js';
 
 /**
- * Живость сервиса для мониторинга: база, воркер очереди, предохранители
- * провайдеров, подключённые аккаунты. Без авторизации — по этому адресу
- * ходит внешняя проверка.
+ * Живость сервиса для мониторинга: база, подключённые аккаунты, подписчики
+ * SSE. Без авторизации — по этому адресу ходит внешняя проверка.
  */
 @Module({
-  imports: [AiConfigModule, LlmModule, AiJobsModule, TelegramModule],
+  imports: [TelegramModule, RealtimeModule],
   controllers: [HealthController],
 })
 export class HealthModule {}

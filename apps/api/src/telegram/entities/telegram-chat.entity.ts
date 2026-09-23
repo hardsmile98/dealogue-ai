@@ -9,16 +9,6 @@ import {
 
 export type MessageDirection = 'in' | 'out';
 
-/** Причина пометки «требует внимания» — тип открытого алерта (см. ai/entities/alert.entity.ts). */
-export type AttentionReason =
-  | 'handoff'
-  | 'minor'
-  | 'media'
-  | 'stale_lead'
-  | 'library_incomplete'
-  | 'ai_error'
-  | 'anomaly';
-
 /** Личный диалог аккаунта с одним собеседником. */
 @Entity({ name: 'telegram_chats' })
 @Index(['accountId', 'peerId'], { unique: true })
@@ -85,16 +75,6 @@ export class TelegramChatEntity {
   /** До какого id (включительно) собеседник прочитал наши исходящие. */
   @Column({ name: 'read_outbox_max_id', type: 'integer', default: 0 })
   readOutboxMaxId: number;
-
-  /** Чат требует внимания менеджера — есть незакрытый алерт. */
-  @Column({ name: 'needs_attention', type: 'boolean', default: false })
-  needsAttention: boolean;
-
-  @Column({ name: 'attention_reason', type: 'varchar', length: 32, nullable: true })
-  attentionReason: AttentionReason | null;
-
-  @Column({ name: 'attention_at', type: 'timestamptz', nullable: true })
-  attentionAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

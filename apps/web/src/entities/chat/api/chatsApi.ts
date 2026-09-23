@@ -1,5 +1,5 @@
 import { CHAT_TAG, MESSAGE_TAG, baseApi } from '@/shared/api'
-import type { ChatDto, ChatQuery, ChatsQuery, SendMessageRequest } from '@/shared/api'
+import type { ChatsQuery, SendMessageRequest } from '@/shared/api'
 import type { Chat, Message, MessagesQuery } from '../model/types'
 
 export const chatsApi = baseApi
@@ -30,29 +30,7 @@ export const chatsApi = baseApi
           { type: CHAT_TAG, id: accountId },
         ],
       }),
-
-      /** Менеджер открыл чат с пометкой — открытые алерты считаются увиденными. */
-      markAttentionSeen: build.mutation<{ ok: true }, ChatQuery>({
-        query: ({ accountId, chatId }) => ({
-          url: `/telegram/accounts/${accountId}/chats/${chatId}/attention/seen`,
-          method: 'POST',
-        }),
-      }),
-
-      clearAttention: build.mutation<ChatDto, ChatQuery>({
-        query: ({ accountId, chatId }) => ({
-          url: `/telegram/accounts/${accountId}/chats/${chatId}/attention/clear`,
-          method: 'POST',
-        }),
-        invalidatesTags: (_result, _error, { accountId }) => [{ type: CHAT_TAG, id: accountId }],
-      }),
     }),
   })
 
-export const {
-  useGetChatsQuery,
-  useGetMessagesQuery,
-  useSendMessageMutation,
-  useMarkAttentionSeenMutation,
-  useClearAttentionMutation,
-} = chatsApi
+export const { useGetChatsQuery, useGetMessagesQuery, useSendMessageMutation } = chatsApi

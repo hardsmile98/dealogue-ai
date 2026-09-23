@@ -1,30 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined'
 import SendIcon from '@mui/icons-material/Send'
 import { formatDateTime, formatDayDivider, getApiErrorMessage, isMutationSuccess, toDayKey } from '@/shared/lib'
-import type { TurnDto } from '@/shared/api'
-import { ALERT_TYPE_META } from '@/entities/alert'
-import { TURN_OUTCOME_META, useGetChatTurnsQuery } from '@/entities/ai-agent'
-import {
-  GhostBubble,
-  LeadCodeChip,
-  MessageBubble,
-  useClearAttentionMutation,
-  useGetMessagesQuery,
-  useMarkAttentionSeenMutation,
-  useSendMessageMutation,
-} from '@/entities/chat'
+import { LeadCodeChip, MessageBubble, useGetMessagesQuery, useSendMessageMutation } from '@/entities/chat'
 import type { Chat, Message } from '@/entities/chat'
 import { AccountAvatar } from '@/entities/telegram-account'
-import { ChatAiPanel, RateTurn, TurnsJournal } from '@/widgets/chat-agent'
 import { chatPanelStyles as styles } from './ChatPanel.styles'
 
 interface ChatThreadProps {
@@ -34,39 +20,20 @@ interface ChatThreadProps {
   onBack?: () => void
 }
 
-/** Элемент ленты: реальное сообщение или «отправил бы» из журнала (сухой прогон, черновик). */
-type ThreadItem =
-  | { kind: 'message'; at: string; message: Message }
-  | { kind: 'ghost'; at: string; id: string; text: string; label: string; turn: TurnDto }
-
 interface DayGroup {
   key: string
-  items: ThreadItem[]
+  messages: Message[]
 }
 
-function groupByDay(items: ThreadItem[]): DayGroup[] {
+function groupByDay(messages: Message[]): DayGroup[] {
   const groups: DayGroup[] = []
-  for (const item of items) {
-    const key = toDayKey(item.at)
+  for (const message of messages) {
+    const key = toDayKey(message.sentAt)
     const last = groups[groups.length - 1]
-    if (last && last.key === key) last.items.push(item)
-    else groups.push({ key, items: [item] })
+    if (last && last.key === key) last.messages.push(message)
+    else groups.push({ key, messages: [message] })
   }
   return groups
-}
-
-/** Ходы без отправки в Telegram показываем в ленте пунктиром. */
-function ghostsOf(turns: TurnDto[]): ThreadItem[] {
-  const result: ThreadItem[] = []
-  for (const turn of turns) {
-    if (turn.outcome !== 'dry_run' && turn.outcome !== 'awaiting_approval') continue
-    // Черновик менеджеру виден в карточке над лентой — в самой ленте не дублируем.
-    if (turn.trigger === 'manager_draft') continue
-    turn.messagesPlanned.forEach((m, index) => {
-      result.push({ kind: 'ghost', at: turn.createdAt, id: `${turn.id}:${index}`, text: m.text, label: TURN_OUTCOME_META[turn.outcome].label, turn })
-    })
-  }
-  return result
 }
 
 export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
@@ -74,19 +41,11 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
     { accountId, chatId: chat.id },
     { pollingInterval: 10_000 },
   )
-  const { data: turns } = useGetChatTurnsQuery({ accountId, chatId: chat.id, limit: 100 })
-  const [markSeen] = useMarkAttentionSeenMutation()
-  const [clearAttention, { isLoading: clearing }] = useClearAttentionMutation()
   const [sendMessage, { isLoading: sending, error: sendError }] = useSendMessageMutation()
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const turnsById = useMemo(() => new Map((turns ?? []).map((t) => [t.id, t])), [turns])
-  const items = useMemo(() => {
-    const real: ThreadItem[] = (messages ?? []).map((message) => ({ kind: 'message', at: message.sentAt, message }))
-    return [...real, ...ghostsOf(turns ?? [])].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
-  }, [messages, turns])
-  const groups = useMemo(() => groupByDay(items), [items])
+  const groups = useMemo(() => groupByDay(messages ?? []), [messages])
   const firstIncomingId = useMemo(
     () => messages?.find((message) => message.direction === 'in')?.id ?? null,
     [messages],
@@ -96,12 +55,7 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
   useEffect(() => {
     const node = scrollRef.current
     if (node) node.scrollTop = node.scrollHeight
-  }, [items])
-
-  // Менеджер открыл чат с пометкой — алерты считаем увиденными.
-  useEffect(() => {
-    if (chat.attention.needed) void markSeen({ accountId, chatId: chat.id })
-  }, [accountId, chat.id, chat.attention.needed, markSeen])
+  }, [messages])
 
   const submit = async () => {
     const text = draft.trim()
@@ -113,14 +67,6 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
   const peerMeta = [chat.peer.username ? `@${chat.peer.username}` : null, chat.peer.phone]
     .filter(Boolean)
     .join(' · ')
-  const attention = chat.attention.reason ? ALERT_TYPE_META[chat.attention.reason] : null
-  const attentionSeverity =
-    attention?.color === 'success' ? 'success' : attention?.color === 'error' ? 'error' : attention?.color === 'info' ? 'info' : 'warning'
-
-  const rateFor = (turnId: string | null) => {
-    const turn = turnId ? turnsById.get(turnId) : null
-    return turn ? <RateTurn accountId={accountId} chatId={chat.id} turn={turn} /> : undefined
-  }
 
   return (
     <Box sx={styles.threadPane}>
@@ -141,28 +87,6 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
         </Box>
       </Box>
 
-      <ChatAiPanel accountId={accountId} chatId={chat.id} />
-
-      {attention && chat.attention.needed && (
-        <Alert
-          severity={attentionSeverity}
-          icon={<NotificationsActiveOutlinedIcon fontSize="inherit" />}
-          sx={styles.attentionBar}
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              loading={clearing}
-              onClick={() => void clearAttention({ accountId, chatId: chat.id })}
-            >
-              Снять пометку
-            </Button>
-          }
-        >
-          <strong>{attention.label}.</strong> {attention.description}
-        </Alert>
-      )}
-
       <Box ref={scrollRef} sx={styles.messages}>
         {error && (
           <Alert severity="error" sx={styles.messagesError}>
@@ -182,24 +106,17 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
             <Box sx={styles.dayDivider}>
               <Box sx={styles.dayDividerLabel}>{formatDayDivider(group.key)}</Box>
             </Box>
-            {group.items.map((item) =>
-              item.kind === 'message' ? (
-                <MessageBubble
-                  key={item.message.id}
-                  message={item.message}
-                  isFirst={item.message.id === firstIncomingId}
-                  leadCode={chat.leadCode}
-                  footer={item.message.byBot ? rateFor(item.message.aiTurnId) : undefined}
-                />
-              ) : (
-                <GhostBubble key={item.id} text={item.text} sentAt={item.at} label={item.label} footer={rateFor(item.turn.id)} />
-              ),
-            )}
+            {group.messages.map((message) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                isFirst={message.id === firstIncomingId}
+                leadCode={chat.leadCode}
+              />
+            ))}
           </Box>
         ))}
       </Box>
-
-      <TurnsJournal accountId={accountId} chatId={chat.id} turns={turns ?? []} />
 
       <Box sx={styles.composer}>
         {sendError && (
@@ -232,9 +149,7 @@ export function ChatThread({ accountId, chat, onBack }: ChatThreadProps) {
             <SendIcon />
           </IconButton>
         </Box>
-        <Typography sx={styles.composerHint}>
-          Сообщение уйдёт в Telegram от имени аккаунта. Если бот вёл этот чат, он передаст его вам.
-        </Typography>
+        <Typography sx={styles.composerHint}>Сообщение уйдёт в Telegram от имени аккаунта.</Typography>
       </Box>
     </Box>
   )

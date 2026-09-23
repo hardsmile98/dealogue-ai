@@ -195,14 +195,10 @@ export class TelegramIngestService {
   }
 
   /**
-   * Исходящее, которое отправили мы сами (бот или менеджер из веба):
+   * Исходящее, которое отправили мы сами (менеджер из веба):
    * пишем сразу, не дожидаясь эха от Telegram. Эхо потом попадёт в ON CONFLICT.
    */
-  async storeOwnOutgoing(
-    chat: TelegramChatEntity,
-    message: Api.Message,
-    aiTurnId: string | null,
-  ): Promise<TelegramMessageEntity> {
+  async storeOwnOutgoing(chat: TelegramChatEntity, message: Api.Message): Promise<TelegramMessageEntity> {
     await this.messages
       .createQueryBuilder()
       .insert()
@@ -215,18 +211,12 @@ export class TelegramIngestService {
         mediaKind: mediaKindOf(message.media),
         sentAt: new Date(message.date * 1000),
         readAt: null,
-        aiTurnId,
       })
       .orIgnore()
       .execute();
     await this.refreshAggregates(chat, {});
     const row = await this.messages.findOne({ where: { chatId: chat.id, telegramMessageId: message.id } });
     if (!row) throw new Error(`Не удалось сохранить исходящее #${message.id}`);
-    if (row.aiTurnId !== aiTurnId) {
-      // Эхо успело записаться раньше нас — проставляем автора.
-      row.aiTurnId = aiTurnId;
-      await this.messages.save(row);
-    }
     return row;
   }
 

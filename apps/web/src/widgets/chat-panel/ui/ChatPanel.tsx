@@ -3,10 +3,8 @@ import Box from '@mui/material/Box'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined'
-import { useMemo } from 'react'
 import { getApiErrorMessage } from '@/shared/lib'
 import { EmptyState } from '@/shared/ui'
-import { useGetChatAiSummariesQuery } from '@/entities/ai-agent'
 import { useGetChatsQuery } from '@/entities/chat'
 import { ChatList } from './ChatList'
 import { chatPanelStyles as styles } from './ChatPanel.styles'
@@ -31,8 +29,6 @@ export function ChatPanel({ accountId, selectedChatId, onSelectChat }: ChatPanel
     { accountId },
     { pollingInterval: 15_000 },
   )
-  const { data: aiSummaries } = useGetChatAiSummariesQuery(accountId, { pollingInterval: 30_000 })
-  const summaries = useMemo(() => new Map((aiSummaries ?? []).map((s) => [s.chatId, s])), [aiSummaries])
   const selected = chats?.find((chat) => chat.id === selectedChatId) ?? null
 
   if (error) {
@@ -47,7 +43,6 @@ export function ChatPanel({ accountId, selectedChatId, onSelectChat }: ChatPanel
       {showList && (
         <ChatList
           chats={chats}
-          summaries={summaries}
           isLoading={isLoading}
           selectedId={selectedChatId}
           onSelect={onSelectChat}

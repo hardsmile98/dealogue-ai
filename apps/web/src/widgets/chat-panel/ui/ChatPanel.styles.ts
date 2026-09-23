@@ -154,18 +154,6 @@ export const chatPanelStyles = {
     fontSize: 12,
     color: 'text.secondary',
   },
-  attentionBar: {
-    borderRadius: 0,
-    py: 0.25,
-    '& .MuiAlert-message': { fontSize: 13 },
-  },
-  attentionDot: {
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    bgcolor: 'warning.main',
-    flexShrink: 0,
-  },
   messages: {
     flexGrow: 1,
     overflowY: 'auto',
