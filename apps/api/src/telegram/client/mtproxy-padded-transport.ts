@@ -1,7 +1,12 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import teleproto from 'teleproto';
-import { PacketCodec } from 'teleproto/network/connection/Connection.js';
+import type { SocketInterface } from 'teleproto/extensions/SocketInterface.js';
+import {
+  ObfuscatedConnection,
+  PacketCodec,
+} from 'teleproto/network/connection/Connection.js';
 import { TCPMTProxy } from 'teleproto/network/connection/TCPMTProxy.js';
+import { FakeTlsSocket } from './mtproxy-fake-tls.js';
 
 const { errors } = teleproto;
 
@@ -60,6 +65,26 @@ export class PaddedIntermediatePacketCodec extends PacketCodec {
 /** MTProxy-соединение на padded intermediate вместо abridged. */
 export class ConnectionTCPMTProxyPadded extends TCPMTProxy {
   override PacketCodecClass = PaddedIntermediatePacketCodec as unknown as typeof PacketCodec;
+
+  /**
+   * Fake-TLS (секреты `ee…`) поднимаем своим {@link FakeTlsSocket}: ClientHello
+   * из teleproto шлёт два расширения с одним GREASE-типом, из-за чего прокси
+   * отвечает алертом decode_error вместо ServerHello. Родительский
+   * `TCPMTProxy._initConn` пропускаем — иначе он сделает fake-TLS второй раз;
+   * обфускацию MTProxy запускаем напрямую из `ObfuscatedConnection`.
+   */
+  override async _initConn(): Promise<void> {
+    if (this._fakeTlsDomain) {
+      const tls = new FakeTlsSocket(
+        this.socket,
+        this._secret,
+        this._fakeTlsDomain,
+      );
+      await tls.handshake();
+      this.socket = tls as unknown as SocketInterface;
+    }
+    await ObfuscatedConnection.prototype._initConn.call(this);
+  }
 }
 
 /**
