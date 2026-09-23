@@ -12,7 +12,7 @@ export type MediaKind = 'photo' | 'voice' | 'video' | 'video_note' | 'audio' | '
 
 @Entity({ name: 'telegram_messages' })
 @Index(['chatId', 'telegramMessageId'], { unique: true })
-@Index(['chatId', 'sentAt'])
+@Index('IDX_telegram_messages_chat_sent_id', ['chatId', 'sentAt', 'telegramMessageId'])
 export class TelegramMessageEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

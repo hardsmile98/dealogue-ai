@@ -95,8 +95,26 @@ npm run migration:revert && npm run migration:run
 | GET | `/:id` | карточка аккаунта |
 | DELETE | `/:id` | завершить сессию в Telegram и удалить аккаунт с историей |
 | GET | `/:id/stats?from=YYYY-MM-DD&to=YYYY-MM-DD&tz=Europe/Moscow` | первые входящие сообщения по дням и кодам, итоги и итоги за предыдущий период |
-| GET | `/:id/chats` | личные диалоги (до 500, свежие первыми) |
-| GET | `/:id/chats/:chatId/messages` | сообщения диалога по возрастанию времени |
+| GET | `/:id/chats?cursor=&limit=100&search=&code=with\|without` | страница личных диалогов (свежие первыми) → `{ items, nextCursor, total }` |
+| GET | `/:id/chats/:chatId` | один диалог — для прямой ссылки на чат |
+| GET | `/:id/chats/:chatId/messages?cursor=&limit=50` | страница переписки: свежие сообщения, по `nextCursor` — более старые → `{ items, nextCursor }` |
+| POST | `/:id/chats/:chatId/messages` `{ text }` | ответ клиенту от имени аккаунта |
+
+**Переписка — тоже по курсору, от новых к старым.** Первая страница — самые
+свежие сообщения, каждая следующая — всё, что строго раньше самого старого
+сообщения предыдущей (ключ `sent_at, telegram_message_id`, индекс
+`IDX_telegram_messages_chat_sent_id`). Внутри страницы сообщения идут по
+возрастанию времени — веб просто склеивает страницы в обратном порядке.
+
+**Список чатов — постраничный, по курсору.** Порядок — по последнему
+сообщению (чаты без сообщений в конце), затем по id; `nextCursor` — ключ
+сортировки последнего чата страницы, следующая страница начинается строго
+после него. В отличие от OFFSET, чат, который поднялся наверх из-за нового
+сообщения, не сдвигает остальные и не дублируется. Индекс
+`IDX_telegram_chats_account_last_id` построен по тому же выражению, поэтому
+любая страница читается прямо с места курсора. `search` ищет подстроку
+(без учёта регистра) в имени, username, телефоне и тексте последнего
+сообщения; `total` — сколько чатов подходит под фильтры.
 
 Ошибки Telegram переводятся в понятные тексты (`lib/telegram-errors.ts`):
 неверный код — 400, номер заблокирован — 403, `FLOOD_WAIT` — 429 с числом
@@ -167,25 +185,34 @@ joiner — их вставляют в шаблоны против спам-фи�
 ```
 src/
   common/                     общее для всех модулей, без доменных знаний
-    pipes/zod-validation.pipe.ts   zod-схема → 400 с одной понятной строкой
+    decorators/trim.decorator.ts      @Trim() — обрезать пробелы до валидации
     filters/all-exceptions.filter.ts  единая форма ответа на ошибку
   telegram/
-    telegram.controller.ts    /telegram/accounts/*
     telegram.module.ts
     telegram.config.ts        переменные окружения, разбор списка MTProxy
-    telegram.types.ts         DTO ответов (зеркало контракта фронтенда)
-    client/telegram-client.factory.ts   клиенты teleproto, перебор прокси
-    guards/account-access.guard.ts      владение аккаунтом и чатом из пути
-    decorators/account.decorator.ts     @Account() / @AccountId() / @Chat()
+    telegram.types.ts         DTO ответов и мапперы (зеркало контракта фронтенда)
+    controllers/              по контроллеру на ресурс, все под /telegram/accounts
+      telegram-auth.controller.ts      send-code → sign-in → password
+      telegram-accounts.controller.ts  список, карточка, удаление, статистика
+      telegram-chats.controller.ts     :id/chats — страницы, чат, сообщения, отправка
+    dto/                      тела и query-строки запросов (class-validator)
+    guards/
+      telegram-enabled.guard.ts   503, если раздел не настроен
+      account-access.guard.ts     владение аккаунтом и чатом из пути
+    decorators/account.decorator.ts   @Account() / @Chat()
+    client/telegram-client.factory.ts клиенты teleproto, перебор прокси
     services/
       telegram-auth.service.ts      номер → код → пароль
       telegram-runtime.service.ts   живые клиенты, события, переподключение
       telegram-sync.service.ts      первичная и периодическая синхронизация
       telegram-ingest.service.ts    запись чатов и сообщений в базу
       telegram-dialog-starts.service.ts  начала диалогов: запись, пересчёт кодов, агрегаты статистики
-      telegram-accounts.service.ts  чтение: список, чаты, сообщения, статистика
+      telegram-accounts.service.ts  аккаунты и проверка владения
+      telegram-chats.service.ts     страницы чатов, переписка, ответ менеджера
+      telegram-stats.service.ts     статистика за период
     entities/                 telegram_accounts, telegram_login_attempts, telegram_chats, telegram_messages, telegram_dialog_starts
-    lib/                      lead-code, session-crypto, telegram-errors, phone, timezone
+    lib/                      чистые функции с тестами: курсор чатов, сборка статистики,
+                              lead-code, session-crypto, telegram-errors, phone, timezone
   realtime/                   SSE-события для браузера; мост из шины событий Telegram
   health/                     GET /health для мониторинга
   auth/
@@ -209,16 +236,18 @@ src/
 
 Что контроллер не пишет руками:
 
-- **Доступ к аккаунту.** `@UseGuards(JwtAuthGuard, AccountAccessGuard)` на
-  контроллере с путём `telegram/accounts/:id/…`: guard проверяет формат
-  `:id` (и `:chatId`, если он есть в пути), владение аккаунтом и чатом, а
-  найденные строки кладёт в request. Метод берёт их через `@AccountId()`,
-  `@Account()` и `@Chat()` — `requireAccount` внутри обработчика больше
-  не нужен.
-- **Валидация.** Для новых контроллеров есть zod-пайп (`common/pipes`):
-  `@Body(zod(schema))`, `@Query(zod(schema))`. Первая ошибка становится 400
-  с одной строкой — веб показывает её как есть. Формы `auth` и `telegram`
-  пока на class-validator и глобальном `ValidationPipe`.
+- **Раздел выключен.** `TelegramEnabledGuard` на всех контроллерах Telegram
+  отвечает 503 с подсказкой, если не заданы `TELEGRAM_API_ID` / `_HASH`, —
+  сервисы эту проверку не повторяют.
+- **Доступ к аккаунту.** `AccountAccessGuard` на маршрутах с `:id`: проверяет
+  формат `:id` (и `:chatId`, если он есть в пути), владение аккаунтом и
+  чатом, а найденные строки кладёт в request. Метод берёт их через
+  `@Account()` и `@Chat()`, сервисы получают готовые сущности, а не пару
+  `userId` + `accountId`.
+- **Валидация.** Тела и query-строки — DTO на class-validator под глобальным
+  `ValidationPipe` (`whitelist`, `forbidNonWhitelisted`, `transform`):
+  лишние поля — 400, числа из query приводятся через `@Type(() => Number)`,
+  строки обрезает `@Trim()`. Наружу уходит первая ошибка поля.
 - **Ошибки.** `AllExceptionsFilter` не меняет тело `HttpException` (веб читает
   `data.message`), а всё непредвиденное превращает в 500 с одной строкой
   наружу и стеком в логе.

@@ -14,21 +14,6 @@ export function formatShare(part: number, whole: number): string {
   return percent.format(part / whole)
 }
 
-/** Готовая доля 0…1 → «42 %»; нечего показывать — прочерк. */
-export function formatRate(value: number | null | undefined): string {
-  return value === null || value === undefined ? '—' : percent.format(value)
-}
-
-/** Минуты → «1 ч 20 мин»; null — прочерк. */
-export function formatMinutes(minutes: number | null | undefined): string {
-  if (minutes === null || minutes === undefined) return '—'
-  const total = Math.max(0, Math.round(minutes))
-  if (total < 60) return `${total} мин`
-  const hours = Math.floor(total / 60)
-  const rest = total % 60
-  return rest === 0 ? `${hours} ч` : `${hours} ч ${rest} мин`
-}
-
 /** Склонение: pluralize(3, ['диалог', 'диалога', 'диалогов']) → «3 диалога». */
 export function pluralize(
   count: number,

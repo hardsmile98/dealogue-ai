@@ -13,7 +13,9 @@ export type MessageDirection = 'in' | 'out';
 @Entity({ name: 'telegram_chats' })
 @Index(['accountId', 'peerId'], { unique: true })
 @Index(['accountId', 'firstMessageAt'])
-@Index(['accountId', 'lastMessageAt'])
+// Порядок списка чатов: COALESCE(last_message_at, -infinity) DESC, id DESC —
+// выражение декоратор не описывает, индекс создаёт миграция AccountChatsPageIndex.
+@Index('IDX_telegram_chats_account_last_id', { synchronize: false })
 export class TelegramChatEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

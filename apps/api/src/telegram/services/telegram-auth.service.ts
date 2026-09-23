@@ -6,7 +6,6 @@ import {
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
@@ -73,7 +72,6 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async sendCode(userId: string, rawPhone: string): Promise<SendCodeResponse> {
-    this.ensureEnabled();
     const phone = normalizePhone(rawPhone);
 
     const existing = await this.accounts.findOne({ where: { userId, phone } });
@@ -107,7 +105,6 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async signIn(userId: string, attemptId: string, code: string): Promise<SignInResponse> {
-    this.ensureEnabled();
     const attempt = await this.loadAttempt(userId, attemptId);
     const client = await this.clientFor(attempt);
 
@@ -135,7 +132,6 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
     attemptId: string,
     password: string,
   ): Promise<SubmitPasswordResponse> {
-    this.ensureEnabled();
     const attempt = await this.loadAttempt(userId, attemptId);
     if (!attempt.codeVerified) {
       throw new BadRequestException('Сначала подтвердите код из Telegram');
@@ -153,14 +149,6 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   // --- внутреннее -----------------------------------------------------------
-
-  private ensureEnabled(): void {
-    if (!this.config.enabled) {
-      throw new ServiceUnavailableException(
-        'Раздел Telegram не настроен: задайте TELEGRAM_API_ID и TELEGRAM_API_HASH',
-      );
-    }
-  }
 
   private async loadAttempt(userId: string, attemptId: string): Promise<TelegramLoginAttemptEntity> {
     const attempt = await this.attempts.findOne({ where: { id: attemptId, userId } });

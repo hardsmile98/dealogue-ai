@@ -31,14 +31,18 @@ export class DropAiAgent1700000000013 implements MigrationInterface {
         "ai_jobs",
         "alerts"
     `);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_telegram_chats_attention"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_telegram_chats_attention"`,
+    );
     await queryRunner.query(`
       ALTER TABLE "telegram_chats"
         DROP COLUMN IF EXISTS "needs_attention",
         DROP COLUMN IF EXISTS "attention_reason",
         DROP COLUMN IF EXISTS "attention_at"
     `);
-    await queryRunner.query(`ALTER TABLE "telegram_messages" DROP COLUMN IF EXISTS "ai_turn_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "telegram_messages" DROP COLUMN IF EXISTS "ai_turn_id"`,
+    );
   }
 
   public async down(): Promise<void> {

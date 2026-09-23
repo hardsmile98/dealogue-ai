@@ -51,11 +51,28 @@ export interface ChatDto {
   messagesCount: number
   /** Когда собеседник написал первое сообщение — по нему считается статистика. */
   firstMessageAt: string
+  /** id первого сообщения диалога в Telegram — чтобы пометить его в переписке. */
+  firstTelegramMessageId: number | null
   /** Код, вычлененный из первого входящего сообщения («Код: 5» → "5"), или null. */
   leadCode: string | null
   /** До какого id собеседник прочитал наши сообщения. */
   readOutboxMaxId: number
 }
+
+/** Страница списка чатов: свежие сверху, по `CHATS_PAGE_SIZE` штук. */
+export interface ChatsPageDto {
+  items: ChatDto[]
+  /** Курсор следующей страницы; null — это последняя. */
+  nextCursor: string | null
+  /** Сколько всего чатов подходит под фильтры запроса. */
+  total: number
+}
+
+/** Больше за один запрос сервер не отдаёт. */
+export const CHATS_PAGE_SIZE = 100
+
+/** Фильтр по коду из первого сообщения: только с кодом или только без. */
+export type ChatCodeFilter = 'with' | 'without'
 
 export interface MessageDto {
   id: string
@@ -68,6 +85,18 @@ export interface MessageDto {
   /** Когда собеседник прочитал наше исходящее. */
   readAt: string | null
 }
+
+/**
+ * Страница переписки. Первая — самые свежие сообщения, следующие — всё более
+ * старые; внутри страницы сообщения идут по возрастанию времени.
+ */
+export interface MessagesPageDto {
+  items: MessageDto[]
+  /** Курсор страницы с более старыми сообщениями; null — старше ничего нет. */
+  nextCursor: string | null
+}
+
+export const MESSAGES_PAGE_SIZE = 50
 
 export interface SendMessageRequest {
   accountId: string
@@ -115,6 +144,9 @@ export interface AccountStatsQuery {
 
 export interface ChatsQuery {
   accountId: string
+  /** Подстрока имени, @username, телефона или текста последнего сообщения. */
+  search?: string
+  code?: ChatCodeFilter
 }
 
 export interface ChatQuery {

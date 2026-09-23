@@ -4,15 +4,10 @@ import { LessThan, Repository } from 'typeorm';
 import type { Api } from 'teleproto';
 import type { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
 import { TelegramDialogStartEntity } from '../entities/telegram-dialog-start.entity.js';
+import type { DayCodeRow } from '../lib/account-stats.js';
 import { LEAD_CODE_PARSER_VERSION, parseLeadCode } from '../lib/lead-code.js';
 
 const RECLASSIFY_BATCH = 500;
-
-export interface DayCodeRow {
-  day: string;
-  code: string | null;
-  count: number | string;
-}
 
 /**
  * Начала диалогов: запись при синхронизации, переклассификация при смене

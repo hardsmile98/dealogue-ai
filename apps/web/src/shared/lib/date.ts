@@ -44,11 +44,6 @@ export function addDays(value: string | Date, days: number): Date {
   return d
 }
 
-/** Ключ дня, с которого начинается отрезок из `days` дней, включая сегодня. */
-export function daysAgoKey(days: number, now = new Date()): string {
-  return toDayKey(addDays(now, -(days - 1)))
-}
-
 /** Количество календарных дней между ключами включительно. */
 export function daysBetween(fromKey: string, toKey: string): number {
   const ms = fromDayKey(toKey).getTime() - fromDayKey(fromKey).getTime()
@@ -91,16 +86,6 @@ export function formatDayDivider(dayKey: string, now = new Date()): string {
   if (dayKey === toDayKey(now)) return 'Сегодня'
   if (dayKey === toDayKey(addDays(now, -1))) return 'Вчера'
   return formatDayMonthYear(fromDayKey(dayKey))
-}
-
-/** «через 25 мин», «через 13 ч», «через 2 дн.» — для будущих сроков. */
-export function formatAhead(value: string | Date, now: string | Date = new Date()): string {
-  const minutes = Math.round((toDate(value).getTime() - toDate(now).getTime()) / 60_000)
-  if (minutes <= 0) return 'сейчас'
-  if (minutes < 60) return `через ${minutes} мин`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `через ${hours} ч`
-  return `через ${Math.round(hours / 24)} дн.`
 }
 
 /** «5 мин назад», «2 ч назад», «вчера», иначе дата. */

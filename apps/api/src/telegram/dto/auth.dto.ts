@@ -1,9 +1,14 @@
-import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
+import { Trim } from '../../common/decorators/trim.decorator.js';
+
+// Правила срабатывают снизу вверх, а наружу уходит первая ошибка
+// (stopAtFirstError), поэтому «Введите …» стоит последним.
 
 export class SendCodeDto {
   @MaxLength(32, { message: 'Номер слишком длинный' })
   @IsString()
   @IsNotEmpty({ message: 'Введите номер телефона' })
+  @Trim()
   phone: string;
 }
 
@@ -15,6 +20,7 @@ export class SignInDto {
   @Matches(/^\d{4,8}$/, { message: 'Код — это 5 цифр из сообщения Telegram' })
   @IsString()
   @IsNotEmpty({ message: 'Введите код' })
+  @Trim()
   code: string;
 }
 
@@ -27,27 +33,4 @@ export class SubmitPasswordDto {
   @IsString()
   @IsNotEmpty({ message: 'Введите облачный пароль' })
   password: string;
-}
-
-export class SendMessageDto {
-  @MaxLength(4096, { message: 'Сообщение длиннее 4096 символов' })
-  @IsString()
-  @IsNotEmpty({ message: 'Введите текст сообщения' })
-  text: string;
-}
-
-export class StatsQueryDto {
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'from: ожидается YYYY-MM-DD' })
-  @IsString()
-  from: string;
-
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'to: ожидается YYYY-MM-DD' })
-  @IsString()
-  to: string;
-
-  /** IANA-зона, в которой считать «день» (по умолчанию TELEGRAM_TIMEZONE). */
-  @MaxLength(64)
-  @IsString()
-  @IsOptional()
-  tz?: string;
 }

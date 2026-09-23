@@ -16,9 +16,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Владение аккаунтом (и чатом, если в пути есть `:chatId`) — один раз на
- * запрос, до пайпов и обработчика. Раньше каждый метод начинался с
- * `await this.accounts.requireAccount(user.id, accountId)`; теперь аккаунт и
- * чат уже лежат в request'е. Ставится только вместе с JwtAuthGuard.
+ * запрос, до пайпов и обработчика. Найденные строки кладутся в request, а
+ * метод получает их через @Account() / @Chat(). Ставится после JwtAuthGuard.
  */
 @Injectable()
 export class AccountAccessGuard implements CanActivate {
@@ -30,13 +29,10 @@ export class AccountAccessGuard implements CanActivate {
       throw new InternalServerErrorException('AccountAccessGuard использован без JwtAuthGuard');
     }
     const params = (request.params ?? {}) as Record<string, string | undefined>;
-    const accountId = requireUuid(params.id, 'id');
-    request.account = await this.accounts.requireAccount(request.user.id, accountId);
-
-    const chatId = params.chatId;
-    if (chatId !== undefined) {
-      const { chat } = await this.accounts.requireChat(request.user.id, accountId, requireUuid(chatId, 'chatId'));
-      request.chat = chat;
+    const account = await this.accounts.requireAccount(request.user.id, requireUuid(params.id, 'id'));
+    request.account = account;
+    if (params.chatId !== undefined) {
+      request.chat = await this.accounts.requireChat(account, requireUuid(params.chatId, 'chatId'));
     }
     return true;
   }

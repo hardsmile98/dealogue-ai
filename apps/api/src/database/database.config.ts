@@ -19,6 +19,8 @@ import { DropNightWindow1700000000010 } from './migrations/1700000000010-DropNig
 import { AiClientCard1700000000011 } from './migrations/1700000000011-AiClientCard.js';
 import { DropGenderSource1700000000012 } from './migrations/1700000000012-DropGenderSource.js';
 import { DropAiAgent1700000000013 } from './migrations/1700000000013-DropAiAgent.js';
+import { AccountChatsPageIndex1700000000014 } from './migrations/1700000000014-AccountChatsPageIndex.js';
+import { ChatMessagesPageIndex1700000000015 } from './migrations/1700000000015-ChatMessagesPageIndex.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -82,6 +84,8 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       AiClientCard1700000000011,
       DropGenderSource1700000000012,
       DropAiAgent1700000000013,
+      AccountChatsPageIndex1700000000014,
+      ChatMessagesPageIndex1700000000015,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

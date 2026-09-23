@@ -1,19 +1,53 @@
-import { CHAT_TAG, MESSAGE_TAG, baseApi } from '@/shared/api'
-import type { ChatsQuery, SendMessageRequest } from '@/shared/api'
-import type { Chat, Message, MessagesQuery } from '../model/types'
+import { CHATS_PAGE_SIZE, CHAT_TAG, MESSAGES_PAGE_SIZE, MESSAGE_TAG, baseApi } from '@/shared/api'
+import type { ChatQuery, ChatsPageDto, ChatsQuery, MessagesPageDto, SendMessageRequest } from '@/shared/api'
+import type { Chat, Message } from '../model/types'
 
 export const chatsApi = baseApi
   .enhanceEndpoints({ addTagTypes: [CHAT_TAG, MESSAGE_TAG] })
   .injectEndpoints({
     endpoints: (build) => ({
-      getChats: build.query<Chat[], ChatsQuery>({
-        query: ({ accountId }) => ({ url: `/telegram/accounts/${accountId}/chats` }),
+      /**
+       * Список чатов страницами по курсору. Поиск и фильтр — на сервере:
+       * на клиенте они видели бы только уже загруженные страницы. При
+       * инвалидации RTK Query перезапрашивает все загруженные страницы по порядку.
+       */
+      getChats: build.infiniteQuery<ChatsPageDto, ChatsQuery, string | null>({
+        infiniteQueryOptions: {
+          initialPageParam: null,
+          getNextPageParam: (lastPage) => lastPage.nextCursor,
+        },
+        query: ({ queryArg: { accountId, search, code }, pageParam }) => ({
+          url: `/telegram/accounts/${accountId}/chats`,
+          params: {
+            search: search || undefined,
+            code,
+            cursor: pageParam ?? undefined,
+            limit: CHATS_PAGE_SIZE,
+          },
+        }),
         providesTags: (_result, _error, { accountId }) => [{ type: CHAT_TAG, id: accountId }],
       }),
 
-      getMessages: build.query<Message[], MessagesQuery>({
-        query: ({ accountId, chatId }) => ({
+      /** Один чат — открыт по ссылке, а в загруженных страницах его может не быть. */
+      getChat: build.query<Chat, ChatQuery>({
+        query: ({ accountId, chatId }) => ({ url: `/telegram/accounts/${accountId}/chats/${chatId}` }),
+        providesTags: (_result, _error, { chatId }) => [{ type: CHAT_TAG, id: chatId }],
+      }),
+
+      /**
+       * Переписка страницами от новых к старым: «следующая» страница — более
+       * старые сообщения. При инвалидации RTK Query перезапрашивает загруженные
+       * страницы начиная со свежей, так что новые сообщения попадают в первую,
+       * а курсоры остальных пересчитываются от неё — без дыр и дублей.
+       */
+      getMessages: build.infiniteQuery<MessagesPageDto, ChatQuery, string | null>({
+        infiniteQueryOptions: {
+          initialPageParam: null,
+          getNextPageParam: (lastPage) => lastPage.nextCursor,
+        },
+        query: ({ queryArg: { accountId, chatId }, pageParam }) => ({
           url: `/telegram/accounts/${accountId}/chats/${chatId}/messages`,
+          params: { cursor: pageParam ?? undefined, limit: MESSAGES_PAGE_SIZE },
         }),
         providesTags: (_result, _error, { chatId }) => [{ type: MESSAGE_TAG, id: chatId }],
       }),
@@ -33,4 +67,9 @@ export const chatsApi = baseApi
     }),
   })
 
-export const { useGetChatsQuery, useGetMessagesQuery, useSendMessageMutation } = chatsApi
+export const {
+  useGetChatsInfiniteQuery,
+  useGetChatQuery,
+  useGetMessagesInfiniteQuery,
+  useSendMessageMutation,
+} = chatsApi

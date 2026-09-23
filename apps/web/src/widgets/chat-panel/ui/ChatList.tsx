@@ -1,71 +1,68 @@
 import { useMemo, useState } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import InputAdornment from '@mui/material/InputAdornment'
+import LinearProgress from '@mui/material/LinearProgress'
 import List from '@mui/material/List'
-import ListItemButton from '@mui/material/ListItemButton'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import SearchIcon from '@mui/icons-material/Search'
-import { formatChatListTime, pluralize } from '@/shared/lib'
-import { LeadCodeChip } from '@/entities/chat'
-import type { Chat } from '@/entities/chat'
-import { AccountAvatar } from '@/entities/telegram-account'
-import { chatPanelStyles as styles } from './ChatPanel.styles'
+import type { ChatCodeFilter, ChatsQuery } from '@/shared/api'
+import { getApiErrorMessage, pluralize, useDebouncedValue, useInfiniteScroll } from '@/shared/lib'
+import { useGetChatsInfiniteQuery } from '@/entities/chat'
+import { chatListStyles as styles } from './ChatList.styles'
+import { ChatListItem } from './ChatListItem'
 
-type ChatFilter = 'all' | 'with-code' | 'no-code'
+/** Пауза после ввода, прежде чем искать на сервере. */
+const SEARCH_DEBOUNCE_MS = 300
+/** Живые обновления приходят по SSE; опрос — страховка на случай обрыва. */
+const POLLING_INTERVAL_MS = 60_000
+
+type ChatFilter = 'all' | ChatCodeFilter
 
 const FILTERS: { key: ChatFilter; label: string }[] = [
   { key: 'all', label: 'Все' },
-  { key: 'with-code', label: 'С кодом' },
-  { key: 'no-code', label: 'Без кода' },
+  { key: 'with', label: 'С кодом' },
+  { key: 'without', label: 'Без кода' },
 ]
 
 interface ChatListProps {
-  chats: Chat[] | undefined
-  isLoading: boolean
+  accountId: string
   selectedId: string | null
   onSelect: (chatId: string) => void
 }
 
-function matchesFilter(chat: Chat, filter: ChatFilter): boolean {
-  switch (filter) {
-    case 'with-code':
-      return chat.leadCode !== null
-    case 'no-code':
-      return chat.leadCode === null
-    default:
-      return true
-  }
-}
-
-function matchesSearch(chat: Chat, query: string): boolean {
-  if (!query) return true
-  const haystack = [
-    chat.peer.name,
-    chat.peer.username ?? '',
-    chat.peer.phone ?? '',
-    chat.lastMessage.text,
-    chat.leadCode ? `код ${chat.leadCode}` : '',
-  ]
-    .join(' ')
-    .toLowerCase()
-  return haystack.includes(query)
-}
-
-export function ChatList({ chats, isLoading, selectedId, onSelect }: ChatListProps) {
+/** Список диалогов с серверным поиском и догрузкой страниц при прокрутке. */
+export function ChatList({ accountId, selectedId, onSelect }: ChatListProps) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<ChatFilter>('all')
+  const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS)
 
-  const visible = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    return (chats ?? []).filter((chat) => matchesFilter(chat, filter) && matchesSearch(chat, query))
-  }, [chats, filter, search])
+  const query: ChatsQuery = {
+    accountId,
+    search: debouncedSearch || undefined,
+    code: filter === 'all' ? undefined : filter,
+  }
+  const { data, error, isLoading, isFetching, isFetchingNextPage, hasNextPage, fetchNextPage } =
+    useGetChatsInfiniteQuery(query, { pollingInterval: POLLING_INTERVAL_MS })
+
+  const chats = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data])
+  const total = data?.pages[0]?.total ?? 0
+  const isFiltered = query.search !== undefined || query.code !== undefined
+
+  const { rootRef, sentinelRef } = useInfiniteScroll<HTMLUListElement>({
+    hasMore: hasNextPage,
+    // Пока перезапрашиваются уже загруженные страницы, новую не начинаем.
+    isLoading: isFetching,
+    onLoadMore: fetchNextPage,
+  })
 
   return (
-    <Box sx={styles.listPane}>
-      <Box sx={styles.listTools}>
+    <Box sx={styles.pane}>
+      <Box sx={styles.tools}>
         <TextField
           size="small"
           fullWidth
@@ -96,64 +93,55 @@ export function ChatList({ chats, isLoading, selectedId, onSelect }: ChatListPro
           ))}
         </Box>
       </Box>
+      <Box sx={styles.progressSlot}>
+        {isFetching && !isLoading && !isFetchingNextPage && <LinearProgress sx={styles.progress} />}
+      </Box>
 
-      <List disablePadding sx={styles.list}>
-        {isLoading &&
-          [0, 1, 2, 3, 4, 5].map((i) => (
-            <Box key={i} sx={{ display: 'flex', gap: 1.5, px: 1.5, py: 1.25 }}>
-              <Skeleton variant="circular" width={40} height={40} />
-              <Box sx={{ flexGrow: 1 }}>
-                <Skeleton width="60%" />
-                <Skeleton width="90%" />
-              </Box>
-            </Box>
-          ))}
+      <List ref={rootRef} disablePadding sx={styles.list}>
+        {error && (
+          <Alert severity="error" sx={styles.error}>
+            {getApiErrorMessage(error, 'Не удалось загрузить чаты')}
+          </Alert>
+        )}
 
-        {!isLoading && visible.length === 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ p: 3, textAlign: 'center' }}>
-            {chats && chats.length > 0 ? 'Ничего не найдено' : 'Чатов пока нет'}
+        {isLoading && <ListSkeleton />}
+
+        {!isLoading && !error && chats.length === 0 && (
+          <Typography variant="body2" color="text.secondary" sx={styles.message}>
+            {isFiltered ? 'Ничего не найдено' : 'Чатов пока нет'}
           </Typography>
         )}
 
-        {visible.map((chat) => {
-          const outgoing = chat.lastMessage.direction === 'out'
-          return (
-            <ListItemButton
-              key={chat.id}
-              selected={chat.id === selectedId}
-              onClick={() => onSelect(chat.id)}
-              sx={styles.listItem}
-            >
-              <AccountAvatar name={chat.peer.name} size={40} />
-              <Box sx={styles.listItemBody}>
-                <Box sx={styles.listItemTop}>
-                  <Typography sx={styles.peerName}>{chat.peer.name}</Typography>
-                  <Typography sx={styles.time}>
-                    {formatChatListTime(chat.lastMessage.sentAt)}
-                  </Typography>
-                </Box>
-                <Typography sx={styles.preview}>
-                  {outgoing ? 'Вы: ' : ''}
-                  {chat.lastMessage.text}
-                </Typography>
-                {chat.leadCode !== null && (
-                  <Box sx={styles.listItemBottom}>
-                    <LeadCodeChip code={chat.leadCode} />
-                  </Box>
-                )}
-              </Box>
-            </ListItemButton>
-          )
-        })}
+        {chats.map((chat) => (
+          <ChatListItem key={chat.id} chat={chat} selected={chat.id === selectedId} onSelect={onSelect} />
+        ))}
+
+        {isFetchingNextPage && (
+          <Box sx={styles.loadingMore}>
+            <CircularProgress size={20} />
+          </Box>
+        )}
+        <div ref={sentinelRef} />
       </List>
 
-      {chats && (
-        <Box sx={styles.listFooter}>
-          {visible.length === chats.length
-            ? pluralize(chats.length, ['чат', 'чата', 'чатов'])
-            : `${visible.length} из ${pluralize(chats.length, ['чата', 'чатов', 'чатов'])}`}
+      {data && (
+        <Box sx={styles.footer}>
+          {(isFiltered ? 'Найдено: ' : '') + pluralize(total, ['чат', 'чата', 'чатов'])}
+          {chats.length < total && ` · показано ${chats.length}`}
         </Box>
       )}
     </Box>
   )
+}
+
+function ListSkeleton() {
+  return [0, 1, 2, 3, 4, 5].map((i) => (
+    <Box key={i} sx={styles.skeletonRow}>
+      <Skeleton variant="circular" width={40} height={40} />
+      <Box sx={styles.skeletonText}>
+        <Skeleton width="60%" />
+        <Skeleton width="90%" />
+      </Box>
+    </Box>
+  ))
 }

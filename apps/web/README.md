@@ -42,9 +42,13 @@ npm run dev
   Фильтр периода (сегодня, вчера, 7 / 30 дней или произвольные даты) живёт в query-строке
   `?from=&to=`, плитки с итогами и дельтой к прошлому периоду, столбчатый
   график с накоплением по кодам, таблица кодов с долями и таблица по дням.
-- **Чаты** — список диалогов с поиском и фильтрами (с кодом, без кода) и
-  переписка с отправкой сообщений от имени аккаунта; первое сообщение диалога
-  помечено кодом. Выбранный чат — в URL.
+- **Чаты** — все диалоги аккаунта: список догружается по 100 при прокрутке
+  вниз, поиск и фильтры (с кодом, без кода) работают на сервере по всем
+  чатам, а не только по загруженным. Справа — переписка: открывается на
+  свежих сообщениях, при прокрутке вверх догружает более старые по 50, не
+  сбивая положение; отправка сообщений от имени аккаунта; первое сообщение
+  диалога помечено кодом. Выбранный чат — в URL, по прямой ссылке он
+  открывается, даже если в списке ещё не загружен.
 
 ## Архитектура (FSD)
 
@@ -80,7 +84,8 @@ src/
     api/                   baseApi (единственный createApi), провайдер токена,
                            tags.ts (реестр тегов кэша), contracts/ (DTO backend-API)
     config/                env, ROUTES, палитра графиков
-    lib/                   даты, форматирование, ошибки API, хелперы RTK Query
+    lib/                   даты, форматирование, ошибки API, хелперы RTK Query,
+                           хуки useDebouncedValue и useInfiniteScroll
     types/                 SxStyles
     ui/                    BrandMark, PageHeader, EmptyState, StatTile, StackedColumnChart,
                            QueryBoundary, SectionCard, FormDialog, ConfirmAction
@@ -196,9 +201,26 @@ VITE_API_URL=http://localhost:3000
 ### Telegram
 
 По умолчанию раздел ходит в `/telegram/*` backend'а (см.
-[apps/api/README.md](../api/README.md#telegram)). Списки аккаунтов, чатов и
-сообщений опрашиваются раз в 30 / 15 / 10 секунд, статистика — раз в минуту,
-так что новые сообщения появляются без перезагрузки.
+[apps/api/README.md](../api/README.md#telegram)). Новые сообщения приходят
+по SSE (см. «Живые события»); опрос — страховка на случай обрыва: аккаунты
+раз в 30 секунд, переписка — в 30, список чатов — в 60 (он перезапрашивает
+все загруженные страницы), статистика — раз в минуту.
+
+Список чатов — `build.infiniteQuery` в `entities/chat/api/chatsApi.ts`:
+страница — `ChatsPageDto`, следующая запрашивается с `cursor` из
+`nextCursor`. Догрузку по прокрутке даёт `shared/lib/useInfiniteScroll`
+(IntersectionObserver на маяке в конце списка), поиск уходит на сервер
+через `useDebouncedValue` с паузой 300 мс.
+
+Переписка — тоже `infiniteQuery`, но «следующая» страница там — более
+старые сообщения, а маяк стоит сверху (`useInfiniteScroll({ edge: 'top' })`).
+Положение ленты держит `widgets/chat-panel/lib/useFeedScroll`: внизу лента
+липнет к низу и докручивается за новыми сообщениями, выше — после каждого
+рендера на прежнее место возвращается первое видимое сообщение (его ищут по
+`data-message-id`). Так не прыгает ни подгрузка старых страниц сверху, ни
+новое сообщение снизу, ни перезапрос страниц, сдвигающий их границы.
+Встроенная подстройка браузера (`overflow-anchor`) в ленте выключена, чтобы
+не сдвигать дважды.
 
 Мока у раздела нет: без поднятого backend'а с настроенным Telegram страница
 аккаунтов покажет ошибку из ответа API (503 «Раздел Telegram не настроен»).
@@ -214,8 +236,10 @@ VITE_API_URL=http://localhost:3000
 | POST | `/telegram/accounts/sign-in` `{ attemptId, code }` | `SignInResponse` (`connected` или `password_required`) |
 | POST | `/telegram/accounts/password` `{ attemptId, password }` | `SubmitPasswordResponse` |
 | GET | `/telegram/accounts/:id/stats?from=YYYY-MM-DD&to=YYYY-MM-DD&tz=Europe/Moscow` | `AccountStatsDto` |
-| GET | `/telegram/accounts/:id/chats` | `ChatDto[]` |
-| GET | `/telegram/accounts/:id/chats/:chatId/messages` | `MessageDto[]` |
+| GET | `/telegram/accounts/:id/chats?cursor=&limit=100&search=&code=with\|without` | `ChatsPageDto` |
+| GET | `/telegram/accounts/:id/chats/:chatId` | `ChatDto` |
+| GET | `/telegram/accounts/:id/chats/:chatId/messages?cursor=&limit=50` | `MessagesPageDto` |
+| POST | `/telegram/accounts/:id/chats/:chatId/messages` `{ text }` | `MessageDto` |
 
 Ошибки ожидаются в формате NestJS: `{ "message": "..." }` — текст показывается
 пользователю как есть (`shared/lib/getApiErrorMessage.ts`).

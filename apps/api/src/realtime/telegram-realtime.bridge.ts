@@ -18,7 +18,9 @@ export class TelegramRealtimeBridge implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    this.subscription = this.events.events.subscribe((event) => this.forward(event));
+    this.subscription = this.events.events.subscribe((event) =>
+      this.forward(event),
+    );
   }
 
   onModuleDestroy(): void {

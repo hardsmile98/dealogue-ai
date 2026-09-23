@@ -38,9 +38,20 @@ export interface ChatDto {
   };
   messagesCount: number;
   firstMessageAt: string;
+  /** id первого сообщения диалога в Telegram — чтобы пометить его в переписке. */
+  firstTelegramMessageId: number | null;
   leadCode: string | null;
   /** До какого id собеседник прочитал наши сообщения. */
   readOutboxMaxId: number;
+}
+
+/** Страница списка чатов. */
+export interface ChatsPageDto {
+  items: ChatDto[];
+  /** Курсор следующей страницы; null — это последняя. */
+  nextCursor: string | null;
+  /** Сколько всего чатов подходит под фильтры запроса. */
+  total: number;
 }
 
 export interface MessageDto {
@@ -53,6 +64,13 @@ export interface MessageDto {
   sentAt: string;
   /** Когда собеседник прочитал наше исходящее. */
   readAt: string | null;
+}
+
+/** Страница переписки: сообщения по возрастанию времени. */
+export interface MessagesPageDto {
+  items: MessageDto[];
+  /** Курсор страницы с более старыми сообщениями; null — старше ничего нет. */
+  nextCursor: string | null;
 }
 
 export interface DailyStatsDto {
@@ -126,6 +144,7 @@ export function toChatDto(chat: TelegramChatEntity): ChatDto {
     },
     messagesCount: chat.messagesCount,
     firstMessageAt: (chat.firstMessageAt ?? lastAt).toISOString(),
+    firstTelegramMessageId: chat.firstMessageId,
     leadCode: chat.leadCode,
     readOutboxMaxId: chat.readOutboxMaxId,
   };
