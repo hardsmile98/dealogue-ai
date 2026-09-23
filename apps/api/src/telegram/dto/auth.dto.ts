@@ -1,8 +1,12 @@
-import { IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import { Trim } from '../../common/decorators/trim.decorator.js';
 
 // Правила срабатывают снизу вверх, а наружу уходит первая ошибка
 // (stopAtFirstError), поэтому «Введите …» стоит последним.
+
+// attemptId уходит в запрос по uuid-колонке: не-uuid без проверки дал бы
+// ошибку Postgres и ответ 500 вместо 400.
+const ATTEMPT_ID_INVALID = 'Некорректный идентификатор попытки входа';
 
 export class SendCodeDto {
   @MaxLength(32, { message: 'Номер слишком длинный' })
@@ -13,6 +17,7 @@ export class SendCodeDto {
 }
 
 export class SignInDto {
+  @IsUUID('all', { message: ATTEMPT_ID_INVALID })
   @IsString()
   @IsNotEmpty({ message: 'Не передан идентификатор попытки входа' })
   attemptId: string;
@@ -25,6 +30,7 @@ export class SignInDto {
 }
 
 export class SubmitPasswordDto {
+  @IsUUID('all', { message: ATTEMPT_ID_INVALID })
   @IsString()
   @IsNotEmpty({ message: 'Не передан идентификатор попытки входа' })
   attemptId: string;

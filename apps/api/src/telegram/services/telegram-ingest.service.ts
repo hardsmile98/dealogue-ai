@@ -1,11 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable } from '@nestjs/common';
 import type { Api } from 'teleproto';
-import { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
-import type { MessageDirection } from '../entities/telegram-chat.entity.js';
-import { TelegramMessageEntity } from '../entities/telegram-message.entity.js';
-import type { MediaKind } from '../entities/telegram-message.entity.js';
+import type { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
+import type { TelegramMessageEntity } from '../entities/telegram-message.entity.js';
+import {
+  mediaKindOf,
+  messageDirection,
+  messageSentAt,
+  messageText,
+  peerFieldsOf,
+} from '../lib/telegram-objects.js';
+import type { PeerFields } from '../lib/telegram-objects.js';
+import { TelegramChatsRepository } from '../repositories/telegram-chats.repository.js';
+import type { ChatIngestUpdate } from '../repositories/telegram-chats.repository.js';
+import { TelegramMessagesRepository } from '../repositories/telegram-messages.repository.js';
+import type { MessageRow } from '../repositories/telegram-messages.repository.js';
 import { TelegramDialogStartsService } from './telegram-dialog-starts.service.js';
 
 export interface StoreMessagesOptions {
@@ -15,274 +23,186 @@ export interface StoreMessagesOptions {
   firstMessage?: Api.Message | null;
 }
 
-/** Имя собеседника: «Имя Фамилия», иначе @username, иначе телефон. */
-export function displayNameOf(user: Api.User): string {
-  const full = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
-  if (full) return full;
-  if (user.username) return `@${user.username}`;
-  if (user.phone) return `+${user.phone}`;
-  return `Пользователь ${user.id.toString()}`;
-}
-
-/** Вид вложения по медиа сообщения; null — текст без вложений. */
-export function mediaKindOf(media: Api.TypeMessageMedia | undefined): MediaKind | null {
-  if (!media) return null;
-  switch (media.className) {
-    case 'MessageMediaPhoto':
-      return 'photo';
-    case 'MessageMediaDocument': {
-      const document = (media as Api.MessageMediaDocument).document;
-      const attributes =
-        document && document.className === 'Document'
-          ? (document as Api.Document).attributes
-          : [];
-      for (const attribute of attributes) {
-        if (attribute.className === 'DocumentAttributeSticker') return 'sticker';
-        if (attribute.className === 'DocumentAttributeAudio') {
-          return (attribute as Api.DocumentAttributeAudio).voice ? 'voice' : 'audio';
-        }
-        if (attribute.className === 'DocumentAttributeVideo') {
-          return (attribute as Api.DocumentAttributeVideo).roundMessage ? 'video_note' : 'video';
-        }
-      }
-      return 'document';
-    }
-    case 'MessageMediaWebPage':
-      // Превью ссылки — это всё ещё текст.
-      return null;
-    default:
-      return 'other';
-  }
-}
-
-/** Подпись для сообщения без текста. */
-export function describeMedia(media: Api.TypeMessageMedia | undefined): string {
-  if (!media) return '[Сообщение]';
-  switch (media.className) {
-    case 'MessageMediaPhoto':
-      return '[Фото]';
-    case 'MessageMediaContact':
-      return '[Контакт]';
-    case 'MessageMediaGeo':
-    case 'MessageMediaGeoLive':
-    case 'MessageMediaVenue':
-      return '[Геопозиция]';
-    case 'MessageMediaPoll':
-      return '[Опрос]';
-    case 'MessageMediaDocument': {
-      switch (mediaKindOf(media)) {
-        case 'sticker':
-          return '[Стикер]';
-        case 'voice':
-          return '[Голосовое сообщение]';
-        case 'audio':
-          return '[Аудио]';
-        case 'video_note':
-          return '[Видеосообщение]';
-        case 'video':
-          return '[Видео]';
-        default:
-          return '[Файл]';
-      }
-    }
-    default:
-      return '[Вложение]';
-  }
-}
-
-export function messageText(message: Api.Message): string {
-  const text = (message.message ?? '').trim();
-  return text || describeMedia(message.media);
-}
-
-export function messageDirection(message: Api.Message): MessageDirection {
-  return message.out ? 'out' : 'in';
-}
-
-/** Только обычные сообщения: сервисные («создал чат», «звонок») отбрасываем. */
-export function onlyMessages(items: Iterable<Api.TypeMessage | undefined>): Api.Message[] {
-  const result: Api.Message[] = [];
-  for (const item of items) {
-    if (item && item.className === 'Message') result.push(item as Api.Message);
-  }
-  return result;
-}
-
 /**
  * Запись чатов и сообщений в базу. Идемпотентна: повторная запись тех же
- * сообщений ничего не ломает (уникальный индекс + ON CONFLICT DO NOTHING).
+ * сообщений ничего не ломает. На одно живое сообщение уходит три запроса:
+ * найти чат, вставить сообщение, обновить агрегаты чата одним UPDATE.
  */
 @Injectable()
 export class TelegramIngestService {
-  private readonly logger = new Logger(TelegramIngestService.name);
-
   constructor(
-    @InjectRepository(TelegramChatEntity)
-    private readonly chats: Repository<TelegramChatEntity>,
-    @InjectRepository(TelegramMessageEntity)
-    private readonly messages: Repository<TelegramMessageEntity>,
+    private readonly chats: TelegramChatsRepository,
+    private readonly messages: TelegramMessagesRepository,
     private readonly dialogStarts: TelegramDialogStartsService,
   ) {}
 
   async upsertChat(accountId: string, user: Api.User): Promise<TelegramChatEntity> {
-    const peerId = user.id.toString();
-    const peerName = displayNameOf(user);
-    const peerUsername = user.username ?? null;
-    const peerPhone = user.phone ? `+${user.phone}` : null;
-    // access hash нужен, чтобы писать собеседнику после перезапуска, когда кэш сущностей пуст.
-    const peerAccessHash = user.accessHash ? user.accessHash.toString() : null;
-
-    const existing = await this.chats.findOne({ where: { accountId, peerId } });
-    if (existing) {
-      if (
-        existing.peerName !== peerName ||
-        existing.peerUsername !== peerUsername ||
-        existing.peerPhone !== peerPhone ||
-        (peerAccessHash !== null && existing.peerAccessHash !== peerAccessHash)
-      ) {
-        existing.peerName = peerName;
-        existing.peerUsername = peerUsername;
-        existing.peerPhone = peerPhone;
-        if (peerAccessHash !== null) existing.peerAccessHash = peerAccessHash;
-        await this.chats.save(existing);
-      }
-      return existing;
-    }
-
-    try {
-      return await this.chats.save(
-        this.chats.create({ accountId, peerId, peerName, peerUsername, peerPhone, peerAccessHash }),
-      );
-    } catch (error) {
-      // Гонка двух вставок (событие и синхронизация) — берём победителя.
-      const winner = await this.chats.findOne({ where: { accountId, peerId } });
-      if (winner) return winner;
-      throw error;
-    }
+    const chats = await this.upsertChats(accountId, [user]);
+    const chat = chats.get(user.id.toString());
+    if (!chat) throw new Error(`Чат с собеседником ${user.id.toString()} не сохранился`);
+    return chat;
   }
 
+  /**
+   * Чаты для пачки собеседников: одним запросом находит известные, одним —
+   * заводит новые, и только если имя, username или телефон поменялись,
+   * обновляет строку. Ключ результата — peerId.
+   */
+  async upsertChats(
+    accountId: string,
+    users: Api.User[],
+  ): Promise<Map<string, TelegramChatEntity>> {
+    const peers = new Map<string, PeerFields>();
+    for (const user of users) {
+      const peer = peerFieldsOf(user);
+      peers.set(peer.peerId, peer);
+    }
+
+    const byPeer = new Map<string, TelegramChatEntity>();
+    for (const chat of await this.chats.findByPeers(accountId, [...peers.keys()])) {
+      byPeer.set(chat.peerId, chat);
+    }
+
+    const missing = [...peers.values()].filter((peer) => !byPeer.has(peer.peerId));
+    if (missing.length > 0) {
+      for (const chat of await this.chats.insertMissing(accountId, missing)) {
+        byPeer.set(chat.peerId, chat);
+      }
+      // Остались те, кого параллельно успела завести другая запись.
+      const raced = missing.filter((peer) => !byPeer.has(peer.peerId));
+      for (const chat of await this.chats.findByPeers(accountId, raced.map((peer) => peer.peerId))) {
+        byPeer.set(chat.peerId, chat);
+      }
+    }
+
+    for (const peer of peers.values()) {
+      const chat = byPeer.get(peer.peerId);
+      if (!chat || !peerChanged(chat, peer)) continue;
+      const updated = await this.chats.updatePeer(chat.id, peer);
+      if (updated) byPeer.set(peer.peerId, updated);
+    }
+    return byPeer;
+  }
+
+  /**
+   * Сохраняет сообщения и обновляет агрегаты чата. Объект `chat` обновляется
+   * на месте — вызывающий код (события, синхронизация) видит свежие значения.
+   */
   async storeMessages(
     chat: TelegramChatEntity,
     items: Api.Message[],
     options: StoreMessagesOptions = {},
   ): Promise<void> {
-    const readMax = chat.readOutboxMaxId;
-    const rows = items.map((message) => {
+    const inserted = await this.messages.insertMany(chat.id, uniqueRows(items));
+
+    let first: ChatIngestUpdate['first'] = null;
+    if (options.firstMessage) {
+      const message = options.firstMessage;
       const direction = messageDirection(message);
-      return {
-        chatId: chat.id,
+      // Начало диалога со стороны собеседника — источник правды для статистики.
+      const leadCode =
+        direction === 'in' ? await this.dialogStarts.record(chat, message) : null;
+      if (direction === 'out') await this.dialogStarts.clear(chat.id);
+      first = {
+        at: messageSentAt(message),
         telegramMessageId: message.id,
         direction,
-        text: messageText(message),
-        mediaKind: mediaKindOf(message.media),
-        sentAt: new Date(message.date * 1000),
-        // Догруженное исходящее, которое собеседник уже прочитал, — сразу с отметкой.
-        readAt: direction === 'out' && message.id <= readMax ? new Date() : null,
+        leadCode,
       };
-    });
-
-    if (rows.length > 0) {
-      await this.messages
-        .createQueryBuilder()
-        .insert()
-        .into(TelegramMessageEntity)
-        .values(rows)
-        .orIgnore()
-        .execute();
     }
 
-    await this.refreshAggregates(chat, options);
+    await this.applyToChat(chat, inserted, options.total ?? 0, first);
   }
 
   /**
-   * Исходящее, которое отправили мы сами (менеджер из веба):
-   * пишем сразу, не дожидаясь эха от Telegram. Эхо потом попадёт в ON CONFLICT.
+   * Исходящее, которое отправили мы сами (менеджер из веба): пишем сразу,
+   * не дожидаясь эха от Telegram. Если эхо успело раньше — сообщение уже в
+   * базе и учтено в агрегатах, отдаём сохранённую строку.
    */
-  async storeOwnOutgoing(chat: TelegramChatEntity, message: Api.Message): Promise<TelegramMessageEntity> {
-    await this.messages
-      .createQueryBuilder()
-      .insert()
-      .into(TelegramMessageEntity)
-      .values({
-        chatId: chat.id,
-        telegramMessageId: message.id,
-        direction: 'out',
-        text: messageText(message),
-        mediaKind: mediaKindOf(message.media),
-        sentAt: new Date(message.date * 1000),
-        readAt: null,
-      })
-      .orIgnore()
-      .execute();
-    await this.refreshAggregates(chat, {});
-    const row = await this.messages.findOne({ where: { chatId: chat.id, telegramMessageId: message.id } });
-    if (!row) throw new Error(`Не удалось сохранить исходящее #${message.id}`);
-    return row;
+  async storeOwnOutgoing(
+    chat: TelegramChatEntity,
+    message: Api.Message,
+  ): Promise<TelegramMessageEntity> {
+    const [row] = await this.messages.insertMany(chat.id, [toMessageRow(message)]);
+    if (row) {
+      await this.applyToChat(chat, [row], 0, null);
+      return row;
+    }
+    const existing = await this.messages.findByTelegramId(chat.id, message.id);
+    if (!existing) throw new Error(`Не удалось сохранить исходящее #${message.id}`);
+    return existing;
   }
 
   /**
    * Собеседник прочитал наши сообщения до `maxId`: отмечаем исходящие и
-   * запоминаем границу на чате. Возвращает true, если что-то изменилось.
+   * сдвигаем границу на чате. Отметка идемпотентна и идёт первой — если
+   * сдвиг границы не запишется, следующее событие повторит всё целиком.
+   * Возвращает true, если граница сдвинулась.
    */
   async applyReadOutbox(chat: TelegramChatEntity, maxId: number): Promise<boolean> {
     if (maxId <= chat.readOutboxMaxId) return false;
-    const now = new Date();
-    await this.messages
-      .createQueryBuilder()
-      .update(TelegramMessageEntity)
-      .set({ readAt: now })
-      .where('chat_id = :chatId AND direction = :direction AND telegram_message_id <= :maxId AND read_at IS NULL', {
-        chatId: chat.id,
-        direction: 'out',
-        maxId,
-      })
-      .execute();
-    chat.readOutboxMaxId = maxId;
-    await this.chats.update(chat.id, { readOutboxMaxId: maxId });
-    return true;
+    await this.messages.markReadUpTo(chat.id, maxId);
+    const advanced = await this.chats.advanceReadOutbox(chat.id, maxId);
+    if (advanced) chat.readOutboxMaxId = maxId;
+    return advanced;
   }
 
-  /** Пересчитывает «последнее сообщение», счётчик и, если передано, первое сообщение. */
-  async refreshAggregates(
+  private async applyToChat(
     chat: TelegramChatEntity,
-    options: StoreMessagesOptions,
+    inserted: TelegramMessageEntity[],
+    total: number,
+    first: ChatIngestUpdate['first'],
   ): Promise<void> {
-    const latest = await this.messages.findOne({
-      where: { chatId: chat.id },
-      order: { sentAt: 'DESC', telegramMessageId: 'DESC' },
+    // Все сообщения уже были в базе, а счётчик не отстаёт от Telegram — писать нечего.
+    if (inserted.length === 0 && first === null && total <= chat.messagesCount) return;
+
+    const newest = inserted.reduce<TelegramMessageEntity | null>(
+      (best, row) => (best === null || isNewer(row, best) ? row : best),
+      null,
+    );
+    const updated = await this.chats.applyIngest(chat.id, {
+      inserted: inserted.length,
+      newest: newest && {
+        text: newest.text,
+        sentAt: newest.sentAt,
+        direction: newest.direction,
+      },
+      maxTelegramMessageId: Math.max(0, ...inserted.map((row) => row.telegramMessageId)),
+      total,
+      first,
     });
-    const maxRow = await this.messages
-      .createQueryBuilder('m')
-      .select('COALESCE(MAX(m.telegram_message_id), 0)', 'max')
-      .where('m.chat_id = :chatId', { chatId: chat.id })
-      .getRawOne<{ max: string | number }>();
-    const stored = await this.messages.count({ where: { chatId: chat.id } });
-
-    if (latest) {
-      chat.lastMessageText = latest.text;
-      chat.lastMessageAt = latest.sentAt;
-      chat.lastMessageDirection = latest.direction;
-    }
-    chat.lastTelegramMessageId = Number(maxRow?.max ?? 0);
-    chat.messagesCount = Math.max(stored, options.total ?? 0);
-
-    if (options.firstMessage) {
-      const first = options.firstMessage;
-      const direction = messageDirection(first);
-      chat.firstMessageAt = new Date(first.date * 1000);
-      chat.firstMessageId = first.id;
-      chat.firstMessageDirection = direction;
-      chat.historySynced = true;
-      if (direction === 'in') {
-        // Начало диалога со стороны собеседника — источник правды для статистики.
-        chat.leadCode = await this.dialogStarts.record(chat, first);
-      } else {
-        chat.leadCode = null;
-        await this.dialogStarts.clear(chat.id);
-      }
-    }
-
-    await this.chats.save(chat);
-    this.logger.debug(`Чат ${chat.id}: сообщений ${chat.messagesCount}, код ${chat.leadCode ?? '—'}`);
+    if (updated) Object.assign(chat, updated);
   }
+}
+
+function toMessageRow(message: Api.Message): MessageRow {
+  return {
+    telegramMessageId: message.id,
+    direction: messageDirection(message),
+    text: messageText(message),
+    mediaKind: mediaKindOf(message.media),
+    sentAt: messageSentAt(message),
+  };
+}
+
+/** Последние N и самые первые сообщения короткого диалога пересекаются — дубли не шлём. */
+function uniqueRows(items: Api.Message[]): MessageRow[] {
+  const rows = new Map<number, MessageRow>();
+  for (const message of items) rows.set(message.id, toMessageRow(message));
+  return [...rows.values()];
+}
+
+/** Порядок переписки: по времени, при равенстве — по id Telegram. */
+function isNewer(a: TelegramMessageEntity, b: TelegramMessageEntity): boolean {
+  const diff = a.sentAt.getTime() - b.sentAt.getTime();
+  return diff > 0 || (diff === 0 && a.telegramMessageId > b.telegramMessageId);
+}
+
+function peerChanged(chat: TelegramChatEntity, peer: PeerFields): boolean {
+  return (
+    chat.peerName !== peer.peerName ||
+    chat.peerUsername !== peer.peerUsername ||
+    chat.peerPhone !== peer.peerPhone ||
+    (peer.peerAccessHash !== null && chat.peerAccessHash !== peer.peerAccessHash)
+  );
 }

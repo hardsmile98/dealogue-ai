@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { RealtimeService } from '../realtime/realtime.service.js';
-import { TelegramRuntimeService } from '../telegram/services/telegram-runtime.service.js';
+import { TelegramRuntimeService } from '../telegram/runtime/telegram-runtime.service.js';
 
 /** Живость сервиса: база, подключённые аккаунты, подписчики SSE. */
 @Controller('health')

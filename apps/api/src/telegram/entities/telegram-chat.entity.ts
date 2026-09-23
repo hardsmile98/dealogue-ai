@@ -12,7 +12,6 @@ export type MessageDirection = 'in' | 'out';
 /** Личный диалог аккаунта с одним собеседником. */
 @Entity({ name: 'telegram_chats' })
 @Index(['accountId', 'peerId'], { unique: true })
-@Index(['accountId', 'firstMessageAt'])
 // Порядок списка чатов: COALESCE(last_message_at, -infinity) DESC, id DESC —
 // выражение декоратор не описывает, индекс создаёт миграция AccountChatsPageIndex.
 @Index('IDX_telegram_chats_account_last_id', { synchronize: false })

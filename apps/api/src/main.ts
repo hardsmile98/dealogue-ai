@@ -1,4 +1,5 @@
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
@@ -7,9 +8,10 @@ const DEFAULT_CORS_ORIGIN = 'http://localhost:5173';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService);
 
   app.enableCors({
-    origin: (process.env.CORS_ORIGIN ?? DEFAULT_CORS_ORIGIN)
+    origin: (config.get<string>('CORS_ORIGIN') ?? DEFAULT_CORS_ORIGIN)
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),
@@ -34,7 +36,17 @@ async function bootstrap() {
   // SIGTERM/SIGINT → onModuleDestroy: Telegram-клиенты закрываются штатно.
   app.enableShutdownHooks();
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(config.get<string>('PORT') ?? 3000);
 }
+
+// Последний рубеж. Фоновые задачи ловят свои ошибки сами (runDetached), но
+// если какая-то всё же ускользнёт, Node по умолчанию завершит процесс — и
+// вместе с ним оборвёт все подключения Telegram. Такой случай — баг: пишем
+// стек, чтобы его найти, и продолжаем работать.
+process.on('unhandledRejection', (reason) => {
+  new Logger('Process').error(
+    `Необработанный отказ промиса: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
+  );
+});
 
 await bootstrap();

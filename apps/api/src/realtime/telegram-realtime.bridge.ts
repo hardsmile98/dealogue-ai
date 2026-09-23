@@ -1,12 +1,13 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import type { Subscription } from 'rxjs';
-import { TelegramEventsService } from '../telegram/services/telegram-events.service.js';
-import type { TelegramLiveEvent } from '../telegram/services/telegram-events.service.js';
+import { TelegramEventsService } from '../telegram/runtime/telegram-events.service.js';
+import type { TelegramLiveEvent } from '../telegram/runtime/telegram-events.service.js';
 import { RealtimeService } from './realtime.service.js';
 
 /**
  * Пересылает в браузер события Telegram, по которым веб обновляет переписку:
  * новое сообщение (входящее или исходящее) и прочтение наших исходящих.
+ * Владелец аккаунта приходит в самом событии — в базу за ним не ходим.
  */
 @Injectable()
 export class TelegramRealtimeBridge implements OnModuleInit, OnModuleDestroy {
@@ -18,9 +19,7 @@ export class TelegramRealtimeBridge implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    this.subscription = this.events.events.subscribe((event) =>
-      this.forward(event),
-    );
+    this.subscription = this.events.subscribe((event) => this.forward(event));
   }
 
   onModuleDestroy(): void {
@@ -30,14 +29,14 @@ export class TelegramRealtimeBridge implements OnModuleInit, OnModuleDestroy {
   private forward(event: TelegramLiveEvent): void {
     switch (event.kind) {
       case 'message':
-        void this.realtime.publishForAccount(event.accountId, {
+        this.realtime.publish(event.userId, {
           type: 'message.created',
           accountId: event.accountId,
           chatId: event.chat.id,
         });
         return;
       case 'read':
-        void this.realtime.publishForAccount(event.accountId, {
+        this.realtime.publish(event.userId, {
           type: 'message.read',
           accountId: event.accountId,
           chatId: event.chat.id,

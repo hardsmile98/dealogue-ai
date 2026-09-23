@@ -1,14 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import type { Api, TelegramClient } from 'teleproto';
-import { TelegramAccountEntity } from '../entities/telegram-account.entity.js';
+import { sleep } from '../../common/async.js';
 import type { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
+import { onlyMessages, privateUserOf } from '../lib/telegram-objects.js';
+import type { DialogLike } from '../lib/telegram-objects.js';
 import { TelegramConfig } from '../telegram.config.js';
-import {
-  TelegramIngestService,
-  onlyMessages,
-} from './telegram-ingest.service.js';
+import { TelegramIngestService } from './telegram-ingest.service.js';
 
 /** Пауза между диалогами при первичной выгрузке — чтобы не ловить FLOOD_WAIT. */
 const DIALOG_PAUSE_MS = 150;
@@ -16,14 +13,6 @@ const DIALOG_PAUSE_MS = 150;
 const OLDEST_PROBE = 5;
 /** Сколько сообщений догружать за раз при досинхронизации. */
 const CATCH_UP_LIMIT = 200;
-
-interface DialogLike {
-  isUser: boolean;
-  entity?: unknown;
-  message?: Api.Message;
-  /** Сырой Api.Dialog — оттуда берём, до какого id собеседник прочитал наши сообщения. */
-  dialog?: { readOutboxMaxId?: number };
-}
 
 /** Итог прохода синхронизации — для логов рантайма. */
 export interface SyncStats {
@@ -33,53 +22,22 @@ export interface SyncStats {
   caughtUp: number;
 }
 
-/** Служебные аккаунты Telegram: уведомления (777000), Telegram Passport (42777). */
-const SERVICE_USER_IDS = new Set(['777000', '42777']);
-
-/** Не человек-собеседник: бот, «Избранное», удалённый аккаунт, служба Telegram, поддержка. */
-export function isNonHumanUser(user: Api.User): boolean {
-  return Boolean(
-    user.bot ||
-    user.self ||
-    user.deleted ||
-    user.support ||
-    SERVICE_USER_IDS.has(user.id.toString()),
-  );
-}
-
-/** Личный собеседник-человек из диалога или null. */
-export function privateUserOf(dialog: DialogLike): Api.User | null {
-  if (!dialog.isUser) return null;
-  const entity = dialog.entity as { className?: string } | undefined;
-  if (!entity || entity.className !== 'User') return null;
-  const user = entity as Api.User;
-  return isNonHumanUser(user) ? null : user;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
  * Выгрузка истории из Telegram в базу. Две стратегии:
  * - полная — при первом подключении: все личные диалоги, последние N
  *   сообщений и самое первое сообщение каждого;
  * - инкрементальная — по расписанию и после переподключения: свежие
  *   диалоги, догрузка того, что пропустили события.
+ * Статус аккаунта и отметку времени пишет рантайм по итогу прохода.
  */
 @Injectable()
 export class TelegramSyncService {
   constructor(
     private readonly config: TelegramConfig,
     private readonly ingest: TelegramIngestService,
-    @InjectRepository(TelegramAccountEntity)
-    private readonly accounts: Repository<TelegramAccountEntity>,
   ) {}
 
-  async fullSync(
-    accountId: string,
-    client: TelegramClient,
-  ): Promise<SyncStats> {
+  async fullSync(accountId: string, client: TelegramClient): Promise<SyncStats> {
     let processed = 0;
     for await (const dialog of client.iterDialogs({
       limit: this.config.dialogsLimit,
@@ -90,27 +48,28 @@ export class TelegramSyncService {
       processed += 1;
       await sleep(DIALOG_PAUSE_MS);
     }
-    await this.accounts.update(accountId, {
-      historySynced: true,
-      lastSyncAt: new Date(),
-    });
     return { dialogs: processed, caughtUp: processed };
   }
 
-  async incrementalSync(
-    accountId: string,
-    client: TelegramClient,
-  ): Promise<SyncStats> {
+  async incrementalSync(accountId: string, client: TelegramClient): Promise<SyncStats> {
     const dialogs = await client.getDialogs({
       limit: this.config.recentDialogsLimit,
     });
-    let seen = 0;
-    let caughtUp = 0;
+    const recent: { dialog: DialogLike; user: Api.User }[] = [];
     for (const dialog of dialogs) {
       const user = privateUserOf(dialog);
-      if (!user) continue;
-      seen += 1;
-      const chat = await this.ingest.upsertChat(accountId, user);
+      if (user) recent.push({ dialog, user });
+    }
+    // Все чаты свежих диалогов — парой запросов, а не по запросу на диалог.
+    const chats = await this.ingest.upsertChats(
+      accountId,
+      recent.map(({ user }) => user),
+    );
+
+    let caughtUp = 0;
+    for (const { dialog, user } of recent) {
+      const chat = chats.get(user.id.toString());
+      if (!chat) continue;
 
       if (!chat.historySynced) {
         await this.syncDialog(accountId, client, user, chat);
@@ -136,11 +95,14 @@ export class TelegramSyncService {
         caughtUp += 1;
       }
     }
-    await this.accounts.update(accountId, { lastSyncAt: new Date() });
-    return { dialogs: seen, caughtUp };
+    return { dialogs: recent.length, caughtUp };
   }
 
-  /** Один диалог: последние N сообщений плюс самое первое — для статистики. */
+  /**
+   * Один диалог: последние N сообщений плюс самое первое — для статистики.
+   * Если последние N и есть вся история (типичный короткий диалог с лидом),
+   * первое сообщение уже среди них и второй запрос в Telegram не нужен.
+   */
   async syncDialog(
     accountId: string,
     client: TelegramClient,
@@ -151,19 +113,18 @@ export class TelegramSyncService {
     const latest = await client.getMessages(user, {
       limit: this.config.messagesLimit,
     });
-    const oldest = await client.getMessages(user, {
-      limit: OLDEST_PROBE,
-      reverse: true,
+    const wholeHistory = (latest.total ?? latest.length) <= latest.length;
+    const oldest = wholeHistory
+      ? []
+      : await client.getMessages(user, { limit: OLDEST_PROBE, reverse: true });
+
+    const recent = onlyMessages(latest);
+    // latest идёт от новых к старым, oldest — от старых к новым.
+    const first = (wholeHistory ? recent.at(-1) : onlyMessages(oldest)[0]) ?? null;
+    await this.ingest.storeMessages(chat, [...recent, ...onlyMessages(oldest)], {
+      total: latest.total,
+      firstMessage: first,
     });
-    const first = onlyMessages(oldest)[0] ?? null;
-    await this.ingest.storeMessages(
-      chat,
-      [...onlyMessages(latest), ...onlyMessages(oldest)],
-      {
-        total: latest.total,
-        firstMessage: first,
-      },
-    );
     return chat;
   }
 }

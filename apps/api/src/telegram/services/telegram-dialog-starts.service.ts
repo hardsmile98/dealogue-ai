@@ -1,11 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
 import type { Api } from 'teleproto';
+import { runDetached } from '../../common/async.js';
+import { execute } from '../../database/sql.js';
 import type { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
 import { TelegramDialogStartEntity } from '../entities/telegram-dialog-start.entity.js';
 import type { DayCodeRow } from '../lib/account-stats.js';
 import { LEAD_CODE_PARSER_VERSION, parseLeadCode } from '../lib/lead-code.js';
+import { messageSentAt } from '../lib/telegram-objects.js';
 
 const RECLASSIFY_BATCH = 500;
 
@@ -15,13 +19,18 @@ const RECLASSIFY_BATCH = 500;
  * это единственный источник правды для вкладки «Статистика».
  */
 @Injectable()
-export class TelegramDialogStartsService {
+export class TelegramDialogStartsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(TelegramDialogStartsService.name);
 
   constructor(
     @InjectRepository(TelegramDialogStartEntity)
     private readonly starts: Repository<TelegramDialogStartEntity>,
   ) {}
+
+  /** Если парсер кодов обновился — пересчитать старые начала диалогов, не мешая старту. */
+  onApplicationBootstrap(): void {
+    runDetached(this.reclassifyOutdated(), this.logger, 'Переклассификация не удалась');
+  }
 
   /**
    * Фиксирует начало диалога по первому сообщению собеседника.
@@ -39,7 +48,7 @@ export class TelegramDialogStartsService {
         accountId: chat.accountId,
         chatId: chat.id,
         telegramMessageId: first.id,
-        startedAt: new Date(first.date * 1000),
+        startedAt: messageSentAt(first),
         text,
         leadCode: match?.code ?? null,
         leadMarker: match?.marker ?? null,
@@ -49,6 +58,7 @@ export class TelegramDialogStartsService {
         ['telegram_message_id', 'started_at', 'text', 'lead_code', 'lead_marker', 'parser_version', 'updated_at'],
         ['chat_id'],
       )
+      .updateEntity(false)
       .execute();
     return match?.code ?? null;
   }
@@ -59,31 +69,45 @@ export class TelegramDialogStartsService {
   }
 
   /**
-   * Пересчитывает коды строк, размеченных старым парсером. Запускается при
-   * старте и вручную; идёт пачками, чтобы не держать транзакцию долго.
+   * Пересчитывает коды строк, размеченных старым парсером. Пачка — одна
+   * транзакция из двух UPDATE: начала диалогов и код в списке чатов не
+   * расходятся, даже если процесс упадёт посреди пересчёта.
    */
   async reclassifyOutdated(): Promise<number> {
     let updated = 0;
     for (;;) {
       const batch = await this.starts.find({
+        select: { id: true, chatId: true, text: true },
         where: { parserVersion: LessThan(LEAD_CODE_PARSER_VERSION) },
         take: RECLASSIFY_BATCH,
         order: { startedAt: 'ASC' },
       });
       if (batch.length === 0) break;
-      for (const row of batch) {
-        const match = parseLeadCode(row.text);
-        row.leadCode = match?.code ?? null;
-        row.leadMarker = match?.marker ?? null;
-        row.parserVersion = LEAD_CODE_PARSER_VERSION;
-      }
-      await this.starts.save(batch);
-      // Список чатов показывает код из своей колонки — держим в согласии.
-      await this.starts.query(
-        `UPDATE telegram_chats c SET lead_code = s.lead_code
-         FROM telegram_dialog_starts s WHERE s.chat_id = c.id AND c.id = ANY($1::uuid[])`,
-        [batch.map((row) => row.chatId)],
-      );
+
+      const parsed = batch.map((row) => parseLeadCode(row.text));
+      await this.starts.manager.transaction(async (manager) => {
+        await execute(
+          manager,
+          `UPDATE telegram_dialog_starts s
+           SET lead_code = p.lead_code, lead_marker = p.lead_marker, parser_version = $4::int, updated_at = now()
+           FROM unnest($1::uuid[], $2::varchar[], $3::varchar[]) AS p(id, lead_code, lead_marker)
+           WHERE s.id = p.id`,
+          [
+            batch.map((row) => row.id),
+            parsed.map((match) => match?.code ?? null),
+            parsed.map((match) => match?.marker ?? null),
+            LEAD_CODE_PARSER_VERSION,
+          ],
+        );
+        // Список чатов показывает код из своей колонки — держим в согласии.
+        await execute(
+          manager,
+          `UPDATE telegram_chats c SET lead_code = s.lead_code, updated_at = now()
+           FROM telegram_dialog_starts s
+           WHERE s.chat_id = c.id AND s.id = ANY($1::uuid[])`,
+          [batch.map((row) => row.id)],
+        );
+      });
       updated += batch.length;
     }
     if (updated > 0) {

@@ -21,6 +21,7 @@ import { DropGenderSource1700000000012 } from './migrations/1700000000012-DropGe
 import { DropAiAgent1700000000013 } from './migrations/1700000000013-DropAiAgent.js';
 import { AccountChatsPageIndex1700000000014 } from './migrations/1700000000014-AccountChatsPageIndex.js';
 import { ChatMessagesPageIndex1700000000015 } from './migrations/1700000000015-ChatMessagesPageIndex.js';
+import { DropChatsFirstMessageIndex1700000000016 } from './migrations/1700000000016-DropChatsFirstMessageIndex.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -29,19 +30,38 @@ export interface DatabaseConfig {
   password: string;
   database: string;
   logging: boolean;
+  /** Соединений в пуле. */
+  poolSize: number;
+  /**
+   * Дольше этого Postgres прерывает запрос сам: зависший запрос не держит
+   * соединение из пула вечно. 0 — без ограничения (так работают миграции).
+   */
+  statementTimeoutMs: number;
+  /** Запросы дольше этого TypeORM пишет в лог как медленные. */
+  slowQueryMs: number;
+}
+
+/** Источник переменных: ConfigService в приложении, process.env в CLI. */
+export type EnvReader = (key: string) => string | undefined;
+
+export function readDatabaseConfig(read: EnvReader): DatabaseConfig {
+  return {
+    host: read('DB_HOST') ?? 'localhost',
+    port: readPositiveInt(read, 'DB_PORT', 5432),
+    username: read('DB_USER') ?? 'dealogue',
+    password: read('DB_PASSWORD') ?? 'dealogue',
+    database: read('DB_NAME') ?? 'dealogue',
+    logging: read('DB_LOGGING') === 'true',
+    poolSize: readPositiveInt(read, 'DB_POOL_SIZE', 10),
+    statementTimeoutMs: readPositiveInt(read, 'DB_STATEMENT_TIMEOUT_MS', 30_000),
+    slowQueryMs: readPositiveInt(read, 'DB_SLOW_QUERY_MS', 1_000),
+  };
 }
 
 export function readDatabaseConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): DatabaseConfig {
-  return {
-    host: env.DB_HOST ?? 'localhost',
-    port: Number(env.DB_PORT ?? 5432),
-    username: env.DB_USER ?? 'dealogue',
-    password: env.DB_PASSWORD ?? 'dealogue',
-    database: env.DB_NAME ?? 'dealogue',
-    logging: env.DB_LOGGING === 'true',
-  };
+  return readDatabaseConfig((key) => env[key]);
 }
 
 /**
@@ -61,6 +81,22 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
     password: config.password,
     database: config.database,
     logging: config.logging,
+    applicationName: 'dealogue-api',
+    poolSize: config.poolSize,
+    // И на новое соединение, и на ожидание свободного в пуле: при исчерпанном
+    // пуле запрос падает с понятной ошибкой, а не висит.
+    connectTimeoutMS: 10_000,
+    maxQueryExecutionTime: config.slowQueryMs,
+    extra: {
+      ...(config.statementTimeoutMs > 0
+        ? { statement_timeout: config.statementTimeoutMs }
+        : {}),
+      // Транзакция, брошенная открытой, не держит блокировки дольше минуты.
+      idle_in_transaction_session_timeout: 60_000,
+      // Простаивающие соединения закрываются, оборванные TCP видны по keepalive.
+      idleTimeoutMillis: 30_000,
+      keepAlive: true,
+    },
     entities: [
       UserEntity,
       TelegramAccountEntity,
@@ -86,8 +122,15 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       DropAiAgent1700000000013,
       AccountChatsPageIndex1700000000014,
       ChatMessagesPageIndex1700000000015,
+      DropChatsFirstMessageIndex1700000000016,
     ],
     // Схему меняем только миграциями.
     synchronize: false,
   };
+}
+
+function readPositiveInt(read: EnvReader, key: string, fallback: number): number {
+  const raw = read(key);
+  const value = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
 }

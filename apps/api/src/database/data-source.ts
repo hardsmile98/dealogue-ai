@@ -5,5 +5,9 @@ import { buildTypeOrmOptions, readDatabaseConfigFromEnv } from './database.confi
 /**
  * Точка входа для CLI TypeORM (`npm run migration:*`).
  * Приложение свой DataSource собирает в AppModule через ConfigService.
+ * Миграциям таймаут запросов не ставим: индекс на большой таблице строится
+ * дольше, чем разумно ждать обычный запрос.
  */
-export default new DataSource(buildTypeOrmOptions(readDatabaseConfigFromEnv()));
+export default new DataSource(
+  buildTypeOrmOptions({ ...readDatabaseConfigFromEnv(), statementTimeoutMs: 0 }),
+);
