@@ -17,3 +17,4 @@ export {
 export { formatNumber, formatPhone, formatShare, pluralize } from './format'
 export { useDebouncedValue } from './useDebouncedValue'
 export { useInfiniteScroll } from './useInfiniteScroll'
+export { useStoredState } from './useStoredState'

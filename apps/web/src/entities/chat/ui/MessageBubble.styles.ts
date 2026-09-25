@@ -56,6 +56,14 @@ export const messageBubbleStyles = {
   readMarkRead: {
     color: 'primary.main',
   },
+  action: {
+    display: 'inline-flex',
+    opacity: 0,
+    transition: 'opacity 120ms',
+  },
+  withAction: {
+    '&:hover .bubble-action, & .bubble-action:focus-within': { opacity: 1 },
+  },
   firstBadge: {
     mb: 0.75,
     display: 'flex',

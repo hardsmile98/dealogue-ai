@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Skeleton from '@mui/material/Skeleton'
@@ -13,9 +14,11 @@ interface ChatThreadHeaderProps {
   /** undefined — чат ещё грузится. */
   chat: Chat | undefined
   onBack?: () => void
+  /** Действия справа: «В песочницу». */
+  actions?: ReactNode
 }
 
-export function ChatThreadHeader({ chat, onBack }: ChatThreadHeaderProps) {
+export function ChatThreadHeader({ chat, onBack, actions }: ChatThreadHeaderProps) {
   const peerMeta = chat
     ? [chat.peer.username ? `@${chat.peer.username}` : null, chat.peer.phone].filter(Boolean).join(' · ')
     : ''
@@ -38,6 +41,7 @@ export function ChatThreadHeader({ chat, onBack }: ChatThreadHeaderProps) {
               <span>Первое сообщение {formatDateTime(chat.firstMessageAt)}</span>
             </Box>
           </Box>
+          {actions}
         </>
       ) : (
         <>

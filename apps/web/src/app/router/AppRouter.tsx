@@ -21,6 +21,15 @@ const AccountStatsPage = lazy(async () => ({
 const AccountChatsPage = lazy(async () => ({
   default: (await import('@/pages/account')).AccountChatsPage,
 }))
+const AccountBotPage = lazy(async () => ({
+  default: (await import('@/pages/account')).AccountBotPage,
+}))
+const AccountHandoffsPage = lazy(async () => ({
+  default: (await import('@/pages/account')).AccountHandoffsPage,
+}))
+const AccountSandboxPage = lazy(async () => ({
+  default: (await import('@/pages/account')).AccountSandboxPage,
+}))
 
 const router = createBrowserRouter([
   {
@@ -48,6 +57,10 @@ const router = createBrowserRouter([
               { path: 'stats', element: <AccountStatsPage /> },
               { path: 'chats', element: <AccountChatsPage /> },
               { path: 'chats/:chatId', element: <AccountChatsPage /> },
+              { path: 'bot', element: <AccountBotPage /> },
+              { path: 'handoffs', element: <AccountHandoffsPage /> },
+              { path: 'sandbox', element: <AccountSandboxPage /> },
+              { path: 'sandbox/:sessionId', element: <AccountSandboxPage /> },
             ],
           },
         ],

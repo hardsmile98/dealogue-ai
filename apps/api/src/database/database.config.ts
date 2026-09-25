@@ -1,4 +1,15 @@
 import type { DataSourceOptions } from 'typeorm';
+import { BotAccountSettingsEntity } from '../bot/entities/bot-account-settings.entity.js';
+import { BotChatSaidEntity } from '../bot/entities/bot-chat-said.entity.js';
+import { BotChatStateEntity } from '../bot/entities/bot-chat-state.entity.js';
+import { BotClientFactEntity } from '../bot/entities/bot-client-fact.entity.js';
+import { BotExampleEntity } from '../bot/entities/bot-example.entity.js';
+import { BotJobEntity } from '../bot/entities/bot-job.entity.js';
+import { BotLibraryItemEntity } from '../bot/entities/bot-library-item.entity.js';
+import { BotPromptSnapshotEntity } from '../bot/entities/bot-prompt-snapshot.entity.js';
+import { BotSandboxMessageEntity } from '../bot/entities/bot-sandbox-message.entity.js';
+import { BotSandboxSessionEntity } from '../bot/entities/bot-sandbox-session.entity.js';
+import { BotTurnEntity } from '../bot/entities/bot-turn.entity.js';
 import { TelegramAccountEntity } from '../telegram/entities/telegram-account.entity.js';
 import { TelegramChatEntity } from '../telegram/entities/telegram-chat.entity.js';
 import { TelegramDialogStartEntity } from '../telegram/entities/telegram-dialog-start.entity.js';
@@ -22,6 +33,8 @@ import { DropAiAgent1700000000013 } from './migrations/1700000000013-DropAiAgent
 import { AccountChatsPageIndex1700000000014 } from './migrations/1700000000014-AccountChatsPageIndex.js';
 import { ChatMessagesPageIndex1700000000015 } from './migrations/1700000000015-ChatMessagesPageIndex.js';
 import { DropChatsFirstMessageIndex1700000000016 } from './migrations/1700000000016-DropChatsFirstMessageIndex.js';
+import { CreateBotTables1700000000017 } from './migrations/1700000000017-CreateBotTables.js';
+import { CreateBotSandbox1700000000018 } from './migrations/1700000000018-CreateBotSandbox.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -104,6 +117,17 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       TelegramChatEntity,
       TelegramMessageEntity,
       TelegramDialogStartEntity,
+      BotAccountSettingsEntity,
+      BotLibraryItemEntity,
+      BotExampleEntity,
+      BotChatStateEntity,
+      BotClientFactEntity,
+      BotChatSaidEntity,
+      BotJobEntity,
+      BotTurnEntity,
+      BotPromptSnapshotEntity,
+      BotSandboxSessionEntity,
+      BotSandboxMessageEntity,
     ],
     migrations: [
       CreateUsersTable1700000000000,
@@ -123,6 +147,8 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       AccountChatsPageIndex1700000000014,
       ChatMessagesPageIndex1700000000015,
       DropChatsFirstMessageIndex1700000000016,
+      CreateBotTables1700000000017,
+      CreateBotSandbox1700000000018,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

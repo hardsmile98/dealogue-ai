@@ -17,3 +17,14 @@ export const ACCOUNT_STATS_TAG = 'AccountStats' as const
 export const CHAT_TAG = 'Chat' as const
 /** Переписка одного диалога (id = chatId). */
 export const MESSAGE_TAG = 'Message' as const
+
+/** Настройки агента на аккаунте вместе со счётчиками библиотеки (id = accountId). */
+export const BOT_SETTINGS_TAG = 'BotSettings' as const
+/** Состояние агента в чате (id = chatId). */
+export const BOT_CHAT_TAG = 'BotChat' as const
+/** Сессии песочницы агента: список (id = accountId) и одна сессия (id = sessionId). */
+export const BOT_SANDBOX_TAG = 'BotSandbox' as const
+/** Библиотека агента (id = accountId). */
+export const BOT_LIBRARY_TAG = 'BotLibrary' as const
+/** Примеры диалогов агента (id = accountId). */
+export const BOT_EXAMPLES_TAG = 'BotExamples' as const

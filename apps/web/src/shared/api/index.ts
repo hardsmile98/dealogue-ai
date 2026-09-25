@@ -4,7 +4,17 @@ export { setAuthTokenProvider, getAuthToken } from './authToken'
 export { connectRealtime } from './realtime'
 export type { RealtimeConnection } from './realtime'
 
-export { ACCOUNT_STATS_TAG, CHAT_TAG, MESSAGE_TAG, TELEGRAM_ACCOUNT_TAG } from './tags'
+export {
+  ACCOUNT_STATS_TAG,
+  BOT_CHAT_TAG,
+  BOT_EXAMPLES_TAG,
+  BOT_LIBRARY_TAG,
+  BOT_SANDBOX_TAG,
+  BOT_SETTINGS_TAG,
+  CHAT_TAG,
+  MESSAGE_TAG,
+  TELEGRAM_ACCOUNT_TAG,
+} from './tags'
 
 /**
  * Контракты backend-API. Реэкспортируются целиком: это зеркала серверных
@@ -13,3 +23,4 @@ export { ACCOUNT_STATS_TAG, CHAT_TAG, MESSAGE_TAG, TELEGRAM_ACCOUNT_TAG } from '
  */
 export * from './contracts/telegram'
 export * from './contracts/realtime'
+export * from './contracts/bot'

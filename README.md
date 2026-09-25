@@ -66,7 +66,8 @@ TELEGRAM_MTPROXY=host:port:secret[,host2:port2:secret2]
 ## Бот
 
 Прежний ИИ-агент удалён целиком (код, таблицы, экраны) — бот пишется заново.
-Заметки о логике работы с лидом — [docs/new-ai-agent.md](docs/new-ai-agent.md),
+Архитектура и решения — [docs/agent-architecture.md](docs/agent-architecture.md),
+заметки о логике работы с лидом — [docs/new-ai-agent.md](docs/new-ai-agent.md),
 исходные таблицы фраз и диагностик — в [docs/source](docs/source/README.md).
 
 ## Подробности
