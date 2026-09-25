@@ -108,6 +108,11 @@ export class TelegramOutboundService {
     return this.runtime.getClient(accountId) !== null;
   }
 
+  /** Подключён и догрузил пропущенное за время офлайна (TelegramRuntimeService.isCaughtUp). */
+  isCaughtUp(accountId: string): boolean {
+    return this.runtime.isCaughtUp(accountId);
+  }
+
   // --- внутреннее -----------------------------------------------------------
 
   private requireClient(accountId: string): TelegramClient {

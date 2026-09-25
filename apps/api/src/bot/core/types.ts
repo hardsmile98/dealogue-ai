@@ -159,8 +159,10 @@ export const NUDGES = [
 export type Nudge = (typeof NUDGES)[number];
 
 /**
- * Виды заданий планировщика: ступени лестницы молчания (раздел 2.4) и
- * `reply` — повтор ответа клиенту после сбоя (раздел 10).
+ * Виды заданий планировщика: ступени лестницы молчания (раздел 2.4),
+ * `reply` — повтор ответа клиенту после сбоя (раздел 10) и `resume` —
+ * досылка хода, текст которого уже собран и проверен (после перезапуска
+ * API или сбоя отправки; `payload.turnId`).
  */
 export const JOB_KINDS = [
   'diagnostic',
@@ -171,6 +173,7 @@ export const JOB_KINDS = [
   'prices',
   'unread_reminder',
   'reply',
+  'resume',
 ] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 
@@ -280,7 +283,9 @@ export interface TurnRequest {
   generationSeq: number;
 }
 
-export type TurnStatus = 'sent' | 'handoff' | 'skipped' | 'failed';
+/** `interrupted` — остановка API: ход доведёт восстановление после старта. */
+export type TurnStatus =
+  'sent' | 'handoff' | 'skipped' | 'failed' | 'interrupted';
 
 export interface TurnResult {
   turnId: string;

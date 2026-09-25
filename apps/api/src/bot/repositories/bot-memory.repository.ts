@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { execute } from '../../database/sql.js';
 import { FACTS_LIMIT, readCard } from '../core/memory.js';
 import type { FactsUpdate } from '../core/memory.js';
@@ -119,15 +119,20 @@ export class BotMemoryRepository {
     });
   }
 
-  /** Сказанное ходом — все записи с одним временем. */
+  /**
+   * Сказанное ходом — все записи с одним временем. С `db` — внутри
+   * транзакции закрытия хода (TurnDeliveryService.finish).
+   */
   addSaid(
     chatId: string,
     entries: readonly Omit<SaidEntry, 'at'>[],
     at: Date,
+    db?: EntityManager,
   ): Promise<void> {
     return this.addSaidEntries(
       chatId,
       entries.map((entry) => ({ ...entry, at })),
+      db,
     );
   }
 
@@ -135,9 +140,11 @@ export class BotMemoryRepository {
   async addSaidEntries(
     chatId: string,
     entries: readonly SaidEntry[],
+    db: EntityManager = this.said.manager,
   ): Promise<void> {
     if (entries.length === 0) return;
-    await this.said.insert(
+    await db.insert(
+      BotChatSaidEntity,
       entries.map((entry) => ({
         chatId,
         kind: entry.kind,
@@ -156,9 +163,10 @@ export class BotMemoryRepository {
       reminders: number;
       lastHandledMessageId: number | null;
     },
+    db: EntityManager = this.states.manager,
   ): Promise<void> {
     await execute(
-      this.states.manager,
+      db,
       `UPDATE bot_chat_state SET
          turns_without_nudge = CASE WHEN $2::boolean THEN 0 ELSE turns_without_nudge + 1 END,
          reminders_sent = reminders_sent + $3::int,
@@ -182,9 +190,10 @@ export class BotMemoryRepository {
     chatId: string,
     reason: HandoffReason,
     label: ChatLabel | null,
+    db: EntityManager = this.states.manager,
   ): Promise<void> {
     await execute(
-      this.states.manager,
+      db,
       `UPDATE bot_chat_state SET mode = 'manager', handoff_reason = $2::varchar, handoff_at = now(), label = $3::varchar, updated_at = now()
        WHERE chat_id = $1::uuid`,
       [chatId, reason, label],

@@ -1,4 +1,3 @@
-import { sleep } from '../../common/async.js';
 import type { HistoryMessage } from './types.js';
 
 /**
@@ -20,7 +19,26 @@ export interface Channel {
 
 export interface Clock {
   now(): Date;
-  sleep(ms: number): Promise<void>;
+  /** Пауза; с `signal` — прерываемая остановкой API (`TurnInterrupted`). */
+  sleep(ms: number, signal?: AbortSignal): Promise<void>;
+}
+
+/**
+ * Ход остановлен выключением API в безопасной точке: пауза или обращение к
+ * модели прерваны, начатая отправка в Telegram — нет. Это не сбой: журнал и
+ * задания остаются как есть, после старта ход подхватит восстановление
+ * (services/bot-recovery.service.ts) — повторит или дошлёт.
+ */
+export class TurnInterrupted extends Error {
+  constructor() {
+    super('ход прерван остановкой API');
+    this.name = 'TurnInterrupted';
+  }
+}
+
+/** Бросает `TurnInterrupted`, если API уже останавливается. */
+export function throwIfInterrupted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new TurnInterrupted();
 }
 
 export class RealClock implements Clock {
@@ -28,8 +46,22 @@ export class RealClock implements Clock {
     return new Date();
   }
 
-  sleep(ms: number): Promise<void> {
-    return sleep(ms);
+  sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new TurnInterrupted());
+        return;
+      }
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new TurnInterrupted());
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
   }
 }
 
@@ -48,7 +80,8 @@ export class VirtualClock implements Clock {
     return new Date(this.time);
   }
 
-  async sleep(ms: number): Promise<void> {
+  async sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    throwIfInterrupted(signal);
     this.time += Math.max(0, ms);
   }
 

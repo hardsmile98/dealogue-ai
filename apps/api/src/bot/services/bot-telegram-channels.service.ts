@@ -34,8 +34,18 @@ export class BotTelegramChannels {
     private readonly events: TelegramEventsService,
   ) {}
 
-  isOnline(accountId: string): boolean {
-    return this.outbound.isOnline(accountId);
+  /**
+   * Канал готов к ходу: клиент подключён и первая синхронизация после
+   * подключения прошла. Раньше база отстаёт от Telegram — можно напомнить
+   * клиенту, который уже ответил, пока API стоял.
+   */
+  isReady(accountId: string): boolean {
+    return this.outbound.isCaughtUp(accountId);
+  }
+
+  /** Почему канал не готов: `syncing` — подключён и догружает пропущенное. */
+  unavailable(accountId: string): 'syncing' | 'offline' {
+    return this.outbound.isOnline(accountId) ? 'syncing' : 'offline';
   }
 
   forAccount(accountId: string): Channel {

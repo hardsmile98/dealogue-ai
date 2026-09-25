@@ -2,19 +2,33 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 /** `restore` — память по уже идущей переписке (чат, скопированный в песочницу), без отправки. */
 export type BotTurnTrigger = 'client' | 'schedule' | 'restore';
-/** `done` — ход без отправки, который выполнил свою работу (восстановление памяти). */
+/**
+ * `done` — ход без отправки, который выполнил свою работу (восстановление
+ * памяти); `interrupted` — API остановился раньше, чем текст был собран:
+ * ничего не ушло, ход повторён заново и ключ идемпотентности не держит.
+ */
 export type BotTurnStatus =
-  'running' | 'sent' | 'handoff' | 'skipped' | 'failed' | 'done';
+  | 'running'
+  | 'sent'
+  | 'handoff'
+  | 'skipped'
+  | 'failed'
+  | 'done'
+  | 'interrupted';
 
 /**
  * Журнал ходов: отвечает на «почему агент так сказал». Вход, анализ, план,
  * черновик, замечания проверяющего, итог жёстких проверок, что и с какой
- * задержкой ушло. Ключ идемпотентности пишется до первой отправки — после
- * перезапуска ход с известным ключом повторно не отправляется.
+ * задержкой ушло. Ключ идемпотентности пишется до первой отправки: второй
+ * ход с тем же ключом не начнётся. Прерванный до фиксации ход
+ * (`interrupted`) ключ отпускает — его повтор должен пройти.
  */
 @Entity({ name: 'bot_turns' })
 @Index(['chatId', 'startedAt'])
-@Index(['idempotencyKey'], { unique: true })
+@Index('UQ_bot_turns_idempotency_key_active', ['idempotencyKey'], {
+  unique: true,
+  where: "status <> 'interrupted'",
+})
 export class BotTurnEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -59,6 +73,14 @@ export class BotTurnEntity {
   /** Что ушло: текст, задержка, telegram_message_id. */
   @Column({ type: 'jsonb', nullable: true })
   sent: Record<string, unknown> | null;
+
+  /**
+   * Точка фиксации: собранный текст и план задержек (core/resume.ts →
+   * DeliveryRecord). Есть — ход после остановки API досылается, нет —
+   * повторяется целиком.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  delivery: Record<string, unknown> | null;
 
   @Column({ type: 'text', nullable: true })
   error: string | null;

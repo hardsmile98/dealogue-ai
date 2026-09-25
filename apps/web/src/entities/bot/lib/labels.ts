@@ -96,6 +96,7 @@ export const JOB_KIND_LABELS: Record<string, string> = {
   prices: 'Отправить цены',
   unread_reminder: 'Напомнить о себе',
   reply: 'Повторить ответ клиенту',
+  resume: 'Дослать ответ',
 };
 
 export const JOB_STATUS_LABELS: Record<string, string> = {
@@ -125,6 +126,7 @@ export const TURN_STATUS_LABELS: Record<
   handoff: { label: 'менеджеру', color: 'warning' },
   skipped: { label: 'пропущен', color: 'default' },
   failed: { label: 'ошибка', color: 'error' },
+  interrupted: { label: 'прерван перезапуском', color: 'default' },
 };
 
 export const TOPIC_LABELS: Record<string, string> = {

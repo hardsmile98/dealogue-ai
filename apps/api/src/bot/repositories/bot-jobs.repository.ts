@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { execute, hydrate } from '../../database/sql.js';
 import type { JobKind } from '../core/types.js';
 import { BotJobEntity } from '../entities/bot-job.entity.js';
@@ -13,7 +13,8 @@ export interface NewJob {
 }
 
 /**
- * Отложенные ходы: ступени лестницы молчания и повторы после сбоя.
+ * Отложенные ходы: ступени лестницы молчания, повторы после сбоя и
+ * досылка собранных ходов.
  * Поллер забирает созревшие через `FOR UPDATE SKIP LOCKED` — два
  * экземпляра API одно задание не выполнят; ход по заданию ещё и защищён
  * ключом идемпотентности `job:<id>`.
@@ -37,8 +38,10 @@ export class BotJobsRepository {
 
   /**
    * Забирает созревшие задания боевых чатов агента (не песочница, режим
-   * `auto`) и помечает их `running`. Задания песочницы живут в виртуальном
-   * времени — их выполняет перемотка в песочнице, не поллер.
+   * `auto`) и помечает их `running`. Досылка (`resume`) берётся и в чате,
+   * который за это время ушёл менеджеру: ход всё равно нужно закрыть.
+   * Задания песочницы живут в виртуальном времени — их выполняет перемотка
+   * в песочнице, не поллер.
    */
   async claimDue(now: Date, limit: number): Promise<BotJobEntity[]> {
     const { rows } = await execute(
@@ -47,7 +50,8 @@ export class BotJobsRepository {
        WHERE id IN (
          SELECT job.id FROM bot_jobs job
          JOIN bot_chat_state state ON state.chat_id = job.chat_id
-         WHERE job.status = 'pending' AND job.run_at <= $1::timestamptz AND NOT state.sandbox AND state.mode = 'auto'
+         WHERE job.status = 'pending' AND job.run_at <= $1::timestamptz AND NOT state.sandbox
+           AND (state.mode = 'auto' OR job.kind = 'resume')
          ORDER BY job.run_at
          LIMIT $2::int
          FOR UPDATE OF job SKIP LOCKED
@@ -128,16 +132,69 @@ export class BotJobsRepository {
   }
 
   /**
-   * Задания, оставшиеся `running` после падения API. Берутся только
-   * давние: свежие может прямо сейчас выполнять второй экземпляр.
+   * Задания, оставшиеся `running` от прошлого процесса API, — снова в
+   * очередь (при старте, до поллера). Кроме `keep`: задания ходов, которые
+   * будут дочитаны досылкой, — их закроет она.
    */
-  async releaseStuck(olderThan: Date): Promise<number> {
+  async releaseOrphans(
+    keep: readonly string[],
+    db: EntityManager,
+  ): Promise<number> {
     const { affected } = await execute(
-      this.jobs.manager,
-      `UPDATE bot_jobs SET status = 'pending', updated_at = now() WHERE status = 'running' AND updated_at < $1::timestamptz`,
-      [olderThan],
+      db,
+      `UPDATE bot_jobs SET status = 'pending', updated_at = now()
+       WHERE status = 'running' AND NOT (id = ANY($1::uuid[]))`,
+      [keep],
     );
     return affected;
+  }
+
+  /**
+   * Досылка хода `turnId`. Если такая уже ждёт в очереди — вторая не
+   * ставится (восстановление при старте может встретить ход дважды).
+   */
+  async scheduleResume(
+    chatId: string,
+    turnId: string,
+    runAt: Date,
+    retry: Record<string, unknown> | null,
+    db: EntityManager = this.jobs.manager,
+  ): Promise<void> {
+    await execute(
+      db,
+      `INSERT INTO bot_jobs (chat_id, kind, run_at, status, payload)
+       SELECT $1::uuid, 'resume', $3::timestamptz, 'pending', $4::jsonb
+       WHERE NOT EXISTS (
+         SELECT 1 FROM bot_jobs
+         WHERE chat_id = $1::uuid AND kind = 'resume' AND status = 'pending' AND payload->>'turnId' = $2::text
+       )`,
+      [
+        chatId,
+        turnId,
+        runAt,
+        JSON.stringify(retry ? { turnId, retry } : { turnId }),
+      ],
+    );
+  }
+
+  /** Ответ клиенту заданием `reply` — тем чатам, где такого ещё не ждёт и не выполняется. */
+  async scheduleReplies(
+    chatIds: readonly string[],
+    runAt: Date,
+    db: EntityManager = this.jobs.manager,
+  ): Promise<void> {
+    if (chatIds.length === 0) return;
+    await execute(
+      db,
+      `INSERT INTO bot_jobs (chat_id, kind, run_at, status, payload)
+       SELECT target.chat_id, 'reply', $2::timestamptz, 'pending', '{}'::jsonb
+       FROM unnest($1::uuid[]) AS target(chat_id)
+       WHERE NOT EXISTS (
+         SELECT 1 FROM bot_jobs job
+         WHERE job.chat_id = target.chat_id AND job.kind = 'reply' AND job.status IN ('pending', 'running')
+       )`,
+      [[...new Set(chatIds)], runAt],
+    );
   }
 
   async cancel(jobId: string): Promise<void> {
@@ -148,13 +205,13 @@ export class BotJobsRepository {
     );
   }
 
-  /** Виды заданий чата, которые созреют не позже `until`. */
+  /** Виды заданий чата, которые созреют не позже `until` (досылка — не ступень, в план не идёт). */
   async dueKinds(chatId: string, until: Date): Promise<JobKind[]> {
     const rows = await this.jobs
       .createQueryBuilder('job')
       .where(
-        'job.chat_id = :chatId AND job.status = :status AND job.run_at <= :until',
-        { chatId, status: 'pending', until },
+        'job.chat_id = :chatId AND job.status = :status AND job.run_at <= :until AND job.kind <> :resume',
+        { chatId, status: 'pending', until, resume: 'resume' },
       )
       .orderBy('job.run_at', 'ASC')
       .getMany();
@@ -186,30 +243,45 @@ export class BotJobsRepository {
     return [...pending, ...finished];
   }
 
+  /**
+   * Снимает ожидающие задания чата (передача менеджеру, смена этапа).
+   * Досылку без явного `kinds` не трогает: собранный ход надо закрыть и
+   * в чате, который ушёл менеджеру, — иначе ушедшее не попадёт в реестр
+   * сказанного, а ход так и останется `running`.
+   */
   async cancelPending(
     chatId: string,
     kinds?: readonly JobKind[],
+    db: EntityManager = this.jobs.manager,
   ): Promise<number> {
     const { affected } = await execute(
-      this.jobs.manager,
+      db,
       `UPDATE bot_jobs SET status = 'cancelled', updated_at = now()
-       WHERE chat_id = $1::uuid AND status = 'pending' AND ($2::varchar[] IS NULL OR kind = ANY($2::varchar[]))`,
+       WHERE chat_id = $1::uuid AND status = 'pending'
+         AND (($2::varchar[] IS NULL AND kind <> 'resume') OR kind = ANY($2::varchar[]))`,
       [chatId, kinds ?? null],
     );
     return affected;
   }
 
-  async markDone(jobId: string): Promise<void> {
+  async markDone(
+    jobId: string,
+    db: EntityManager = this.jobs.manager,
+  ): Promise<void> {
     await execute(
-      this.jobs.manager,
+      db,
       `UPDATE bot_jobs SET status = 'done', updated_at = now() WHERE id = $1::uuid`,
       [jobId],
     );
   }
 
-  async markFailed(jobId: string, error: string): Promise<void> {
+  async markFailed(
+    jobId: string,
+    error: string,
+    db: EntityManager = this.jobs.manager,
+  ): Promise<void> {
     await execute(
-      this.jobs.manager,
+      db,
       `UPDATE bot_jobs SET status = 'failed', attempts = attempts + 1, last_error = $2::text, updated_at = now() WHERE id = $1::uuid`,
       [jobId, error],
     );

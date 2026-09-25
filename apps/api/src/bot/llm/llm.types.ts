@@ -12,6 +12,8 @@ export interface LlmRequest {
   /** Просить у модели строго JSON (response_format json_object). */
   json: boolean;
   maxTokens?: number;
+  /** Остановка API: обращение обрывается, ход подхватит восстановление. */
+  signal?: AbortSignal;
 }
 
 export interface LlmUsage {

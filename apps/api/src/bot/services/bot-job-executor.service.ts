@@ -34,7 +34,8 @@ export function toTurnJob(job: BotJobEntity): TurnJob | null {
 /**
  * Выполнение одного задания — общее для поллера (боевые чаты) и перемотки
  * песочницы. Условие ступени проверяет план хода в момент срабатывания; здесь
- * только выбор, каким ходом её выполнить.
+ * только выбор, каким ходом её выполнить. Досылка (`resume`) доводит
+ * собранный ход и в чате, который за это время ушёл менеджеру.
  */
 @Injectable()
 export class BotJobExecutor {
@@ -48,8 +49,17 @@ export class BotJobExecutor {
     job: BotJobEntity,
     env: TurnEnvironment,
   ): Promise<TurnResult | null> {
-    const state = await this.states.find(job.chatId);
     const turnJob = toTurnJob(job);
+    if (turnJob?.kind === 'resume') {
+      const turnId = job.payload?.turnId;
+      return this.runner.resume(
+        turnJob,
+        job.chatId,
+        typeof turnId === 'string' ? turnId : null,
+        env,
+      );
+    }
+    const state = await this.states.find(job.chatId);
     if (!state || state.mode !== 'auto' || !turnJob) {
       await this.jobs.cancel(job.id);
       return null;

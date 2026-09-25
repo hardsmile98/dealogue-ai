@@ -37,6 +37,9 @@ export class DeepSeekClient implements LlmClient {
       () => controller.abort(),
       this.config.llmTimeoutMs,
     );
+    const signal = request.signal
+      ? AbortSignal.any([controller.signal, request.signal])
+      : controller.signal;
     const startedAt = Date.now();
     let status: number;
     let statusText: string;
@@ -60,13 +63,16 @@ export class DeepSeekClient implements LlmClient {
               ? { response_format: { type: 'json_object' } }
               : {}),
           }),
-          signal: controller.signal,
+          signal,
         },
       );
       status = response.status;
       statusText = response.statusText;
       raw = await response.text();
     } catch (error) {
+      if (request.signal?.aborted) {
+        throw new LlmError('обращение прервано остановкой API', null, false);
+      }
       const reason = controller.signal.aborted
         ? `таймаут ${this.config.llmTimeoutMs} мс`
         : errorMessage(error);

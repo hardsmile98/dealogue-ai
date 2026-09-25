@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import type {
+  BeforeApplicationShutdown,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import type { Subscription } from 'rxjs';
 import teleproto from 'teleproto';
@@ -23,8 +27,12 @@ import {
   isFloodWait,
 } from '../lib/telegram-errors.js';
 import { TelegramAccountsRepository } from '../repositories/telegram-accounts.repository.js';
+import { messageDirection } from '../lib/telegram-objects.js';
 import { TelegramSyncService } from '../services/telegram-sync.service.js';
-import type { SyncStats } from '../services/telegram-sync.service.js';
+import type {
+  CaughtUpChat,
+  SyncStats,
+} from '../services/telegram-sync.service.js';
 import { TelegramConfig } from '../telegram.config.js';
 import {
   formatDuration,
@@ -66,7 +74,9 @@ const SLOW_SYNC_WARN_MS = 60_000;
  * ошибки: временно недоступная база не должна ронять процесс.
  */
 @Injectable()
-export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
+export class TelegramRuntimeService
+  implements OnModuleInit, OnModuleDestroy, BeforeApplicationShutdown
+{
   private readonly logger = new Logger(TelegramRuntimeService.name);
   private readonly live = new Map<string, LiveAccount>();
   /** Аккаунты, которые прямо сейчас подключаются, — второй клиент на ту же сессию недопустим. */
@@ -105,6 +115,16 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     return this.live.has(accountId);
   }
 
+  /**
+   * Клиент подключён и первая синхронизация после подключения прошла: в
+   * базе уже есть всё, что пришло, пока его не было. Раньше этого решения
+   * по переписке (ответить, напомнить) принимать рано — база отстаёт.
+   */
+  isCaughtUp(accountId: string): boolean {
+    const live = this.live.get(accountId);
+    return live !== undefined && !live.stopped && live.caughtUp;
+  }
+
   onModuleInit(): void {
     if (!this.config.enabled) return;
     // Не блокируем старт HTTP: аккаунты подключаются в фоне, с разбегом.
@@ -116,12 +136,21 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async onModuleDestroy(): Promise<void> {
+  /** Остановка, шаг 1: новые подключения не начинаются. Живые клиенты пока работают. */
+  onModuleDestroy(): void {
     this.shuttingDown = true;
     this.listening?.unsubscribe();
     if (this.bootTimer) clearTimeout(this.bootTimer);
     for (const timer of this.retryTimers.values()) clearTimeout(timer);
     this.retryTimers.clear();
+  }
+
+  /**
+   * Остановка, шаг 2: клиенты закрываются (без logout — сессии остаются
+   * действительными). Здесь, а не в onModuleDestroy: там агент доводит
+   * идущие ходы до безопасной точки, и начатая отправка должна дойти.
+   */
+  async beforeApplicationShutdown(): Promise<void> {
     await Promise.all(
       [...this.live.keys()].map((id) => this.stop(id, { logout: false })),
     );
@@ -300,6 +329,7 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       connectionState: 'connected',
       connectionStateAt: now,
       stopped: false,
+      caughtUp: false,
     };
     this.live.set(account.id, live);
 
@@ -397,6 +427,8 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
             : await this.sync.incrementalSync(live.id, live.client);
         if (live.stopped) return;
         this.logSyncDone(live, stage, stats);
+        this.emitMissed(live, stats.missed);
+        live.caughtUp = true;
         await this.accounts.recordSync(live.id, { full: mode === 'full' });
       } catch (error) {
         await this.handleFailure(live, error, stage);
@@ -406,6 +438,36 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       }
     })();
     return live.syncing;
+  }
+
+  /**
+   * Сообщения и прочтения, которые догрузила синхронизация (офлайн, обрыв
+   * соединения), уходят в шину как живые: агент ответит клиенту, возьмёт
+   * нового лида, заметит ответ менеджера с телефона, пересчитает лестницу;
+   * веб покажет сообщения без перезагрузки.
+   */
+  private emitMissed(live: LiveAccount, missed: CaughtUpChat[]): void {
+    for (const { chat, messages, readMaxId } of missed) {
+      for (const message of messages) {
+        this.events.emit({
+          kind: 'message',
+          accountId: live.id,
+          userId: live.userId,
+          chat,
+          message,
+          direction: messageDirection(message),
+        });
+      }
+      if (readMaxId !== null) {
+        this.events.emit({
+          kind: 'read',
+          accountId: live.id,
+          userId: live.userId,
+          chat,
+          maxId: readMaxId,
+        });
+      }
+    }
   }
 
   private logSyncDone(

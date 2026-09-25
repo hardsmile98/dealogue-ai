@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { OnModuleDestroy } from '@nestjs/common';
 import { KeyedLock } from '../../common/async.js';
 import { errorMessage } from '../../common/errors.js';
 import type { TelegramAccountEntity } from '../../telegram/entities/telegram-account.entity.js';
 import { TelegramAccountsRepository } from '../../telegram/repositories/telegram-accounts.repository.js';
 import { BotConfig } from '../bot.config.js';
+import { TurnInterrupted } from '../core/channel.js';
 import type { Channel, Clock } from '../core/channel.js';
-import { deliver, planDelays } from '../core/delivery.js';
+import { planDelays } from '../core/delivery.js';
 import { hardChecks } from '../core/hard-checks.js';
 import {
   HISTORY_LIMIT,
@@ -18,7 +20,7 @@ import type { HistoryLine } from '../core/history.js';
 import { applyAnalysis } from '../core/memory.js';
 import type { FactsUpdate } from '../core/memory.js';
 import { buildPlan } from '../core/plan.js';
-import { saidEntries } from '../core/said.js';
+import { nextRetry } from '../core/retry.js';
 import type {
   Analysis,
   FinalPart,
@@ -27,15 +29,12 @@ import type {
   Memory,
   Plan,
   Review,
+  TurnJob,
   TurnRequest,
   TurnResult,
 } from '../core/types.js';
 import type { BotChatStateEntity } from '../entities/bot-chat-state.entity.js';
-import {
-  HANDOFF_LABELS,
-  MILESTONE_TITLES,
-  stageFromMilestones,
-} from '../library/kinds.js';
+import { MILESTONE_TITLES, stageFromMilestones } from '../library/kinds.js';
 import type { HandoffReason, Stage } from '../library/kinds.js';
 import { readPersona } from '../library/persona.js';
 import type { Persona } from '../library/persona.js';
@@ -56,9 +55,12 @@ import { BotJobsRepository } from '../repositories/bot-jobs.repository.js';
 import { BotMemoryRepository } from '../repositories/bot-memory.repository.js';
 import { BotTurnsRepository } from '../repositories/bot-turns.repository.js';
 import { BotLadderService } from './bot-ladder.service.js';
+import { BotRecoveryService } from './bot-recovery.service.js';
 import { BotSettingsService } from './bot-settings.service.js';
 import { LibraryContextService } from './library-context.service.js';
 import type { LibraryContext } from './library-context.service.js';
+import { TurnDeliveryService } from './turn-delivery.service.js';
+import type { CommittedTurn } from './turn-delivery.service.js';
 import { TurnLlmService } from './turn-llm.service.js';
 import type { LlmCallContext } from './turn-llm.service.js';
 
@@ -74,12 +76,12 @@ export interface TurnEnvironment {
 const DUE_WINDOW_MS = 10 * 60_000;
 
 /**
- * Ход, который не удался целиком, повторяется заданием с нарастающей
- * паузой, минуты; дольше `RETRY_WINDOW_MS` — чат уходит менеджеру с ярлыком
- * «агент недоступен» (раздел 10). Для человека пауза в минуты естественна.
+ * Сколько при остановке API ждать идущие ходы. Паузы и обращения к модели
+ * прерываются сразу; ждём только начатую отправку в Telegram (у неё свой
+ * таймаут 30 с) и запись в базу. Не дождались — ход подхватит
+ * восстановление после старта.
  */
-const TURN_RETRY_DELAYS_MIN = [1, 2, 5, 10, 12];
-const RETRY_WINDOW_MS = 30 * 60_000;
+const DRAIN_TIMEOUT_MS = 35_000;
 
 /** Ход прерван по ходу дела (клиент дописал) — не сбой, повтор не нужен. */
 class TurnAbort extends Error {
@@ -123,14 +125,24 @@ interface ComposedTurn {
 
 /**
  * Исполнитель хода — конвейер из раздела 3 документа: анализ → план →
- * текст → проверка → жёсткие проверки → доставка → закрытие. Один ход на
- * чат одновременно (замок), ключ идемпотентности до первой отправки.
- * Обращения к модели — TurnLlmService, логика плана — core/plan.ts.
+ * текст → проверка → жёсткие проверки → точка фиксации → доставка →
+ * закрытие. Один ход на чат одновременно (замок), ключ идемпотентности до
+ * первой отправки. Обращения к модели — TurnLlmService, логика плана —
+ * core/plan.ts, доставка и закрытие — TurnDeliveryService.
+ *
+ * Остановка API: новые ходы не начинаются, идущие останавливаются в
+ * безопасной точке (паузы и обращения к модели прерываются, начатая
+ * отправка доходит), и только потом закрываются Telegram и база. Что не
+ * доделано, после старта подхватит BotRecoveryService.
  */
 @Injectable()
-export class TurnRunnerService {
+export class TurnRunnerService implements OnModuleDestroy {
   private readonly logger = new Logger(TurnRunnerService.name);
   private readonly locks = new KeyedLock();
+  /** Остановка API — сигнал всем идущим ходам. */
+  private readonly stopping = new AbortController();
+  /** Идущие ходы этого процесса — их ждёт остановка. */
+  private readonly active = new Set<Promise<unknown>>();
 
   constructor(
     private readonly config: BotConfig,
@@ -143,8 +155,33 @@ export class TurnRunnerService {
     private readonly jobs: BotJobsRepository,
     private readonly ladder: BotLadderService,
     private readonly model: TurnLlmService,
+    private readonly delivery: TurnDeliveryService,
+    private readonly recovery: BotRecoveryService,
     private readonly deepseek: DeepSeekClient,
   ) {}
+
+  /**
+   * Остановка, шаг 1 (до закрытия клиентов Telegram и базы): новые ходы
+   * не начинаются, идущие доходят до безопасной точки.
+   */
+  async onModuleDestroy(): Promise<void> {
+    this.stopping.abort();
+    if (this.active.size === 0) return;
+    this.logger.log(`Остановка: ждём идущие ходы — ${this.active.size}`);
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = await Promise.race([
+      Promise.allSettled(this.active).then(() => false),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), DRAIN_TIMEOUT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (timedOut) {
+      this.logger.warn(
+        `Остановка: не дождались ходов — ${this.active.size}; их дошлёт восстановление после старта`,
+      );
+    }
+  }
 
   /** Ход целиком под замком чата; ходы разных чатов идут параллельно. */
   run(
@@ -152,8 +189,42 @@ export class TurnRunnerService {
     env: TurnEnvironment,
     llm: LlmClient = this.deepseek,
   ): Promise<TurnResult> {
-    return this.locks.run(request.chatId, () =>
-      this.execute(request, env, llm),
+    if (this.stopping.signal.aborted) return Promise.resolve(interrupted());
+    return this.track(
+      this.locks.run(request.chatId, () => this.execute(request, env, llm)),
+    );
+  }
+
+  /**
+   * Задание `resume`: дослать собранный ход `turnId` (прерван остановкой
+   * API или сбоем отправки) — или закрыть, если разговор ушёл вперёд.
+   * Результат — последнего доведённого хода; null, если доводить нечего.
+   */
+  resume(
+    job: TurnJob,
+    chatId: string,
+    turnId: string | null,
+    env: TurnEnvironment,
+  ): Promise<TurnResult | null> {
+    if (this.stopping.signal.aborted) return Promise.resolve(interrupted());
+    return this.track(
+      this.locks.run(chatId, async () => {
+        try {
+          await this.recovery.ready();
+          const { result } = await this.delivery.settle(
+            chatId,
+            env,
+            this.stopping.signal,
+            turnId && job.retry ? { turnId, retry: job.retry } : undefined,
+          );
+          await this.jobs.markDone(job.id);
+          return result;
+        } catch (error) {
+          // Остановка API: задание остаётся `running`, его вернёт в очередь восстановление.
+          if (error instanceof TurnInterrupted) return interrupted();
+          throw error;
+        }
+      }),
     );
   }
 
@@ -162,12 +233,36 @@ export class TurnRunnerService {
    * анализатор читает историю целиком и заполняет карточку, факты и резюме.
    * Ничего не отправляет; в журнале — ход `restore`.
    */
-  async restoreMemory(
+  restoreMemory(
     chatId: string,
     accountId: string,
     env: Pick<TurnEnvironment, 'channel' | 'clock'>,
     llm: LlmClient = this.deepseek,
   ): Promise<void> {
+    if (this.stopping.signal.aborted) {
+      return Promise.reject(new TurnInterrupted());
+    }
+    return this.track(this.restore(chatId, accountId, env, llm));
+  }
+
+  /** Передача менеджеру: режим, причина, ярлык, снятие заданий. Нужна и каналу (чужое исходящее). */
+  handoff(chatId: string, reason: HandoffReason): Promise<void> {
+    return this.delivery.handoff(chatId, reason);
+  }
+
+  private track<T>(task: Promise<T>): Promise<T> {
+    this.active.add(task);
+    task.finally(() => this.active.delete(task)).catch(() => undefined);
+    return task;
+  }
+
+  private async restore(
+    chatId: string,
+    accountId: string,
+    env: Pick<TurnEnvironment, 'channel' | 'clock'>,
+    llm: LlmClient,
+  ): Promise<void> {
+    await this.recovery.ready();
     const state = await this.states.find(chatId);
     if (!state) throw new Error(`Чат ${chatId} не найден`);
     const { model } = await this.accountContext(accountId);
@@ -204,7 +299,7 @@ export class TurnRunnerService {
         historyLimit: HISTORY_LIMIT,
       });
       const analysis = await this.model.analyze(
-        { llm, turnId, model, clock: env.clock },
+        { llm, turnId, model, clock: env.clock, signal: this.stopping.signal },
         prompt,
         messages[messages.length - 1]?.id ?? null,
       );
@@ -225,6 +320,8 @@ export class TurnRunnerService {
         finished: true,
       });
     } catch (error) {
+      // Остановка API: ход остаётся `running`, восстановление пометит его прерванным.
+      if (error instanceof TurnInterrupted) throw error;
       await this.turns.update(turnId, {
         status: 'failed',
         error: errorMessage(error),
@@ -234,26 +331,55 @@ export class TurnRunnerService {
     }
   }
 
-  /** Передача менеджеру: режим, причина, ярлык, снятие заданий. Нужна и каналу (чужое исходящее). */
-  async handoff(chatId: string, reason: HandoffReason): Promise<void> {
-    await this.memories.setHandoff(chatId, reason, HANDOFF_LABELS[reason]);
-    await this.jobs.cancelPending(chatId);
-  }
-
   // --- конвейер хода -----------------------------------------------------------
 
   private async execute(
-    request: TurnRequest,
+    initial: TurnRequest,
     env: TurnEnvironment,
     llm: LlmClient,
   ): Promise<TurnResult> {
+    if (this.stopping.signal.aborted) return interrupted();
+    try {
+      await this.recovery.ready();
+      // Собранные, но не закрытые ходы чата (остановка API, сбой отправки)
+      // — раньше нового: новый ход должен знать, что из них уже ушло.
+      const settled = await this.delivery.settle(
+        initial.chatId,
+        env,
+        this.stopping.signal,
+      );
+      if (!settled.clear) {
+        // Прошлый ход ждёт досылки с паузой — её задание и ответит.
+        if (initial.job) await this.jobs.markDone(initial.job.id);
+        return skipped('в чате не дослан прошлый ход — досылка уже поставлена');
+      }
+    } catch (error) {
+      if (error instanceof TurnInterrupted) return interrupted();
+      throw error;
+    }
+
     // Аккаунт читается параллельно с состоянием чата, но его ошибка важна,
     // только если ход действительно пойдёт.
-    const accountLoad = this.accountContext(request.accountId);
+    const accountLoad = this.accountContext(initial.accountId);
     accountLoad.catch(() => undefined);
-    const state = await this.states.find(request.chatId);
+    const state = await this.states.find(initial.chatId);
     if (!state || state.mode !== 'auto') {
       return skipped('чат не в режиме агента');
+    }
+    // На что уже ответил ход, закрытый раньше этого (досылка, повтор), —
+    // второй раз не отвечаем.
+    const request: TurnRequest =
+      initial.trigger === 'client'
+        ? {
+            ...initial,
+            messages: initial.messages.filter(
+              (message) => message.id > (state.lastHandledMessageId ?? 0),
+            ),
+          }
+        : initial;
+    if (request.trigger === 'client' && request.messages.length === 0) {
+      if (request.job) await this.jobs.markDone(request.job.id);
+      return skipped('сообщения клиента уже отвечены');
     }
     const account = await accountLoad;
 
@@ -325,7 +451,13 @@ export class TurnRunnerService {
           .map((entry) => entry.key),
       ),
       now: env.clock.now(),
-      llm: { llm, turnId, model: account.model, clock: env.clock },
+      llm: {
+        llm,
+        turnId,
+        model: account.model,
+        clock: env.clock,
+        signal: this.stopping.signal,
+      },
     };
   }
 
@@ -392,7 +524,9 @@ export class TurnRunnerService {
     // 3–5. Текст, проверка, жёсткие проверки.
     const composed = await this.compose(request, env, context, memory, plan);
 
-    // 6. Доставка.
+    // 6. Точка фиксации: текст собран и проверен — дальше ход только
+    // доставляется. Прерванный после неё (остановка API, сбой отправки)
+    // досылается с того же места, а не собирается заново.
     const last = lastOutgoing(context.history);
     const delays = planDelays({
       trigger: request.trigger,
@@ -402,63 +536,40 @@ export class TurnRunnerService {
       parts: composed.parts,
       timings: context.timings,
     });
-    const { sent, aborted } = await deliver(
-      {
-        chatId: request.chatId,
+    const turn: CommittedTurn = {
+      turnId,
+      chatId: request.chatId,
+      lastMessageId: request.messages.at(-1)?.id ?? null,
+      job: request.job,
+      plan,
+      delivery: {
         parts: composed.parts,
         delays,
+        firstPartAt: new Date(
+          env.clock.now().getTime() + delays.initialMs,
+        ).toISOString(),
+        baselineMessageId: Math.max(
+          0,
+          ...context.history.map((message) => message.id),
+        ),
+        writerArguments: [...composed.writerArguments],
+        fallback: composed.fallback,
+        stage,
         markRead: request.trigger === 'client',
-        isStale: env.isStale,
+        sending: null,
       },
-      env.channel,
-      env.clock,
-    );
-
-    // 7. Закрытие: реестр сказанного, счётчики, задания, журнал.
-    const said = saidEntries({
-      plan,
-      writerArguments: composed.writerArguments,
-      parts: composed.parts,
-      sent,
-      fallback: composed.fallback,
-    });
-    await this.memories.addSaid(request.chatId, said, env.clock.now());
-    // Шаг воронки сделан, если ушло подталкивание или веха; запасная фраза шагом не считается.
-    const milestoneDelivered = said.some((entry) => entry.kind === 'milestone');
-    await this.memories.closeTurn(request.chatId, {
-      nudged:
-        milestoneDelivered ||
-        (plan.nudge !== null &&
-          plan.nudge !== 'skip' &&
-          !aborted &&
-          !composed.fallback),
-      reminders: aborted ? 0 : plan.reminders,
-      lastHandledMessageId:
-        request.messages[request.messages.length - 1]?.id ?? null,
-    });
-    if (request.job) await this.jobs.markDone(request.job.id);
-    const finalStage: Stage =
-      milestoneDelivered && plan.milestone ? plan.milestone.key : stage;
-    if (finalStage === 'prices')
-      await this.handoff(request.chatId, 'prices_sent');
-    // Лестница — заново от нового состояния: ответ клиента снимает дальние
-    // ступени, новая веха или подталкивание ставит следующую.
-    await this.ladder.reschedule(request.chatId, env.channel);
-
-    const status: TurnResult['status'] =
-      aborted && sent.length === 0 ? 'skipped' : 'sent';
-    await this.turns.update(turnId, {
-      status,
-      sent: { parts: sent, aborted },
-      finished: true,
-    });
-    return {
-      turnId,
-      status,
-      stage: finalStage,
-      sent,
-      handoff: finalStage === 'prices' ? 'prices_sent' : null,
     };
+    await this.delivery.commit(turn);
+
+    // 7–8. Доставка и закрытие: реестр сказанного, счётчики, задания, журнал, лестница.
+    const { result } = await this.delivery.deliver(
+      turn,
+      { sent: [], delays },
+      env,
+      this.stopping.signal,
+      request.job?.retry,
+    );
+    return result;
   }
 
   /** Анализ хода клиента: карточка, факты, намерения. У хода по расписанию — null. */
@@ -654,6 +765,9 @@ export class TurnRunnerService {
     stage: Stage,
     error: unknown,
   ): Promise<TurnResult> {
+    // Остановка API — не сбой: журнал и задание остаются как есть, после
+    // старта ход повторит или дошлёт восстановление.
+    if (error instanceof TurnInterrupted) return interrupted(turnId, stage);
     if (error instanceof TurnAbort) {
       await this.turns.update(turnId, {
         status: error.status,
@@ -702,16 +816,8 @@ export class TurnRunnerService {
     request: TurnRequest,
     clock: Clock,
   ): Promise<HandoffReason | null> {
-    const now = clock.now();
-    const retry = request.job?.retry;
-    const firstFailedAt = retry ? new Date(retry.firstFailedAt) : now;
-    const attempt = (retry?.attempt ?? 0) + 1;
-    const delayMin = TURN_RETRY_DELAYS_MIN[attempt - 1];
-    if (
-      delayMin === undefined ||
-      now.getTime() + delayMin * 60_000 - firstFailedAt.getTime() >
-        RETRY_WINDOW_MS
-    ) {
+    const next = nextRetry(request.job?.retry, clock.now());
+    if (!next) {
       await this.handoff(request.chatId, 'agent_unavailable');
       return 'agent_unavailable';
     }
@@ -719,13 +825,7 @@ export class TurnRunnerService {
     const kind: JobKind =
       request.trigger === 'client' ? 'reply' : (request.job?.kind ?? 'reply');
     await this.jobs.createMany(request.chatId, [
-      {
-        kind,
-        runAt: new Date(now.getTime() + delayMin * 60_000),
-        payload: {
-          retry: { firstFailedAt: firstFailedAt.toISOString(), attempt },
-        },
-      },
+      { kind, runAt: next.runAt, payload: { retry: next.retry } },
     ]);
     return null;
   }
@@ -758,6 +858,18 @@ function idempotencyKey(request: TurnRequest): string {
   return request.trigger === 'client'
     ? `${request.chatId}:${request.generationSeq}`
     : `job:${request.job?.id ?? request.chatId}`;
+}
+
+/** Ход остановлен выключением API; его подхватит восстановление после старта. */
+function interrupted(turnId = '', stage: Stage = 'intake'): TurnResult {
+  return {
+    turnId,
+    status: 'interrupted',
+    stage,
+    sent: [],
+    handoff: null,
+    error: 'ход прерван остановкой API',
+  };
 }
 
 /** Ход, который не начинался: журнала нет, этап не считали. */

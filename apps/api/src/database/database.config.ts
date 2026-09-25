@@ -36,6 +36,7 @@ import { DropChatsFirstMessageIndex1700000000016 } from './migrations/1700000000
 import { CreateBotTables1700000000017 } from './migrations/1700000000017-CreateBotTables.js';
 import { CreateBotSandbox1700000000018 } from './migrations/1700000000018-CreateBotSandbox.js';
 import { BotForeignKeyIndexes1700000000019 } from './migrations/1700000000019-BotForeignKeyIndexes.js';
+import { BotResumableTurns1700000000020 } from './migrations/1700000000020-BotResumableTurns.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -155,6 +156,7 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       CreateBotTables1700000000017,
       CreateBotSandbox1700000000018,
       BotForeignKeyIndexes1700000000019,
+      BotResumableTurns1700000000020,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

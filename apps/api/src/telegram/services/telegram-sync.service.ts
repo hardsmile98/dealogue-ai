@@ -14,12 +14,28 @@ const OLDEST_PROBE = 5;
 /** Сколько сообщений догружать за раз при досинхронизации. */
 const CATCH_UP_LIMIT = 200;
 
-/** Итог прохода синхронизации — для логов рантайма. */
+/**
+ * Что досинхронизация нашла сверх живых событий в одном чате: сообщения и
+ * прочтения за время офлайна (или пропущенные при сбое соединения).
+ * Рантайм отдаёт их в шину так же, как живые события, — иначе подписчики
+ * (агент, веб) о них не узнают.
+ */
+export interface CaughtUpChat {
+  chat: TelegramChatEntity;
+  /** Новые для базы сообщения по возрастанию id. */
+  messages: Api.Message[];
+  /** До какого id собеседник прочитал наши сообщения, если граница сдвинулась. */
+  readMaxId: number | null;
+}
+
+/** Итог прохода синхронизации — для логов рантайма и событий. */
 export interface SyncStats {
   /** Сколько личных диалогов просмотрено. */
   dialogs: number;
   /** Сколько из них потребовали догрузки сообщений. */
   caughtUp: number;
+  /** Пропущенное живыми событиями — только у инкрементальной синхронизации. */
+  missed: CaughtUpChat[];
 }
 
 /**
@@ -51,7 +67,8 @@ export class TelegramSyncService {
       processed += 1;
       await sleep(DIALOG_PAUSE_MS);
     }
-    return { dialogs: processed, caughtUp: processed };
+    // Первичная выгрузка — это история, а не события: в шину не идёт.
+    return { dialogs: processed, caughtUp: processed, missed: [] };
   }
 
   async incrementalSync(
@@ -73,35 +90,57 @@ export class TelegramSyncService {
     );
 
     let caughtUp = 0;
+    const missed: CaughtUpChat[] = [];
     for (const { dialog, user } of recent) {
       const chat = chats.get(user.id.toString());
       if (!chat) continue;
 
       if (!chat.historySynced) {
+        // Новый для нас диалог (например, лид написал, пока API стоял):
+        // история целиком, а в шину — последнее сообщение, как у живого
+        // первого сообщения нового диалога.
         await this.syncDialog(accountId, client, user, chat);
         caughtUp += 1;
+        if (dialog.message) {
+          missed.push({ chat, messages: [dialog.message], readMaxId: null });
+        }
         continue;
       }
 
       // Прочтения, пропущенные за время офлайна, — из самого диалога.
       const readMax = dialog.dialog?.readOutboxMaxId ?? 0;
-      if (readMax > chat.readOutboxMaxId) {
-        await this.ingest.applyReadOutbox(chat, readMax);
-      }
+      const readAdvanced =
+        readMax > chat.readOutboxMaxId &&
+        (await this.ingest.applyReadOutbox(chat, readMax));
 
+      let messages: Api.Message[] = [];
       const newestId = dialog.message?.id ?? 0;
       if (newestId > chat.lastTelegramMessageId) {
-        const fresh = await client.getMessages(user, {
+        const page = await client.getMessages(user, {
           minId: chat.lastTelegramMessageId,
           limit: CATCH_UP_LIMIT,
         });
-        await this.ingest.storeMessages(chat, onlyMessages(fresh), {
-          total: fresh.total,
+        const fresh = onlyMessages(page);
+        const inserted = await this.ingest.storeMessages(chat, fresh, {
+          total: page.total,
         });
+        const insertedIds = new Set(
+          inserted.map((row) => row.telegramMessageId),
+        );
+        messages = fresh
+          .filter((message) => insertedIds.has(message.id))
+          .sort((a, b) => a.id - b.id);
         caughtUp += 1;
       }
+      if (messages.length > 0 || readAdvanced) {
+        missed.push({
+          chat,
+          messages,
+          readMaxId: readAdvanced ? readMax : null,
+        });
+      }
     }
-    return { dialogs: recent.length, caughtUp };
+    return { dialogs: recent.length, caughtUp, missed };
   }
 
   /**

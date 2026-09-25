@@ -25,6 +25,8 @@ export interface LiveAccount {
   connectionState: string;
   connectionStateAt: number;
   stopped: boolean;
+  /** Первая синхронизация после подключения прошла — база догнала Telegram. */
+  caughtUp: boolean;
 }
 
 export interface ClientHealth {

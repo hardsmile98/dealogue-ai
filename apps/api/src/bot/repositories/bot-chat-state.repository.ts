@@ -112,11 +112,23 @@ export class BotChatStateRepository {
              AND message.telegram_message_id > state.last_handled_message_id
          )
          AND NOT EXISTS (
-           SELECT 1 FROM bot_jobs job WHERE job.chat_id = state.chat_id AND job.kind = 'reply' AND job.status IN ('pending', 'running')
+           SELECT 1 FROM bot_jobs job WHERE job.chat_id = state.chat_id AND job.kind IN ('reply', 'resume') AND job.status IN ('pending', 'running')
          )`,
       [accountId],
     );
     return rows.map((row) => row.chat_id);
+  }
+
+  /** Боевые чаты под агентом — для пересчёта лестницы при старте API. */
+  async activeChats(): Promise<{ chatId: string; accountId: string }[]> {
+    const { rows } = await execute<{ chat_id: string; account_id: string }>(
+      this.states.manager,
+      `SELECT chat_id, account_id FROM bot_chat_state WHERE mode = 'auto' AND NOT sandbox`,
+    );
+    return rows.map((row) => ({
+      chatId: row.chat_id,
+      accountId: row.account_id,
+    }));
   }
 
   /** Ярлык чата у менеджера: «нужен ответ» при сообщении клиента, снимается ответом менеджера. */

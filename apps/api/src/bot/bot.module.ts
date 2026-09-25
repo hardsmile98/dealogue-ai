@@ -32,6 +32,7 @@ import { BotChatStateService } from './services/bot-chat-state.service.js';
 import { BotExamplesService } from './services/bot-examples.service.js';
 import { BotJobExecutor } from './services/bot-job-executor.service.js';
 import { BotLadderService } from './services/bot-ladder.service.js';
+import { BotRecoveryService } from './services/bot-recovery.service.js';
 import { BotLibraryService } from './services/bot-library.service.js';
 import { BotMaintenanceService } from './services/bot-maintenance.service.js';
 import { BotSandboxService } from './services/bot-sandbox.service.js';
@@ -41,6 +42,7 @@ import { BotTelegramChannels } from './services/bot-telegram-channels.service.js
 import { BotTelegramService } from './services/bot-telegram.service.js';
 import { LibraryContextService } from './services/library-context.service.js';
 import { TurnLlmService } from './services/turn-llm.service.js';
+import { TurnDeliveryService } from './services/turn-delivery.service.js';
 import { TurnRunnerService } from './services/turn-runner.service.js';
 
 /**
@@ -94,9 +96,11 @@ import { TurnRunnerService } from './services/turn-runner.service.js';
     BotExamplesService,
     BotChatStateService,
     LibraryContextService,
-    // Ядро хода и лестница молчания.
+    // Ядро хода, доставка, восстановление после остановки и лестница молчания.
     TurnLlmService,
+    TurnDeliveryService,
     TurnRunnerService,
+    BotRecoveryService,
     BotLadderService,
     BotJobExecutor,
     BotSchedulerService,

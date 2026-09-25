@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import type {
+  OnApplicationShutdown,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import type { Subscription } from 'rxjs';
 import { runDetached } from '../../common/async.js';
@@ -22,6 +26,7 @@ import { TurnCollector } from '../core/turn-collector.js';
 import type { Range } from '../library/timings.js';
 import { BotChatStateRepository } from '../repositories/bot-chat-state.repository.js';
 import { BotJobsRepository } from '../repositories/bot-jobs.repository.js';
+import { BotTurnsRepository } from '../repositories/bot-turns.repository.js';
 import { BotLadderService } from './bot-ladder.service.js';
 import { BotSchedulerService } from './bot-scheduler.service.js';
 import type { BotChannelProvider } from './bot-scheduler.service.js';
@@ -37,6 +42,8 @@ const COLLECTOR_TICK_MS = 1_000;
 const SETTINGS_TTL_MS = 15_000;
 /** Канала нет (аккаунт отключился) — ответ клиенту откладывается на столько. */
 const OFFLINE_REPLY_DELAY_MS = 5 * 60_000;
+/** Аккаунт подключён, но догружает пропущенное — ответ чуть позже. */
+const SYNCING_REPLY_DELAY_MS = 15_000;
 
 interface CachedAgent extends AgentSwitch {
   loadedAt: number;
@@ -60,14 +67,21 @@ function randomIn(range: Range): number {
  * - Любое исходящее не от агента (менеджер из веба или с телефона) —
  *   передача менеджеру «чужое исходящее».
  * - «Прочитано» пересчитывает лестницу молчания.
- * - Аккаунт снова в сети — неотвеченные сообщения подхватываются заданием.
+ * - Аккаунт снова в сети — неотвеченные сообщения подхватываются заданием;
+ *   пропущенное за время офлайна синхронизация отдаёт в шину, как живое.
  *
  * Здесь же канал для поллера лестницы (`BotChannelProvider`). Подписка на
- * шину, сборщик и поллер стартуют, когда HTTP-сервер занял порт.
+ * шину, сборщик и поллер стартуют, когда HTTP-сервер занял порт. При
+ * остановке API новые ходы не начинаются сразу, а события (передача
+ * менеджеру, ярлыки, «прочитано») принимаются, пока живы клиенты Telegram.
  */
 @Injectable()
 export class BotTelegramService
-  implements OnModuleInit, OnModuleDestroy, BotChannelProvider
+  implements
+    OnModuleInit,
+    OnModuleDestroy,
+    OnApplicationShutdown,
+    BotChannelProvider
 {
   private readonly logger = new Logger(BotTelegramService.name);
   private readonly clock = new RealClock();
@@ -82,6 +96,7 @@ export class BotTelegramService
   private listening: Subscription | null = null;
   private subscription: Subscription | null = null;
   private timer: NodeJS.Timeout | null = null;
+  private stopping = false;
 
   constructor(
     private readonly telegramConfig: TelegramConfig,
@@ -91,6 +106,7 @@ export class BotTelegramService
     private readonly settings: BotSettingsService,
     private readonly states: BotChatStateRepository,
     private readonly jobs: BotJobsRepository,
+    private readonly turns: BotTurnsRepository,
     private readonly runner: TurnRunnerService,
     private readonly ladder: BotLadderService,
     private readonly scheduler: BotSchedulerService,
@@ -109,13 +125,25 @@ export class BotTelegramService
     );
   }
 
-  /** Остановка: новые события и ходы больше не принимаются, поллер стоит. */
+  /**
+   * Остановка, шаг 1: ходы клиентов больше не начинаются. То, что копил
+   * сборщик, в базе — после старта его подхватит задание `reply`.
+   */
   onModuleDestroy(): void {
+    this.stopping = true;
     this.listening?.unsubscribe();
-    this.subscription?.unsubscribe();
-    this.subscription = null;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  /**
+   * Остановка, последний шаг: клиенты Telegram уже закрыты, событий больше
+   * не будет. До этого момента чужое исходящее и «прочитано» ещё
+   * обрабатываются — иначе после старта о них никто не узнал бы.
+   */
+  onApplicationShutdown(): void {
+    this.subscription?.unsubscribe();
+    this.subscription = null;
   }
 
   // --- BotChannelProvider ---------------------------------------------------
@@ -124,7 +152,7 @@ export class BotTelegramService
     chatId: string,
     accountId: string,
   ): Promise<TurnEnvironment | null> {
-    if (!this.channels.isOnline(accountId)) return null;
+    if (!this.channels.isReady(accountId)) return null;
     // Ход по заданию устаревает, если клиент написал во время него.
     const generation = this.collector.currentGeneration(chatId);
     return {
@@ -132,6 +160,10 @@ export class BotTelegramService
       clock: this.clock,
       isStale: () => this.collector.currentGeneration(chatId) !== generation,
     };
+  }
+
+  unavailable(accountId: string): 'syncing' | 'offline' {
+    return this.channels.unavailable(accountId);
   }
 
   isCollecting(chatId: string): boolean {
@@ -147,6 +179,7 @@ export class BotTelegramService
   // --- события ---------------------------------------------------------------
 
   private start(): void {
+    if (this.stopping) return;
     this.subscription = this.events.subscribe((event) => this.onEvent(event));
     this.timer = setInterval(() => this.tick(), COLLECTOR_TICK_MS);
     this.timer.unref?.();
@@ -230,14 +263,13 @@ export class BotTelegramService
   /** Исходящее не от агента в чате агента — менеджер взял разговор. */
   private async onOutgoing(event: TelegramMessageEvent): Promise<void> {
     const chatId = event.chat.id;
-    const own = this.channels.own.isOwn(
-      chatId,
-      event.message.id,
-      messageText(event.message),
-    );
-    if (own) return;
+    const text = messageText(event.message);
+    if (this.channels.own.isOwn(chatId, event.message.id, text)) return;
     const state = await this.states.find(chatId);
     if (!state || state.sandbox) return;
+    // Эхо части, которая уходила, когда API остановился: реестр своих
+    // исходящих в памяти его не знает, а в журнале хода она записана.
+    if ((await this.turns.sendingTexts(chatId)).includes(text)) return;
     if (state.mode === 'manager') {
       // Менеджер ответил — чат больше не ждёт.
       if (state.label !== null) await this.states.setLabel(chatId, null);
@@ -267,6 +299,7 @@ export class BotTelegramService
   // --- ходы клиента ------------------------------------------------------------
 
   private tick(): void {
+    if (this.stopping) return;
     for (const chatId of this.collector.due(this.clock.now())) {
       // Идёт ход — новое сообщение уже сделало его устаревшим; ждём конца.
       if (this.running.has(chatId)) continue;
@@ -289,13 +322,16 @@ export class BotTelegramService
     if (!state || state.mode !== 'auto') return;
     const env = await this.environment(chatId, accountId);
     if (!env) {
-      // Канала нет (аккаунт отключился) — ответ подхватит поллер, когда он вернётся.
-      await this.jobs.createMany(chatId, [
-        {
-          kind: 'reply',
-          runAt: new Date(this.clock.now().getTime() + OFFLINE_REPLY_DELAY_MS),
-        },
-      ]);
+      // Канала нет (аккаунт отключился или догружает пропущенное) — ответ
+      // подхватит поллер, когда канал будет готов.
+      const delay =
+        this.unavailable(accountId) === 'syncing'
+          ? SYNCING_REPLY_DELAY_MS
+          : OFFLINE_REPLY_DELAY_MS;
+      await this.jobs.scheduleReplies(
+        [chatId],
+        new Date(this.clock.now().getTime() + delay),
+      );
       return;
     }
     // Все неотвеченные: и собранные сейчас, и оставшиеся от прерванного хода.

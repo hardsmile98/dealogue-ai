@@ -98,12 +98,14 @@ export class TelegramIngestService {
   /**
    * Сохраняет сообщения и обновляет агрегаты чата. Объект `chat` обновляется
    * на месте — вызывающий код (события, синхронизация) видит свежие значения.
+   * Возвращает строки, которых в базе ещё не было: уже сохранённое (своё
+   * исходящее, живое событие раньше досинхронизации) повторно не отдаётся.
    */
   async storeMessages(
     chat: TelegramChatEntity,
     items: Api.Message[],
     options: StoreMessagesOptions = {},
-  ): Promise<void> {
+  ): Promise<TelegramMessageEntity[]> {
     const inserted = await this.messages.insertMany(chat.id, uniqueRows(items));
 
     let first: ChatIngestUpdate['first'] = null;
@@ -125,6 +127,7 @@ export class TelegramIngestService {
     }
 
     await this.applyToChat(chat, inserted, options.total ?? 0, first);
+    return inserted;
   }
 
   /**

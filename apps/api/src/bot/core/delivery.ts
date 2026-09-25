@@ -1,4 +1,5 @@
 import type { Timings, Range } from '../library/timings.js';
+import { throwIfInterrupted } from './channel.js';
 import type { Channel, Clock } from './channel.js';
 import type { FinalPart, SentPart, TurnTrigger } from './types.js';
 
@@ -69,30 +70,52 @@ export interface DeliverInput {
   markRead: boolean;
   /** Ход устарел (клиент дописал): оставшиеся части не отправляются. */
   isStale: () => boolean;
+  /** Уже ушедшие части (досылка после перезапуска): доставка продолжается со следующей. */
+  sent?: readonly SentPart[];
+  /**
+   * Остановка API: паузы прерываются, новая часть не начинается
+   * (`TurnInterrupted`); часть, которая уже уходит, дойдёт.
+   */
+  signal?: AbortSignal;
+  /** Часть сейчас начнёт уходить — записать до отправки: после сбоя её ищут в истории. */
+  onSending?: (index: number) => Promise<void>;
+  /** Часть ушла — записать сразу: после остановки досылается только остальное. */
+  onSent?: (sent: readonly SentPart[]) => Promise<void>;
 }
 
-/** Доставка по плану задержек; возвращает, что реально ушло. Устаревший ход останавливается между частями. */
+/**
+ * Доставка по плану задержек; возвращает, что реально ушло. Устаревший ход
+ * останавливается между частями. Каждая ушедшая часть сразу отдаётся в
+ * `onSent`, поэтому прерванную доставку можно продолжить с того же места.
+ */
 export async function deliver(
   input: DeliverInput,
   channel: Channel,
   clock: Clock,
 ): Promise<{ sent: SentPart[]; aborted: boolean }> {
-  const sent: SentPart[] = [];
-  await clock.sleep(input.delays.initialMs);
-  if (input.isStale()) return { sent, aborted: true };
-  if (input.markRead) await channel.markRead(input.chatId);
+  const { signal } = input;
+  const sent: SentPart[] = [...(input.sent ?? [])];
+  const first = sent.length;
+  if (first >= input.parts.length) return { sent, aborted: false };
 
-  for (let index = 0; index < input.parts.length; index++) {
+  // Пауза перед первой частью ответа; при досылке с середины её уже выждали.
+  if (first === 0) await clock.sleep(input.delays.initialMs, signal);
+  if (input.isStale()) return { sent, aborted: true };
+  if (input.markRead && first === 0) await channel.markRead(input.chatId);
+
+  for (let index = first; index < input.parts.length; index++) {
     const part = input.parts[index] as FinalPart;
     const delay = input.delays.parts[index] ?? { typingMs: 0, pauseMs: 0 };
-    if (delay.pauseMs > 0) await clock.sleep(delay.pauseMs);
+    if (delay.pauseMs > 0) await clock.sleep(delay.pauseMs, signal);
     if (input.isStale()) return { sent, aborted: true };
     await channel.setTyping(input.chatId, true);
-    await clock.sleep(delay.typingMs);
+    await clock.sleep(delay.typingMs, signal);
     if (input.isStale()) {
       await channel.setTyping(input.chatId, false);
       return { sent, aborted: true };
     }
+    throwIfInterrupted(signal);
+    await input.onSending?.(index);
     const { messageId } = await channel.send(input.chatId, part.text);
     sent.push({
       text: part.text,
@@ -102,6 +125,7 @@ export async function deliver(
       typingMs: delay.typingMs,
       sentAt: clock.now(),
     });
+    await input.onSent?.(sent);
   }
   return { sent, aborted: false };
 }

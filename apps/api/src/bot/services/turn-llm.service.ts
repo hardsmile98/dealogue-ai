@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { errorMessage } from '../../common/errors.js';
 import { AnalysisParseError, parseAnalysis } from '../core/analysis.js';
+import { throwIfInterrupted } from '../core/channel.js';
 import type { Clock } from '../core/channel.js';
 import type { Analysis, Draft, Review } from '../core/types.js';
 import { WriterParseError, parseWriterOutput } from '../core/writer-output.js';
@@ -26,6 +27,8 @@ export interface LlmCallContext {
   model: string;
   /** Паузы между повторами — по часам хода (в песочнице они виртуальные). */
   clock: Clock;
+  /** Остановка API: обращение и паузы между повторами обрываются (`TurnInterrupted`). */
+  signal?: AbortSignal;
 }
 
 /**
@@ -134,10 +137,14 @@ export class TurnLlmService {
       .map((message) => `### ${message.role}\n${message.content}`)
       .join('\n\n');
     for (let attempt = 0; ; attempt += 1) {
+      throwIfInterrupted(call.signal);
       let text: string;
       try {
-        text = (await call.llm.complete(request)).text;
+        text = (await call.llm.complete({ ...request, signal: call.signal }))
+          .text;
       } catch (error) {
+        // Остановка API — не ошибка модели: без снимка и без повторов.
+        throwIfInterrupted(call.signal);
         const retryable = error instanceof LlmError ? error.retryable : true;
         const delay = LLM_RETRY_DELAYS_MS[attempt];
         if (!retryable || delay === undefined) {
@@ -149,7 +156,7 @@ export class TurnLlmService {
           );
           throw error;
         }
-        await call.clock.sleep(delay);
+        await call.clock.sleep(delay, call.signal);
         continue;
       }
       await this.turns.addSnapshot(call.turnId, step, snapshot, text);
