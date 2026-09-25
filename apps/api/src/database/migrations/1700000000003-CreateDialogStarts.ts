@@ -65,7 +65,9 @@ export class CreateDialogStarts1700000000003 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "telegram_chats" DROP COLUMN "first_message_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "telegram_chats" DROP COLUMN "first_message_id"`,
+    );
     await queryRunner.query(`DROP TABLE "telegram_dialog_starts"`);
   }
 }

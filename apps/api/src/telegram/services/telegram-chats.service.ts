@@ -46,7 +46,10 @@ export class TelegramChatsService {
    * Страница списка по курсору (см. TelegramChatsRepository.page). Счётчик
    * под фильтры считается параллельно со страницей.
    */
-  async listPage(account: TelegramAccountEntity, query: ListChatsQueryDto): Promise<ChatsPageDto> {
+  async listPage(
+    account: TelegramAccountEntity,
+    query: ListChatsQueryDto,
+  ): Promise<ChatsPageDto> {
     const cursor = parseCursor(query.cursor, decodeChatCursor);
     const filter = { search: query.search, code: query.code };
     const [rows, total] = await Promise.all([
@@ -68,7 +71,10 @@ export class TelegramChatsService {
    * более старые, как при прокрутке чата вверх. Внутри страницы сообщения
    * идут по возрастанию времени, чтобы клиенту не пришлось их переворачивать.
    */
-  async listMessages(chat: TelegramChatEntity, query: ListMessagesQueryDto): Promise<MessagesPageDto> {
+  async listMessages(
+    chat: TelegramChatEntity,
+    query: ListMessagesQueryDto,
+  ): Promise<MessagesPageDto> {
     const cursor = parseCursor(query.cursor, decodeMessageCursor);
     // Одна строка сверх лимита отвечает на вопрос «есть ли что-то старше».
     const rows = await this.messages.page(chat.id, cursor, query.limit + 1);
@@ -77,7 +83,9 @@ export class TelegramChatsService {
     return {
       items: newestFirst.reverse().map(toMessageDto),
       nextCursor:
-        rows.length > query.limit && oldest ? encodeMessageCursor(oldest) : null,
+        rows.length > query.limit && oldest
+          ? encodeMessageCursor(oldest)
+          : null,
     };
   }
 
@@ -118,9 +126,13 @@ export class TelegramChatsService {
 }
 
 /** Курсор из query: нет — первая страница, испорчен или подделан — 400. */
-function parseCursor<T>(raw: string | undefined, decode: (raw: string) => T | null): T | null {
+function parseCursor<T>(
+  raw: string | undefined,
+  decode: (raw: string) => T | null,
+): T | null {
   if (raw === undefined) return null;
   const cursor = decode(raw);
-  if (cursor === null) throw new BadRequestException('Некорректный курсор страницы');
+  if (cursor === null)
+    throw new BadRequestException('Некорректный курсор страницы');
   return cursor;
 }

@@ -1,155 +1,127 @@
-import { useState } from 'react'
-import type { ReactNode } from 'react'
-import { Link as RouterLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
-import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import Skeleton from '@mui/material/Skeleton'
-import Stack from '@mui/material/Stack'
-import Tab from '@mui/material/Tab'
-import Tabs from '@mui/material/Tabs'
-import Typography from '@mui/material/Typography'
-import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined'
-import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined'
-import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined'
-import SupportAgentOutlinedIcon from '@mui/icons-material/SupportAgentOutlined'
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined'
-import { ROUTES, accountLinks } from '@/shared/config'
-import { formatPhone, formatRelative, getApiErrorMessage } from '@/shared/lib'
-import { EmptyState, PageHeader } from '@/shared/ui'
+import { Suspense, useState } from 'react';
+import {
+  Link as RouterLink,
+  Outlet,
+  useMatch,
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import LinearProgress from '@mui/material/LinearProgress';
+import Skeleton from '@mui/material/Skeleton';
+import Stack from '@mui/material/Stack';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { ROUTES } from '@/shared/config';
+import {
+  formatRelative,
+  getApiErrorMessage,
+  isFetchBaseQueryError,
+  joinParts,
+  useDocumentTitle,
+} from '@/shared/lib';
+import { EmptyState, PageHeader } from '@/shared/ui';
 import {
   AccountAvatar,
   AccountStatusChip,
+  formatContacts,
   needsReconnect,
   useGetAccountQuery,
-} from '@/entities/telegram-account'
-import { ConnectAccountDialog } from '@/features/telegram-account/connect'
-import { RemoveAccountButton } from '@/features/telegram-account/remove'
-import { accountPageStyles as styles } from './AccountPage.styles'
+} from '@/entities/telegram-account';
+import type { TelegramAccount } from '@/entities/telegram-account';
+import { ConnectAccountDialog } from '@/features/telegram-account/connect';
+import { ACCOUNT_SECTIONS, findSection } from '../model/accountSections';
+import { AccountActionsMenu } from './AccountActionsMenu';
+import { accountPageStyles as styles } from './AccountPage.styles';
 
-type AccountTab = 'stats' | 'chats' | 'handoffs' | 'bot' | 'sandbox'
-
-/** Вкладки аккаунта: подпись, иконка и как собрать ссылку. */
-const TABS: { key: AccountTab; label: string; icon: ReactNode; link: (accountId: string) => string }[] = [
-  {
-    key: 'stats',
-    label: 'Статистика',
-    icon: <InsightsOutlinedIcon fontSize="small" />,
-    link: accountLinks.stats,
-  },
-  { key: 'chats', label: 'Чаты', icon: <ForumOutlinedIcon fontSize="small" />, link: accountLinks.chats },
-  {
-    key: 'handoffs',
-    label: 'У менеджера',
-    icon: <SupportAgentOutlinedIcon fontSize="small" />,
-    link: accountLinks.handoffs,
-  },
-  { key: 'bot', label: 'Агент', icon: <SmartToyOutlinedIcon fontSize="small" />, link: accountLinks.bot },
-  {
-    key: 'sandbox',
-    label: 'Песочница',
-    icon: <ScienceOutlinedIcon fontSize="small" />,
-    link: (accountId) => accountLinks.sandbox(accountId),
-  },
-]
+/** Статус и синхронизация меняются в фоне — опрашиваем. */
+const POLLING_INTERVAL_MS = 30_000;
 
 /** Шапка аккаунта и вкладки; содержимое вкладки — во вложенном роуте. */
 export function AccountPage() {
-  const { accountId = '' } = useParams<{ accountId: string }>()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const [reconnectOpen, setReconnectOpen] = useState(false)
+  const { accountId = '' } = useParams<{ accountId: string }>();
+  const navigate = useNavigate();
+  const sectionMatch = useMatch(ROUTES.accountSection);
+  const section = findSection(sectionMatch?.params.section);
+  const [reconnectOpen, setReconnectOpen] = useState(false);
 
-  const { data: account, isLoading, error } = useGetAccountQuery(accountId, {
+  const {
+    data: account,
+    error,
+    refetch,
+  } = useGetAccountQuery(accountId, {
     skip: accountId === '',
-    pollingInterval: 30_000,
-  })
+    pollingInterval: POLLING_INTERVAL_MS,
+  });
 
-  const tab: AccountTab =
-    TABS.find((item) => item.key !== 'stats' && location.pathname.includes(`/${item.key}`))?.key ?? 'stats'
+  useDocumentTitle(
+    account ? `${section.label} · ${account.displayName}` : null,
+  );
 
-  if (error) {
+  if (error && !account) {
+    // «Не найден» — только на 404: при обрыве сети аккаунт, скорее всего,
+    // есть, и честнее предложить повторить.
+    const notFound = isFetchBaseQueryError(error) && error.status === 404;
     return (
       <EmptyState
-        title="Аккаунт не найден"
-        description={getApiErrorMessage(error, 'Возможно, он был удалён.')}
+        title={notFound ? 'Аккаунт не найден' : 'Не удалось открыть аккаунт'}
+        description={getApiErrorMessage(
+          error,
+          notFound ? 'Возможно, он был удалён.' : undefined,
+        )}
         action={
-          <Button component={RouterLink} to={ROUTES.accounts} variant="outlined">
-            К списку аккаунтов
-          </Button>
+          <Stack direction="row" spacing={1}>
+            {!notFound && (
+              <Button variant="contained" onClick={() => void refetch()}>
+                Повторить
+              </Button>
+            )}
+            <Button
+              component={RouterLink}
+              to={ROUTES.accounts}
+              variant="outlined"
+            >
+              К списку аккаунтов
+            </Button>
+          </Stack>
         }
       />
-    )
+    );
   }
 
   return (
-    <Box>
+    <Box sx={styles.root}>
       <Box component={RouterLink} to={ROUTES.accounts} sx={styles.backLink}>
-        <ArrowBackIcon />
+        <ArrowBackIcon aria-hidden />
         Аккаунты
       </Box>
 
-      {isLoading || !account ? (
-        <Stack direction="row" spacing={2} sx={styles.headerSkeleton}>
-          <Skeleton variant="circular" width={56} height={56} />
-          <Box sx={styles.headerSkeletonText}>
-            <Skeleton width={240} height={36} />
-            <Skeleton width={180} />
-          </Box>
-        </Stack>
+      {!account ? (
+        <HeaderSkeleton />
       ) : (
         <>
-          <PageHeader
-            title={
-              <Box sx={styles.titleRow}>
-                <AccountAvatar name={account.displayName} size={48} />
-                <span>{account.displayName}</span>
-                <AccountStatusChip status={account.status} />
-              </Box>
-            }
-            subtitle={
-              <Typography component="span" variant="body2" sx={styles.meta}>
-                {[account.username ? `@${account.username}` : null, formatPhone(account.phone)]
-                  .filter(Boolean)
-                  .join(' · ')}
-                {account.lastSyncAt && ` · синхронизация ${formatRelative(account.lastSyncAt)}`}
-              </Typography>
-            }
-            actions={
-              <>
-                {needsReconnect(account.status) && (
-                  <Button variant="contained" onClick={() => setReconnectOpen(true)}>
-                    Переподключить
-                  </Button>
-                )}
-                <RemoveAccountButton
-                  account={account}
-                  variant="button"
-                  onRemoved={() => navigate(ROUTES.accounts, { replace: true })}
-                />
-              </>
-            }
+          <AccountHeader
+            account={account}
+            onReconnect={() => setReconnectOpen(true)}
+            onRemoved={() => navigate(ROUTES.accounts, { replace: true })}
           />
 
-          {account.statusMessage && (
-            <Alert
-              severity={account.status === 'error' ? 'error' : 'warning'}
-              sx={styles.statusAlert}
-            >
-              {account.statusMessage}
-            </Alert>
-          )}
-
-          <Tabs value={tab} sx={styles.tabs}>
-            {TABS.map((item) => (
+          <Tabs
+            value={section.key}
+            sx={styles.tabs}
+            aria-label="Разделы аккаунта"
+          >
+            {ACCOUNT_SECTIONS.map((item) => (
               <Tab
                 key={item.key}
                 value={item.key}
                 component={RouterLink}
                 to={item.link(account.id)}
                 label={
-                  <Box sx={styles.tabLabel}>
+                  <Box component="span" sx={styles.tabLabel}>
                     {item.icon}
                     {item.label}
                   </Box>
@@ -158,7 +130,10 @@ export function AccountPage() {
             ))}
           </Tabs>
 
-          <Outlet />
+          {/* Вкладки грузятся своими чанками: пока грузится вкладка, шапка остаётся. */}
+          <Suspense fallback={<LinearProgress aria-label="Загружаем раздел" />}>
+            <Outlet />
+          </Suspense>
 
           <ConnectAccountDialog
             open={reconnectOpen}
@@ -168,5 +143,64 @@ export function AccountPage() {
         </>
       )}
     </Box>
-  )
+  );
+}
+
+interface AccountHeaderProps {
+  account: TelegramAccount;
+  onReconnect: () => void;
+  onRemoved: () => void;
+}
+
+/** Имя, статус, контакты, время синхронизации и действия с аккаунтом. */
+function AccountHeader({
+  account,
+  onReconnect,
+  onRemoved,
+}: AccountHeaderProps) {
+  return (
+    <>
+      <PageHeader
+        avatar={<AccountAvatar name={account.displayName} size={48} />}
+        title={account.displayName}
+        badge={<AccountStatusChip status={account.status} />}
+        subtitle={joinParts([
+          formatContacts(account),
+          account.lastSyncAt &&
+            `синхронизация ${formatRelative(account.lastSyncAt)}`,
+        ])}
+        actions={
+          <>
+            {needsReconnect(account.status) && (
+              <Button variant="contained" onClick={onReconnect}>
+                Переподключить
+              </Button>
+            )}
+            <AccountActionsMenu account={account} onRemoved={onRemoved} />
+          </>
+        }
+      />
+
+      {account.statusMessage && (
+        <Alert
+          severity={account.status === 'error' ? 'error' : 'warning'}
+          sx={styles.statusAlert}
+        >
+          {account.statusMessage}
+        </Alert>
+      )}
+    </>
+  );
+}
+
+function HeaderSkeleton() {
+  return (
+    <Stack direction="row" spacing={2} sx={styles.headerSkeleton}>
+      <Skeleton variant="circular" width={48} height={48} />
+      <Box sx={styles.headerSkeletonText}>
+        <Skeleton width={240} height={36} />
+        <Skeleton width={180} />
+      </Box>
+    </Stack>
+  );
 }

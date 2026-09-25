@@ -69,7 +69,9 @@ export class CreateLibraryItemDto {
   @Trim()
   title: string;
 
-  @MaxLength(LIBRARY_TEXT_MAX_LENGTH, { message: `Текст длиннее ${LIBRARY_TEXT_MAX_LENGTH} символов` })
+  @MaxLength(LIBRARY_TEXT_MAX_LENGTH, {
+    message: `Текст длиннее ${LIBRARY_TEXT_MAX_LENGTH} символов`,
+  })
   @IsString()
   @IsNotEmpty({ message: 'Введите текст' })
   @Trim()
@@ -113,7 +115,9 @@ export class UpdateLibraryItemDto {
   @IsOptional()
   title?: string;
 
-  @MaxLength(LIBRARY_TEXT_MAX_LENGTH, { message: `Текст длиннее ${LIBRARY_TEXT_MAX_LENGTH} символов` })
+  @MaxLength(LIBRARY_TEXT_MAX_LENGTH, {
+    message: `Текст длиннее ${LIBRARY_TEXT_MAX_LENGTH} символов`,
+  })
   @IsString()
   @IsNotEmpty({ message: 'Введите текст' })
   @Trim()

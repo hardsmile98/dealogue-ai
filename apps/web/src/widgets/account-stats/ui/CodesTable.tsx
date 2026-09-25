@@ -1,25 +1,29 @@
-import Box from '@mui/material/Box'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import Typography from '@mui/material/Typography'
-import { formatNumber, formatShare } from '@/shared/lib'
-import type { AccountStats } from '@/entities/telegram-account'
-import { NO_CODE_KEY, OTHER_CODES_KEY } from '../lib/buildSeries'
-import type { StatsSeriesModel } from '../lib/buildSeries'
-import { accountStatsStyles as styles } from './AccountStats.styles'
+import Box from '@mui/material/Box';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import Typography from '@mui/material/Typography';
+import { formatNumber, formatShare } from '@/shared/lib';
+import type { AccountStats } from '@/entities/telegram-account';
+import { NO_CODE_KEY, OTHER_CODES_KEY } from '../lib/buildSeries';
+import type { StatsSeriesModel } from '../lib/buildSeries';
+import { accountStatsStyles as styles } from './AccountStats.styles';
 
 interface CodesTableProps {
-  stats: AccountStats
-  model: StatsSeriesModel
+  stats: AccountStats;
+  model: StatsSeriesModel;
 }
 
 /** Разбивка по кодам за период: доля от всех новых диалогов. */
 export function CodesTable({ stats, model }: CodesTableProps) {
-  const total = stats.totals.total
-  const max = Math.max(stats.totals.withoutCode, ...stats.codes.map((c) => c.count), 1)
+  const total = stats.totals.total;
+  const max = Math.max(
+    stats.totals.withoutCode,
+    ...stats.codes.map((c) => c.count),
+    1,
+  );
 
   const rows = [
     ...stats.codes.map((entry) => ({
@@ -34,14 +38,14 @@ export function CodesTable({ stats, model }: CodesTableProps) {
       count: stats.totals.withoutCode,
       color: model.colorByKey[NO_CODE_KEY],
     },
-  ]
+  ];
 
   if (total === 0) {
     return (
-      <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+      <Typography variant="body2" sx={styles.empty}>
         За выбранный период новых диалогов не было.
       </Typography>
-    )
+    );
   }
 
   return (
@@ -50,7 +54,7 @@ export function CodesTable({ stats, model }: CodesTableProps) {
         <TableRow>
           <TableCell>Код</TableCell>
           <TableCell align="right">Диалогов</TableCell>
-          <TableCell sx={{ width: '45%' }}>Доля</TableCell>
+          <TableCell sx={styles.shareHead}>Доля</TableCell>
         </TableRow>
       </TableHead>
       <TableBody>
@@ -71,16 +75,21 @@ export function CodesTable({ stats, model }: CodesTableProps) {
                   <Box
                     sx={[
                       styles.shareFill,
-                      { width: `${(row.count / max) * 100}%`, bgcolor: row.color },
+                      {
+                        width: `${(row.count / max) * 100}%`,
+                        bgcolor: row.color,
+                      },
                     ]}
                   />
                 </Box>
-                <Box sx={styles.shareValue}>{formatShare(row.count, total)}</Box>
+                <Box sx={styles.shareValue}>
+                  {formatShare(row.count, total)}
+                </Box>
               </Box>
             </TableCell>
           </TableRow>
         ))}
       </TableBody>
     </Table>
-  )
+  );
 }

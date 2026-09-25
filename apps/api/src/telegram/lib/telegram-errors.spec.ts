@@ -53,8 +53,12 @@ describe('toHttpException', () => {
       status: HttpStatus.SERVICE_UNAVAILABLE,
       message: 'Аккаунт не подключён к Telegram',
     });
-    expect(mapped(new PeerUnresolvedError('1')).status).toBe(HttpStatus.CONFLICT);
-    expect(mapped(new TimeoutError(10)).status).toBe(HttpStatus.GATEWAY_TIMEOUT);
+    expect(mapped(new PeerUnresolvedError('1')).status).toBe(
+      HttpStatus.CONFLICT,
+    );
+    expect(mapped(new TimeoutError(10)).status).toBe(
+      HttpStatus.GATEWAY_TIMEOUT,
+    );
     expect(mapped(rpc('AUTH_KEY_UNREGISTERED', 401))).toEqual({
       status: HttpStatus.SERVICE_UNAVAILABLE,
       message: AUTH_LOST_MESSAGE,
@@ -75,7 +79,9 @@ describe('isAuthLost / describeError', () => {
   });
 
   it('описывает ошибку одной строкой', () => {
-    expect(describeError(rpc('USER_IS_BLOCKED'))).toBe('Ошибка Telegram: USER_IS_BLOCKED');
+    expect(describeError(rpc('USER_IS_BLOCKED'))).toBe(
+      'Ошибка Telegram: USER_IS_BLOCKED',
+    );
     expect(describeError(new Error('сеть'))).toBe('сеть');
     expect(describeError('строка')).toBe('строка');
   });

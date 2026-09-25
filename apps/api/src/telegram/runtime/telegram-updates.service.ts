@@ -2,10 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import teleproto from 'teleproto';
 import type { Api } from 'teleproto';
 import type { NewMessageEvent } from 'teleproto/events/NewMessage.js';
-import { runDetached } from '../../common/async.js';
+import { TimeoutError, runDetached, withTimeout } from '../../common/async.js';
 import type { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
 import { describeError } from '../lib/telegram-errors.js';
-import { asUser, isNonHumanUser, messageDirection } from '../lib/telegram-objects.js';
+import {
+  asUser,
+  isNonHumanUser,
+  messageDirection,
+} from '../lib/telegram-objects.js';
 import { TelegramChatsRepository } from '../repositories/telegram-chats.repository.js';
 import { TelegramIngestService } from '../services/telegram-ingest.service.js';
 import { TelegramSyncService } from '../services/telegram-sync.service.js';
@@ -16,6 +20,12 @@ const { Api: Tl, events } = teleproto;
 
 /** Сколько свежих диалогов запросить, чтобы найти незнакомого собеседника. */
 const RESOLVE_DIALOGS_LIMIT = 30;
+/**
+ * Поиск собеседника по «полуживому» соединению висел бы вечно, а вместе с
+ * ним — все следующие сообщения этого собеседника, которые ждут тот же
+ * поиск. По таймауту собеседника подберёт досинхронизация.
+ */
+const RESOLVE_TIMEOUT_MS = 30_000;
 
 /** Чем рантайм отвечает на то, что приём апдейтов сам решить не может. */
 export interface UpdateHooks {
@@ -64,10 +74,18 @@ export class TelegramUpdatesService {
       types: [Tl.UpdateReadHistoryOutbox, Tl.UpdateUserTyping],
     });
     const onMessage = (event: NewMessageEvent) => {
-      runDetached(this.onNewMessage(binding, event), this.logger, `Аккаунт ${live.label}`);
+      runDetached(
+        this.onNewMessage(binding, event),
+        this.logger,
+        `Аккаунт ${live.label}`,
+      );
     };
     const onRaw = (update: Api.TypeUpdate) => {
-      runDetached(this.onRawUpdate(binding, update), this.logger, `Аккаунт ${live.label}`);
+      runDetached(
+        this.onRawUpdate(binding, update),
+        this.logger,
+        `Аккаунт ${live.label}`,
+      );
     };
 
     live.client.addEventHandler(onMessage, messageFilter);
@@ -82,7 +100,10 @@ export class TelegramUpdatesService {
     };
   }
 
-  private async onNewMessage(binding: Binding, event: NewMessageEvent): Promise<void> {
+  private async onNewMessage(
+    binding: Binding,
+    event: NewMessageEvent,
+  ): Promise<void> {
     const { live } = binding;
     if (live.stopped || !event.isPrivate) return;
     const message = event.message;
@@ -133,7 +154,10 @@ export class TelegramUpdatesService {
    * - UpdateReadHistoryOutbox — собеседник прочитал наши сообщения до max_id;
    * - UpdateUserTyping — собеседник печатает (в базу не пишем, только шина).
    */
-  private async onRawUpdate(binding: Binding, update: Api.TypeUpdate): Promise<void> {
+  private async onRawUpdate(
+    binding: Binding,
+    update: Api.TypeUpdate,
+  ): Promise<void> {
     const { live } = binding;
     if (live.stopped) return;
     try {
@@ -148,11 +172,16 @@ export class TelegramUpdatesService {
       }
       if (update instanceof Tl.UpdateReadHistoryOutbox) {
         if (!(update.peer instanceof Tl.PeerUser)) return;
-        const chat = await this.chats.findByPeer(live.id, update.peer.userId.toString());
+        const chat = await this.chats.findByPeer(
+          live.id,
+          update.peer.userId.toString(),
+        );
         if (!chat) return;
         const changed = await this.ingest.applyReadOutbox(chat, update.maxId);
         if (!changed) return;
-        this.logger.debug(`Аккаунт ${live.label}: ${chat.peerName} прочитал до #${update.maxId}`);
+        this.logger.debug(
+          `Аккаунт ${live.label}: ${chat.peerName} прочитал до #${update.maxId}`,
+        );
         this.events.emit({
           kind: 'read',
           accountId: live.id,
@@ -162,11 +191,17 @@ export class TelegramUpdatesService {
         });
       }
     } catch (error) {
-      this.logger.warn(`Аккаунт ${live.label}: сырой апдейт не обработан — ${describeError(error)}`);
+      this.logger.warn(
+        `Аккаунт ${live.label}: сырой апдейт не обработан — ${describeError(error)}`,
+      );
     }
   }
 
-  private emitMessage(live: LiveAccount, chat: TelegramChatEntity, message: Api.Message): void {
+  private emitMessage(
+    live: LiveAccount,
+    chat: TelegramChatEntity,
+    message: Api.Message,
+  ): void {
     this.events.emit({
       kind: 'message',
       accountId: live.id,
@@ -184,20 +219,34 @@ export class TelegramUpdatesService {
    * Для нового собеседника или сразу после перезапуска кэш пуст — тогда
    * подтягиваем свежие диалоги: их ответ содержит пользователей с access hash.
    * Несколько сообщений подряд от одного неизвестного собеседника ждут один
-   * и тот же запрос, а не плодят свои.
+   * и тот же запрос, а не плодят свои. Не ответил за RESOLVE_TIMEOUT_MS —
+   * null: собеседника подберёт досинхронизация.
    */
   private async resolvePeerUser(
     binding: Binding,
     peerId: string,
     event: NewMessageEvent,
   ): Promise<Api.User | 'skip' | null> {
-    const cached = classify(await event.getChat().catch(() => undefined));
+    const cached = classify(
+      await withTimeout(event.getChat(), RESOLVE_TIMEOUT_MS).catch(
+        () => undefined,
+      ),
+    );
     if (cached !== null) return cached;
 
     let pending = binding.resolving.get(peerId);
     if (!pending) {
       pending = (async () => {
-        const dialogs = await binding.live.client.getDialogs({ limit: RESOLVE_DIALOGS_LIMIT });
+        let dialogs;
+        try {
+          dialogs = await withTimeout(
+            binding.live.client.getDialogs({ limit: RESOLVE_DIALOGS_LIMIT }),
+            RESOLVE_TIMEOUT_MS,
+          );
+        } catch (error) {
+          if (error instanceof TimeoutError) return null;
+          throw error;
+        }
         for (const dialog of dialogs) {
           const user = asUser(dialog.entity);
           if (user && user.id.toString() === peerId) return classify(user);

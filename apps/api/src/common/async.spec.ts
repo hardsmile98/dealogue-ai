@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TimeoutError, runDetached, withTimeout } from './async.js';
+import { KeyedLock, TimeoutError, runDetached, withTimeout } from './async.js';
 
 describe('withTimeout', () => {
   it('отдаёт результат, если промис успел', async () => {
@@ -8,7 +8,9 @@ describe('withTimeout', () => {
 
   it('пробрасывает ошибку самого промиса', async () => {
     const failure = new Error('сломалось');
-    await expect(withTimeout(Promise.reject(failure), 50)).rejects.toBe(failure);
+    await expect(withTimeout(Promise.reject(failure), 50)).rejects.toBe(
+      failure,
+    );
   });
 
   it('отказывает TimeoutError, если промис висит', async () => {
@@ -33,5 +35,58 @@ describe('runDetached', () => {
     runDetached(Promise.resolve(), logger, 'Фон');
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(logger.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('KeyedLock', () => {
+  const deferred = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => (resolve = done));
+    return { promise, resolve };
+  };
+
+  it('задачи одного ключа идут по очереди', async () => {
+    const lock = new KeyedLock();
+    const order: string[] = [];
+    const gate = deferred();
+    const first = lock.run('chat', async () => {
+      order.push('first:start');
+      await gate.promise;
+      order.push('first:end');
+    });
+    const second = lock.run('chat', async () => {
+      order.push('second');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(order).toEqual(['first:start']);
+    gate.resolve();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first:start', 'first:end', 'second']);
+  });
+
+  it('разные ключи не ждут друг друга', async () => {
+    const lock = new KeyedLock();
+    const gate = deferred();
+    const slow = lock.run('a', () => gate.promise);
+    await expect(lock.run('b', async () => 'b')).resolves.toBe('b');
+    gate.resolve();
+    await slow;
+  });
+
+  it('ошибка достаётся своему вызывающему, следующая задача выполняется', async () => {
+    const lock = new KeyedLock();
+    const failed = lock.run('chat', async () => {
+      throw new Error('упало');
+    });
+    const next = lock.run('chat', async () => 'дальше');
+    await expect(failed).rejects.toThrow('упало');
+    await expect(next).resolves.toBe('дальше');
+  });
+
+  it('свободный ключ не держится в памяти', async () => {
+    const lock = new KeyedLock();
+    await lock.run('chat', async () => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(lock.size).toBe(0);
   });
 });

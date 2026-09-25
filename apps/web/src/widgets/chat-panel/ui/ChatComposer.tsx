@@ -1,30 +1,38 @@
-import { useState } from 'react'
-import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
-import IconButton from '@mui/material/IconButton'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
-import SendIcon from '@mui/icons-material/Send'
-import { getApiErrorMessage, isMutationSuccess } from '@/shared/lib'
-import { useSendMessageMutation } from '@/entities/chat'
-import { chatThreadStyles as styles } from './ChatThread.styles'
+import { useState } from 'react';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
+import TextField from '@mui/material/TextField';
+import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import SendIcon from '@mui/icons-material/Send';
+import { getApiErrorMessage, isMutationSuccess } from '@/shared/lib';
+import { useGetChatBotStateQuery } from '@/entities/bot';
+import { useSendMessageMutation } from '@/entities/chat';
+import { chatThreadStyles as styles } from './ChatThread.styles';
 
 interface ChatComposerProps {
-  accountId: string
-  chatId: string
+  accountId: string;
+  chatId: string;
 }
 
-/** Ответ клиенту от имени аккаунта; Ctrl/⌘+Enter — отправить. */
+/**
+ * Ответ клиенту от имени аккаунта; Ctrl/⌘+Enter — отправить. Для агента
+ * это «чужое исходящее»: если чат вёл агент, после отправки он уходит
+ * менеджеру — об этом предупреждаем под полем.
+ */
 export function ChatComposer({ accountId, chatId }: ChatComposerProps) {
-  const [text, setText] = useState('')
-  const [sendMessage, { isLoading: sending, error }] = useSendMessageMutation()
-  const canSend = text.trim() !== '' && !sending
+  const [text, setText] = useState('');
+  const [sendMessage, { isLoading: sending, error }] = useSendMessageMutation();
+  const { data: botState } = useGetChatBotStateQuery({ accountId, chatId });
+  const agentLeads = botState?.state?.mode === 'auto';
+  const canSend = text.trim() !== '' && !sending;
 
   const submit = async () => {
-    if (!canSend) return
-    const result = await sendMessage({ accountId, chatId, text: text.trim() })
-    if (isMutationSuccess(result)) setText('')
-  }
+    if (!canSend) return;
+    const result = await sendMessage({ accountId, chatId, text: text.trim() });
+    if (isMutationSuccess(result)) setText('');
+  };
 
   return (
     <Box sx={styles.composer}>
@@ -39,21 +47,43 @@ export function ChatComposer({ accountId, chatId }: ChatComposerProps) {
           multiline
           maxRows={6}
           size="small"
-          placeholder="Написать клиенту от имени аккаунта… (Ctrl+Enter — отправить)"
+          placeholder="Написать клиенту… (Ctrl+Enter — отправить)"
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-              event.preventDefault()
-              void submit()
+              event.preventDefault();
+              void submit();
             }
           }}
+          slotProps={{
+            htmlInput: {
+              'aria-label': 'Сообщение клиенту',
+              'aria-describedby': 'chat-composer-hint',
+            },
+          }}
         />
-        <IconButton color="primary" aria-label="Отправить" disabled={!canSend} onClick={() => void submit()}>
-          <SendIcon />
-        </IconButton>
+        <Tooltip title="Отправить (Ctrl+Enter)" describeChild>
+          <span>
+            <IconButton
+              color="primary"
+              aria-label="Отправить"
+              disabled={!canSend}
+              onClick={() => void submit()}
+            >
+              <SendIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
       </Box>
-      <Typography sx={styles.composerHint}>Сообщение уйдёт в Telegram от имени аккаунта.</Typography>
+      <Typography
+        id="chat-composer-hint"
+        sx={[styles.composerHint, agentLeads && styles.composerWarning]}
+      >
+        {agentLeads
+          ? 'Сообщение уйдёт в Telegram от имени аккаунта, а чат перейдёт к менеджеру — агент в нём больше не ответит.'
+          : 'Сообщение уйдёт в Telegram от имени аккаунта.'}
+      </Typography>
     </Box>
-  )
+  );
 }

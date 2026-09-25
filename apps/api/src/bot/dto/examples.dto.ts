@@ -1,4 +1,12 @@
-import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { Trim } from '../../common/decorators/trim.decorator.js';
 import { STAGES } from '../library/kinds.js';
 import type { Stage } from '../library/kinds.js';
@@ -21,13 +29,17 @@ export class CreateExampleDto {
   @Trim()
   situation: string;
 
-  @MaxLength(TEXT_MAX, { message: `Сообщения клиента длиннее ${TEXT_MAX} символов` })
+  @MaxLength(TEXT_MAX, {
+    message: `Сообщения клиента длиннее ${TEXT_MAX} символов`,
+  })
   @IsString()
   @IsNotEmpty({ message: 'Введите сообщения клиента' })
   @Trim()
   client: string;
 
-  @MaxLength(TEXT_MAX, { message: `Ответ практика длиннее ${TEXT_MAX} символов` })
+  @MaxLength(TEXT_MAX, {
+    message: `Ответ практика длиннее ${TEXT_MAX} символов`,
+  })
   @IsString()
   @IsNotEmpty({ message: 'Введите ответ практика' })
   @Trim()
@@ -54,14 +66,18 @@ export class UpdateExampleDto {
   @IsOptional()
   situation?: string;
 
-  @MaxLength(TEXT_MAX, { message: `Сообщения клиента длиннее ${TEXT_MAX} символов` })
+  @MaxLength(TEXT_MAX, {
+    message: `Сообщения клиента длиннее ${TEXT_MAX} символов`,
+  })
   @IsString()
   @IsNotEmpty({ message: 'Введите сообщения клиента' })
   @Trim()
   @IsOptional()
   client?: string;
 
-  @MaxLength(TEXT_MAX, { message: `Ответ практика длиннее ${TEXT_MAX} символов` })
+  @MaxLength(TEXT_MAX, {
+    message: `Ответ практика длиннее ${TEXT_MAX} символов`,
+  })
   @IsString()
   @IsNotEmpty({ message: 'Введите ответ практика' })
   @Trim()

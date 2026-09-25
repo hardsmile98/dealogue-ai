@@ -17,7 +17,9 @@ export const AUTH_LOST_MESSAGE =
 
 /** Ни через один MTProxy подключиться не удалось. */
 export class TelegramUnavailableError extends Error {
-  constructor(message = 'Не удалось подключиться к Telegram. Проверьте MTProxy') {
+  constructor(
+    message = 'Не удалось подключиться к Telegram. Проверьте MTProxy',
+  ) {
     super(message);
     this.name = 'TelegramUnavailableError';
   }
@@ -93,15 +95,21 @@ const SEND_REFUSALS: Record<string, () => HttpException> = {
   USER_IS_BLOCKED: () =>
     new ForbiddenException('Собеседник заблокировал этот аккаунт'),
   YOU_BLOCKED_USER: () =>
-    new ForbiddenException('Собеседник в чёрном списке аккаунта — разблокируйте его в Telegram'),
+    new ForbiddenException(
+      'Собеседник в чёрном списке аккаунта — разблокируйте его в Telegram',
+    ),
   PRIVACY_PREMIUM_REQUIRED: () =>
-    new ForbiddenException('Собеседник принимает сообщения только от Telegram Premium'),
+    new ForbiddenException(
+      'Собеседник принимает сообщения только от Telegram Premium',
+    ),
   CHAT_WRITE_FORBIDDEN: () =>
     new ForbiddenException('Писать в этот чат нельзя'),
   INPUT_USER_DEACTIVATED: () =>
     new HttpException('Собеседник удалил аккаунт Telegram', HttpStatus.GONE),
   PEER_ID_INVALID: () =>
-    new ConflictException('Telegram не узнаёт собеседника — дождитесь синхронизации и повторите'),
+    new ConflictException(
+      'Telegram не узнаёт собеседника — дождитесь синхронизации и повторите',
+    ),
   MESSAGE_TOO_LONG: () =>
     new BadRequestException('Сообщение слишком длинное для Telegram'),
 };
@@ -114,10 +122,15 @@ export function toHttpException(error: unknown): HttpException {
   if (error instanceof HttpException) return error;
 
   if (isFloodWait(error)) {
-    return new HttpException(floodWaitMessage(error.seconds), HttpStatus.TOO_MANY_REQUESTS);
+    return new HttpException(
+      floodWaitMessage(error.seconds),
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
   if (error instanceof errors.PhoneNumberInvalidError) {
-    return new BadRequestException('Telegram не принял номер. Проверьте формат: +7…');
+    return new BadRequestException(
+      'Telegram не принял номер. Проверьте формат: +7…',
+    );
   }
   if (error instanceof errors.PhoneNumberBannedError) {
     return new ForbiddenException('Этот номер заблокирован в Telegram');
@@ -129,7 +142,9 @@ export function toHttpException(error: unknown): HttpException {
     );
   }
   if (error instanceof errors.PhoneCodeInvalidError) {
-    return new BadRequestException('Неверный код. Проверьте сообщение от Telegram');
+    return new BadRequestException(
+      'Неверный код. Проверьте сообщение от Telegram',
+    );
   }
   if (error instanceof errors.PhoneCodeExpiredError) {
     return new BadRequestException('Код устарел — запросите новый');
@@ -149,7 +164,10 @@ export function toHttpException(error: unknown): HttpException {
   if (error instanceof errors.RPCError) {
     const refusal = SEND_REFUSALS[error.errorMessage ?? ''];
     if (refusal) return refusal();
-    return new HttpException(`Ошибка Telegram: ${error.errorMessage}`, HttpStatus.BAD_GATEWAY);
+    return new HttpException(
+      `Ошибка Telegram: ${error.errorMessage}`,
+      HttpStatus.BAD_GATEWAY,
+    );
   }
   if (error instanceof AccountOfflineError) {
     return new ServiceUnavailableException('Аккаунт не подключён к Telegram');
@@ -163,10 +181,14 @@ export function toHttpException(error: unknown): HttpException {
     return new ServiceUnavailableException(error.message);
   }
   if (error instanceof TimeoutError) {
-    return new GatewayTimeoutException('Telegram не ответил вовремя, попробуйте ещё раз');
+    return new GatewayTimeoutException(
+      'Telegram не ответил вовремя, попробуйте ещё раз',
+    );
   }
   return new HttpException(
-    error instanceof Error ? error.message : 'Не удалось выполнить запрос к Telegram',
+    error instanceof Error
+      ? error.message
+      : 'Не удалось выполнить запрос к Telegram',
     HttpStatus.BAD_GATEWAY,
   );
 }

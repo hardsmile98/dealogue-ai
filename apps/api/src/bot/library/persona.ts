@@ -27,23 +27,25 @@ export function readPersona(raw: unknown, fallbackName: string): Persona {
   const source = (raw ?? {}) as Partial<Record<keyof Persona, unknown>>;
   const links = Array.isArray(source.links)
     ? source.links
-        .filter((link): link is PersonaLink =>
-          typeof link === 'object' && link !== null &&
-          typeof (link as PersonaLink).title === 'string' &&
-          typeof (link as PersonaLink).url === 'string',
+        .filter(
+          (link): link is PersonaLink =>
+            typeof link === 'object' &&
+            link !== null &&
+            typeof (link as PersonaLink).title === 'string' &&
+            typeof (link as PersonaLink).url === 'string',
         )
         .map((link) => ({ title: link.title, url: link.url }))
     : [];
   return {
-    name: typeof source.name === 'string' && source.name ? source.name : fallbackName,
+    name:
+      typeof source.name === 'string' && source.name
+        ? source.name
+        : fallbackName,
     gender: source.gender === 'f' ? 'f' : 'm',
     bio: typeof source.bio === 'string' ? source.bio : '',
     links,
   };
 }
-
-/** Плейсхолдеры, которые допустимы в текстах библиотеки. */
-export const PLACEHOLDERS = ['{{bio}}', '{{links}}'] as const;
 
 const PLACEHOLDER_RE = /\{\{\s*(bio|links)\s*\}\}/g;
 
@@ -57,8 +59,10 @@ export function renderLinks(links: readonly PersonaLink[]): string {
  * плейсхолдер вместе с лишними пробелами и пустыми строками вокруг.
  */
 export function renderPersona(text: string, persona: Persona): string {
-  const rendered = text.replace(PLACEHOLDER_RE, (_match, key: 'bio' | 'links') =>
-    key === 'bio' ? persona.bio : renderLinks(persona.links),
+  const rendered = text.replace(
+    PLACEHOLDER_RE,
+    (_match, key: 'bio' | 'links') =>
+      key === 'bio' ? persona.bio : renderLinks(persona.links),
   );
   return rendered
     .replace(/[ \t]{2,}/g, ' ')

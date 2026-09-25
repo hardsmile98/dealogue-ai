@@ -60,15 +60,24 @@ export class TelegramChatsRepository {
   ) {}
 
   /** Чат внутри аккаунта или null. */
-  findOwned(accountId: string, chatId: string): Promise<TelegramChatEntity | null> {
+  findOwned(
+    accountId: string,
+    chatId: string,
+  ): Promise<TelegramChatEntity | null> {
     return this.chats.findOne({ where: { id: chatId, accountId } });
   }
 
-  findByPeer(accountId: string, peerId: string): Promise<TelegramChatEntity | null> {
+  findByPeer(
+    accountId: string,
+    peerId: string,
+  ): Promise<TelegramChatEntity | null> {
     return this.chats.findOne({ where: { accountId, peerId } });
   }
 
-  findByPeers(accountId: string, peerIds: string[]): Promise<TelegramChatEntity[]> {
+  findByPeers(
+    accountId: string,
+    peerIds: string[],
+  ): Promise<TelegramChatEntity[]> {
     if (peerIds.length === 0) return Promise.resolve([]);
     return this.chats.find({ where: { accountId, peerId: In(peerIds) } });
   }
@@ -110,7 +119,10 @@ export class TelegramChatsRepository {
    * Заводит чаты новым собеседникам одним запросом. Уже существующие
    * (гонка события и синхронизации) пропускаются — вернутся только созданные.
    */
-  async insertMissing(accountId: string, peers: PeerFields[]): Promise<TelegramChatEntity[]> {
+  async insertMissing(
+    accountId: string,
+    peers: PeerFields[],
+  ): Promise<TelegramChatEntity[]> {
     if (peers.length === 0) return [];
     const { rows } = await execute(
       this.chats.manager,
@@ -133,7 +145,10 @@ export class TelegramChatsRepository {
   }
 
   /** Имя, username или телефон собеседника поменялись; access hash не затираем пустым. */
-  async updatePeer(chatId: string, peer: PeerFields): Promise<TelegramChatEntity | null> {
+  async updatePeer(
+    chatId: string,
+    peer: PeerFields,
+  ): Promise<TelegramChatEntity | null> {
     const { rows } = await execute(
       this.chats.manager,
       `UPDATE telegram_chats
@@ -144,7 +159,13 @@ export class TelegramChatsRepository {
            updated_at = now()
        WHERE id = $1
        RETURNING *`,
-      [chatId, peer.peerName, peer.peerUsername, peer.peerPhone, peer.peerAccessHash],
+      [
+        chatId,
+        peer.peerName,
+        peer.peerUsername,
+        peer.peerPhone,
+        peer.peerAccessHash,
+      ],
     );
     return rows[0] ? hydrate(this.chats, rows[0]) : null;
   }
@@ -157,7 +178,10 @@ export class TelegramChatsRepository {
    * строки в момент UPDATE — без чтения и перезаписи целиком.
    * Возвращает строку после обновления или null, если чат уже удалён.
    */
-  async applyIngest(chatId: string, update: ChatIngestUpdate): Promise<TelegramChatEntity | null> {
+  async applyIngest(
+    chatId: string,
+    update: ChatIngestUpdate,
+  ): Promise<TelegramChatEntity | null> {
     const { newest, first } = update;
     const { rows } = await execute(
       this.chats.manager,

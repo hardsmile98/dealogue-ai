@@ -1,3 +1,5 @@
+import { errorDetail } from './errors.js';
+
 /** Промис не завершился за отведённое время (сама операция при этом не отменяется). */
 export class TimeoutError extends Error {
   constructor(readonly ms: number) {
@@ -45,8 +47,32 @@ export function runDetached(
   label: string,
 ): void {
   task.catch((error: unknown) => {
-    logger.error(
-      `${label}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-    );
+    logger.error(`${label}: ${errorDetail(error)}`);
   });
+}
+
+/**
+ * Очередь задач по ключу: задачи одного ключа идут строго друг за другом,
+ * разных ключей — параллельно. Ошибка задачи достаётся её вызывающему и
+ * не мешает следующей. Ключ без задач из памяти удаляется.
+ */
+export class KeyedLock {
+  private readonly tails = new Map<string, Promise<unknown>>();
+
+  run<T>(key: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.tails.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(task);
+    this.tails.set(key, current);
+    current
+      .finally(() => {
+        if (this.tails.get(key) === current) this.tails.delete(key);
+      })
+      .catch(() => undefined);
+    return current;
+  }
+
+  /** Сколько ключей сейчас заняты — для проверок. */
+  get size(): number {
+    return this.tails.size;
+  }
 }

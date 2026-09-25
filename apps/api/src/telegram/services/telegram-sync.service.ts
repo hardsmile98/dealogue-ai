@@ -37,7 +37,10 @@ export class TelegramSyncService {
     private readonly ingest: TelegramIngestService,
   ) {}
 
-  async fullSync(accountId: string, client: TelegramClient): Promise<SyncStats> {
+  async fullSync(
+    accountId: string,
+    client: TelegramClient,
+  ): Promise<SyncStats> {
     let processed = 0;
     for await (const dialog of client.iterDialogs({
       limit: this.config.dialogsLimit,
@@ -51,7 +54,10 @@ export class TelegramSyncService {
     return { dialogs: processed, caughtUp: processed };
   }
 
-  async incrementalSync(accountId: string, client: TelegramClient): Promise<SyncStats> {
+  async incrementalSync(
+    accountId: string,
+    client: TelegramClient,
+  ): Promise<SyncStats> {
     const dialogs = await client.getDialogs({
       limit: this.config.recentDialogsLimit,
     });
@@ -120,11 +126,16 @@ export class TelegramSyncService {
 
     const recent = onlyMessages(latest);
     // latest идёт от новых к старым, oldest — от старых к новым.
-    const first = (wholeHistory ? recent.at(-1) : onlyMessages(oldest)[0]) ?? null;
-    await this.ingest.storeMessages(chat, [...recent, ...onlyMessages(oldest)], {
-      total: latest.total,
-      firstMessage: first,
-    });
+    const first =
+      (wholeHistory ? recent.at(-1) : onlyMessages(oldest)[0]) ?? null;
+    await this.ingest.storeMessages(
+      chat,
+      [...recent, ...onlyMessages(oldest)],
+      {
+        total: latest.total,
+        firstMessage: first,
+      },
+    );
     return chat;
   }
 }

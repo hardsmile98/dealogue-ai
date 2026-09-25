@@ -3,14 +3,27 @@ import type { IncomingMessage, Memory, Plan } from '../core/types.js';
 import type { LlmMessage } from '../llm/llm.types.js';
 import type { Stage } from '../library/kinds.js';
 import type { Persona } from '../library/persona.js';
-import { aboutBlock, blockPreview, examplesBlock, historyBlock, libraryBlock, memoryBlock, personaBlock, turnBlock } from './blocks.js';
+import {
+  aboutBlock,
+  blockPreview,
+  examplesBlock,
+  historyBlock,
+  libraryBlock,
+  memoryBlock,
+  personaBlock,
+  turnBlock,
+} from './blocks.js';
 import type { ExampleSample, LibrarySample } from './blocks.js';
 
 const STAGE_NOTES: Record<Stage, string> = {
-  intake: 'Этап: знакомство. Клиент только написал. Ты здороваешься, отвечаешь на то, что он сказал, и просишь дату и место рождения для диагностики; когда данные есть — спрашиваешь, что беспокоит.',
-  links: 'Этап: ожидание диагностики. Ты уже сказал, что смотришь карту клиента и вернёшься с результатами. Разговор поддерживаешь, но диагностику не пересказываешь и не раскрываешь.',
-  diagnostic: 'Этап: диагностика отправлена. Ты ждёшь отклика: что откликнулось, что клиент хотел бы изменить. О практиках подробно не рассказываешь, пока не пришло время предложения.',
-  offer: 'Этап: описание практик отправлено. Отвечаешь на вопросы о практиках по библиотеке, снимаешь сомнения, подводишь к стоимости. Цены называешь только через веху «стоимость», не своими словами.',
+  intake:
+    'Этап: знакомство. Клиент только написал. Ты здороваешься, отвечаешь на то, что он сказал, и просишь дату и место рождения для диагностики; когда данные есть — спрашиваешь, что беспокоит.',
+  links:
+    'Этап: ожидание диагностики. Ты уже сказал, что смотришь карту клиента и вернёшься с результатами. Разговор поддерживаешь, но диагностику не пересказываешь и не раскрываешь.',
+  diagnostic:
+    'Этап: диагностика отправлена. Ты ждёшь отклика: что откликнулось, что клиент хотел бы изменить. О практиках подробно не рассказываешь, пока не пришло время предложения.',
+  offer:
+    'Этап: описание практик отправлено. Отвечаешь на вопросы о практиках по библиотеке, снимаешь сомнения, подводишь к стоимости. Цены называешь только через веху «стоимость», не своими словами.',
   prices: 'Этап: цены отправлены. Дальше отвечает менеджер.',
 };
 
@@ -64,9 +77,15 @@ export function buildWriterPrompt(input: WriterPromptInput): LlmMessage[] {
     STAGE_NOTES[input.stage],
   ];
   const samples = libraryBlock(input.samples);
-  if (samples) system.push('', '## Образцы фраз для этого этапа (тон и длина; пересказывай, не цитируй)', samples);
+  if (samples)
+    system.push(
+      '',
+      '## Образцы фраз для этого этапа (тон и длина; пересказывай, не цитируй)',
+      samples,
+    );
   const examples = examplesBlock(input.examples);
-  if (examples) system.push('', '## Примеры реальных диалогов на этом этапе', examples);
+  if (examples)
+    system.push('', '## Примеры реальных диалогов на этом этапе', examples);
 
   const user = [
     '## История переписки',
@@ -91,7 +110,11 @@ export function buildWriterPrompt(input: WriterPromptInput): LlmMessage[] {
     turnBlock(input.messages),
   ];
   if (input.reviewNotes && input.reviewNotes.length > 0) {
-    user.push('', '## Замечания к прошлой версии ответа (исправь их, остальное сохрани)', ...input.reviewNotes.map((note) => `- ${note}`));
+    user.push(
+      '',
+      '## Замечания к прошлой версии ответа (исправь их, остальное сохрани)',
+      ...input.reviewNotes.map((note) => `- ${note}`),
+    );
   }
   user.push('', 'Напиши ответ.');
   return [

@@ -35,7 +35,10 @@ export class TelegramMessagesRepository {
    * Исходящее, которое собеседник уже прочитал (граница лежит на чате),
    * сразу получает read_at.
    */
-  async insertMany(chatId: string, rows: MessageRow[]): Promise<TelegramMessageEntity[]> {
+  async insertMany(
+    chatId: string,
+    rows: MessageRow[],
+  ): Promise<TelegramMessageEntity[]> {
     if (rows.length === 0) return [];
     const { rows: inserted } = await execute(
       this.messages.manager,
@@ -60,7 +63,10 @@ export class TelegramMessagesRepository {
     return inserted.map((row) => hydrate(this.messages, row));
   }
 
-  findByTelegramId(chatId: string, telegramMessageId: number): Promise<TelegramMessageEntity | null> {
+  findByTelegramId(
+    chatId: string,
+    telegramMessageId: number,
+  ): Promise<TelegramMessageEntity | null> {
     return this.messages.findOne({ where: { chatId, telegramMessageId } });
   }
 
@@ -69,7 +75,11 @@ export class TelegramMessagesRepository {
    * совпадает с индексом IDX_telegram_messages_chat_sent_id — страница
    * читается прямо с места курсора.
    */
-  page(chatId: string, cursor: MessageCursor | null, limit: number): Promise<TelegramMessageEntity[]> {
+  page(
+    chatId: string,
+    cursor: MessageCursor | null,
+    limit: number,
+  ): Promise<TelegramMessageEntity[]> {
     const query = this.messages
       .createQueryBuilder('message')
       .where('message.chat_id = :chatId', { chatId })
@@ -80,6 +90,36 @@ export class TelegramMessagesRepository {
       query.andWhere(
         '(message.sent_at, message.telegram_message_id) < (CAST(:sentAt AS timestamptz), CAST(:telegramMessageId AS integer))',
         cursor,
+      );
+    }
+    return query.getMany();
+  }
+
+  /**
+   * Последние `limit` сообщений чата до сообщения `telegramMessageId`
+   * включительно (без него — просто последние), от новых к старым; ключ тот
+   * же, что у страниц переписки. null — такого сообщения в чате нет.
+   */
+  async latestUpTo(
+    chatId: string,
+    telegramMessageId: number | undefined,
+    limit: number,
+  ): Promise<TelegramMessageEntity[] | null> {
+    const query = this.messages
+      .createQueryBuilder('message')
+      .where('message.chat_id = :chatId', { chatId })
+      .orderBy('message.sent_at', 'DESC')
+      .addOrderBy('message.telegram_message_id', 'DESC')
+      .limit(limit);
+    if (telegramMessageId !== undefined) {
+      const target = await this.findByTelegramId(chatId, telegramMessageId);
+      if (!target) return null;
+      query.andWhere(
+        '(message.sent_at, message.telegram_message_id) <= (CAST(:sentAt AS timestamptz), CAST(:telegramMessageId AS integer))',
+        {
+          sentAt: target.sentAt,
+          telegramMessageId: target.telegramMessageId,
+        },
       );
     }
     return query.getMany();

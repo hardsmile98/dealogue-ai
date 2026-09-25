@@ -29,7 +29,11 @@ export class TelegramDialogStartsService implements OnApplicationBootstrap {
 
   /** Если парсер кодов обновился — пересчитать старые начала диалогов, не мешая старту. */
   onApplicationBootstrap(): void {
-    runDetached(this.reclassifyOutdated(), this.logger, 'Переклассификация не удалась');
+    runDetached(
+      this.reclassifyOutdated(),
+      this.logger,
+      'Переклассификация не удалась',
+    );
   }
 
   /**
@@ -37,7 +41,10 @@ export class TelegramDialogStartsService implements OnApplicationBootstrap {
    * Идемпотентно: повторный вызов для того же чата обновляет строку.
    * Возвращает распознанный код, чтобы чат мог хранить его для списка.
    */
-  async record(chat: TelegramChatEntity, first: Api.Message): Promise<string | null> {
+  async record(
+    chat: TelegramChatEntity,
+    first: Api.Message,
+  ): Promise<string | null> {
     const text = (first.message ?? '').trim();
     const match = parseLeadCode(text);
     await this.starts
@@ -55,7 +62,15 @@ export class TelegramDialogStartsService implements OnApplicationBootstrap {
         parserVersion: LEAD_CODE_PARSER_VERSION,
       })
       .orUpdate(
-        ['telegram_message_id', 'started_at', 'text', 'lead_code', 'lead_marker', 'parser_version', 'updated_at'],
+        [
+          'telegram_message_id',
+          'started_at',
+          'text',
+          'lead_code',
+          'lead_marker',
+          'parser_version',
+          'updated_at',
+        ],
         ['chat_id'],
       )
       .updateEntity(false)
@@ -111,7 +126,9 @@ export class TelegramDialogStartsService implements OnApplicationBootstrap {
       updated += batch.length;
     }
     if (updated > 0) {
-      this.logger.log(`Переклассифицировано начал диалогов: ${updated} (парсер v${LEAD_CODE_PARSER_VERSION})`);
+      this.logger.log(
+        `Переклассифицировано начал диалогов: ${updated} (парсер v${LEAD_CODE_PARSER_VERSION})`,
+      );
     }
     return updated;
   }
@@ -143,18 +160,22 @@ export class TelegramDialogStartsService implements OnApplicationBootstrap {
   }
 
   /** Сколько диалогов начато сегодня (в зоне `timezone`) по каждому аккаунту. */
-  async countToday(accountIds: string[], timezone: string): Promise<Map<string, number>> {
+  async countToday(
+    accountIds: string[],
+    timezone: string,
+  ): Promise<Map<string, number>> {
     if (accountIds.length === 0) return new Map();
-    const rows: { account_id: string; count: number | string }[] = await this.starts.query(
-      `
+    const rows: { account_id: string; count: number | string }[] =
+      await this.starts.query(
+        `
         SELECT s.account_id, COUNT(*)::int AS count
         FROM telegram_dialog_starts s
         WHERE s.account_id = ANY($1::uuid[])
           AND s.started_at >= ((now() AT TIME ZONE $2)::date::timestamp AT TIME ZONE $2)
         GROUP BY s.account_id
       `,
-      [accountIds, timezone],
-    );
+        [accountIds, timezone],
+      );
     return new Map(rows.map((row) => [row.account_id, Number(row.count)]));
   }
 }

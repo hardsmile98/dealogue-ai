@@ -209,7 +209,9 @@ export class CreateAiAgent1700000000005 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE "ai_exchanges"`);
     await queryRunner.query(`DROP TABLE "ai_style_profile"`);
     await queryRunner.query(`DROP TABLE "ai_agent_settings"`);
-    await queryRunner.query(`ALTER TABLE "telegram_messages" DROP COLUMN "ai_run_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "telegram_messages" DROP COLUMN "ai_run_id"`,
+    );
     await queryRunner.query(`DROP TABLE "ai_runs"`);
     await queryRunner.query(`DROP INDEX "IDX_telegram_chats_ai_enabled"`);
     await queryRunner.query(`DROP INDEX "IDX_telegram_chats_attention"`);
@@ -229,6 +231,8 @@ export class CreateAiAgent1700000000005 implements MigrationInterface {
         DROP COLUMN "attention_reason",
         DROP COLUMN "attention_at"
     `);
-    await queryRunner.query(`ALTER TABLE "telegram_accounts" DROP COLUMN "deep_history_status"`);
+    await queryRunner.query(
+      `ALTER TABLE "telegram_accounts" DROP COLUMN "deep_history_status"`,
+    );
   }
 }

@@ -19,11 +19,17 @@ export class TelegramAccountsRepository {
   ) {}
 
   listByUser(userId: string): Promise<TelegramAccountEntity[]> {
-    return this.accounts.find({ where: { userId }, order: { connectedAt: 'ASC' } });
+    return this.accounts.find({
+      where: { userId },
+      order: { connectedAt: 'ASC' },
+    });
   }
 
   /** Аккаунт, если он принадлежит пользователю; чужой неотличим от несуществующего. */
-  findOwned(userId: string, accountId: string): Promise<TelegramAccountEntity | null> {
+  findOwned(
+    userId: string,
+    accountId: string,
+  ): Promise<TelegramAccountEntity | null> {
     return this.accounts.findOne({ where: { id: accountId, userId } });
   }
 
@@ -31,7 +37,10 @@ export class TelegramAccountsRepository {
     return this.accounts.findOne({ where: { id: accountId } });
   }
 
-  findByPhone(userId: string, phone: string): Promise<TelegramAccountEntity | null> {
+  findByPhone(
+    userId: string,
+    phone: string,
+  ): Promise<TelegramAccountEntity | null> {
     return this.accounts.findOne({ where: { userId, phone } });
   }
 
@@ -77,7 +86,10 @@ export class TelegramAccountsRepository {
    * первичной выгрузки — история считается загруженной. Один UPDATE вместо
    * отдельных записей статуса и времени.
    */
-  async recordSync(accountId: string, options: { full: boolean }): Promise<void> {
+  async recordSync(
+    accountId: string,
+    options: { full: boolean },
+  ): Promise<void> {
     await execute(
       this.accounts.manager,
       `UPDATE telegram_accounts
@@ -92,7 +104,10 @@ export class TelegramAccountsRepository {
   }
 
   /** Сессия отозвана: аккаунт ждёт переподключения, сессия стирается. */
-  async markDisconnected(accountId: string, statusMessage: string): Promise<void> {
+  async markDisconnected(
+    accountId: string,
+    statusMessage: string,
+  ): Promise<void> {
     await execute(
       this.accounts.manager,
       `UPDATE telegram_accounts

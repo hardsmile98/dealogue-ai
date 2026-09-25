@@ -23,7 +23,9 @@ export function parseWriterOutput(raw: string): Draft {
     meta: {
       nudge: typeof data.nudge === 'string' && data.nudge ? data.nudge : null,
       arguments: stringList(data.arguments),
-      unansweredAbout: stringList(data.unanswered_about ?? data.unansweredAbout),
+      unansweredAbout: stringList(
+        data.unanswered_about ?? data.unansweredAbout,
+      ),
       notes: typeof data.notes === 'string' ? data.notes : '',
     },
   };

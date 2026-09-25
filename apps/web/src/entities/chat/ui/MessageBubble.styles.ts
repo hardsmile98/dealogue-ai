@@ -1,79 +1,26 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const messageBubbleStyles = {
-  row: {
-    display: 'flex',
-    px: 2,
-    py: 0.25,
-  },
-  rowIn: { justifyContent: 'flex-start' },
-  rowOut: { justifyContent: 'flex-end' },
-  bubble: {
-    maxWidth: 'min(72%, 560px)',
-    px: 1.75,
-    py: 1,
-    borderRadius: 3,
-    fontSize: 14,
-    lineHeight: 1.5,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
-    position: 'relative',
-  },
-  bubbleIn: {
-    bgcolor: 'background.paper',
-    border: '1px solid',
-    borderColor: 'divider',
-    borderBottomLeftRadius: 6,
-  },
-  bubbleOut: {
-    bgcolor: '#e0e7ff',
-    color: 'text.primary',
-    borderBottomRightRadius: 6,
-  },
-  meta: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 0.75,
-    mt: 0.25,
-    fontSize: 11,
-    color: 'text.secondary',
-  },
   mediaTag: {
     display: 'inline-flex',
     alignItems: 'center',
-    mr: 0.5,
-    verticalAlign: 'middle',
+    gap: 0.5,
+    fontSize: 12,
+    fontWeight: 500,
     color: 'text.secondary',
-    '& svg': { fontSize: 14 },
-  },
-  readMark: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    color: 'text.disabled',
-    '& svg': { fontSize: 14 },
-  },
-  readMarkRead: {
-    color: 'primary.main',
-  },
-  action: {
-    display: 'inline-flex',
-    opacity: 0,
-    transition: 'opacity 120ms',
-  },
-  withAction: {
-    '&:hover .bubble-action, & .bubble-action:focus-within': { opacity: 1 },
+    '& svg': { fontSize: 16 },
   },
   firstBadge: {
-    mb: 0.75,
-    display: 'flex',
+    display: 'inline-flex',
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: 0.75,
+  },
+  firstBadgeLabel: {
     fontSize: 11,
     fontWeight: 600,
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
     color: 'primary.main',
   },
-} satisfies SxStyles
+} satisfies SxStyles;

@@ -1,14 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react';
 
 /** Значение, которое догоняет `value` только после паузы в `delayMs` — для поиска по вводу. */
 export function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
+  const [debounced, setDebounced] = useState(value);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs)
+    const timer = setTimeout(() => setDebounced(value), delayMs);
 
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
 
-  return debounced
+  return debounced;
 }

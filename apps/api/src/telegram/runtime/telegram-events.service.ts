@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Subject } from 'rxjs';
 import type { Observable, Subscription } from 'rxjs';
 import type { Api } from 'teleproto';
-import type { MessageDirection, TelegramChatEntity } from '../entities/telegram-chat.entity.js';
+import { errorDetail } from '../../common/errors.js';
+import type {
+  MessageDirection,
+  TelegramChatEntity,
+} from '../entities/telegram-chat.entity.js';
 
 /** Общее у всех событий: чей аккаунт и кто его владелец. */
 interface AccountScoped {
@@ -49,11 +53,13 @@ export type TelegramLiveEvent =
   | TelegramAccountLiveEvent
   | TelegramAccountStoppedEvent;
 
-export type TelegramEventHandler = (event: TelegramLiveEvent) => void | Promise<void>;
+export type TelegramEventHandler = (
+  event: TelegramLiveEvent,
+) => void | Promise<void>;
 
 /**
  * Шина живых событий Telegram. Модуль Telegram только публикует, подписчики
- * (пересылка в браузер, будущий бот) живут в других модулях.
+ * (пересылка в браузер, Telegram-канал агента) живут в других модулях.
  *
  * Подписываться — через `subscribe`: ошибка обработчика (и синхронная, и
  * отклонённый промис) уходит в лог. У «сырого» `events` так не выйдет —
@@ -89,7 +95,7 @@ export class TelegramEventsService {
 
   private logFailure(event: TelegramLiveEvent, error: unknown): void {
     this.logger.error(
-      `Подписчик не обработал «${event.kind}» (аккаунт ${event.accountId}): ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      `Подписчик не обработал «${event.kind}» (аккаунт ${event.accountId}): ${errorDetail(error)}`,
     );
   }
 }

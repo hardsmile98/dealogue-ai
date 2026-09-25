@@ -1,12 +1,12 @@
-import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined'
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined'
-import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
-import type { SvgIconComponent } from '@mui/icons-material'
+import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
+import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
+import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
+import type { SvgIconComponent } from '@mui/icons-material';
 
 export interface BrandHighlight {
-  icon: SvgIconComponent
-  title: string
-  text: string
+  icon: SvgIconComponent;
+  title: string;
+  text: string;
 }
 
 /** Текст-заглушка для брендовой колонки — заменить на реальный, когда появится. */
@@ -26,4 +26,4 @@ export const BRAND_HIGHLIGHTS: BrandHighlight[] = [
     title: 'Данные под контролем',
     text: 'Доступы по ролям и журнал действий команды.',
   },
-]
+];

@@ -31,23 +31,31 @@ export function selectDiagnostic<T extends DiagnosticCandidate>(
   query: DiagnosticQuery,
   pick: (candidates: readonly T[]) => T = randomOf,
 ): T | null {
-  const enabled = items.filter((item) => item.enabled && item.language === query.language);
+  const enabled = items.filter(
+    (item) => item.enabled && item.language === query.language,
+  );
   const attempts: Array<{ category: string; gender: Gender | null }> = [];
   if (query.category && query.category !== UNIVERSAL_CATEGORY) {
     attempts.push({ category: query.category, gender: query.gender });
     if (query.gender) attempts.push({ category: query.category, gender: null });
   }
   attempts.push({ category: UNIVERSAL_CATEGORY, gender: query.gender });
-  if (query.gender) attempts.push({ category: UNIVERSAL_CATEGORY, gender: null });
+  if (query.gender)
+    attempts.push({ category: UNIVERSAL_CATEGORY, gender: null });
 
   for (const attempt of attempts) {
     const candidates = enabled.filter(
       (item) =>
         item.category === attempt.category &&
-        (attempt.gender === null ? item.gender === null : item.gender === attempt.gender || item.gender === null),
+        (attempt.gender === null
+          ? item.gender === null
+          : item.gender === attempt.gender || item.gender === null),
     );
     // Точное совпадение по полу важнее «подходит любому».
-    const exact = attempt.gender === null ? candidates : candidates.filter((item) => item.gender === attempt.gender);
+    const exact =
+      attempt.gender === null
+        ? candidates
+        : candidates.filter((item) => item.gender === attempt.gender);
     const pool = exact.length > 0 ? exact : candidates;
     if (pool.length > 0) return pick(pool);
   }

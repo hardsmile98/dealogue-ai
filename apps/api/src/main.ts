@@ -2,6 +2,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
+import { errorDetail } from './common/errors.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 
 const DEFAULT_CORS_ORIGIN = 'http://localhost:5173';
@@ -33,9 +34,14 @@ async function bootstrap() {
   // `message`), остальное — 500 со стеком в логе.
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  // SIGTERM/SIGINT → onModuleDestroy: Telegram-клиенты закрываются штатно.
+  // SIGTERM/SIGINT → onModuleDestroy: сначала останавливаются поллеры и
+  // приём событий агента, потом закрываются клиенты Telegram (без logout —
+  // сессии остаются действительными) и пул базы.
   app.enableShutdownHooks();
 
+  // Клиенты Telegram, поллеры и уборка стартуют после того, как порт занят
+  // (common/lifecycle.ts → whenListening): экземпляр, которому порт не
+  // достался, падает здесь, не тронув сессии Telegram и очередь заданий.
   await app.listen(config.get<string>('PORT') ?? 3000);
 }
 
@@ -45,8 +51,15 @@ async function bootstrap() {
 // стек, чтобы его найти, и продолжаем работать.
 process.on('unhandledRejection', (reason) => {
   new Logger('Process').error(
-    `Необработанный отказ промиса: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
+    `Необработанный отказ промиса: ${errorDetail(reason)}`,
   );
 });
 
-await bootstrap();
+try {
+  await bootstrap();
+} catch (error) {
+  // Порт занят, база недоступна, ошибка в .env — процесс не должен остаться
+  // висеть наполовину поднятым (пул базы, таймеры): пишем причину и выходим.
+  new Logger('Bootstrap').error(`API не запустился: ${errorDetail(error)}`);
+  process.exit(1);
+}

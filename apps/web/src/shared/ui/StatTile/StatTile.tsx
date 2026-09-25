@@ -1,32 +1,38 @@
-import type { ReactNode } from 'react'
-import Box from '@mui/material/Box'
-import Paper from '@mui/material/Paper'
-import Typography from '@mui/material/Typography'
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
-import { statTileStyles as styles } from './StatTile.styles'
+import type { ReactNode } from 'react';
+import Box from '@mui/material/Box';
+import Paper from '@mui/material/Paper';
+import Typography from '@mui/material/Typography';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import { statTileStyles as styles } from './StatTile.styles';
 
 export interface StatTileDelta {
   /** Относительное изменение в процентах (может быть отрицательным) или null, если сравнивать не с чем. */
-  percent: number | null
+  percent: number | null;
   /** С чем сравниваем: «к прошлым 7 дням». */
-  versus: string
+  versus: string;
 }
 
 interface StatTileProps {
-  label: string
-  value: ReactNode
+  label: string;
+  value: ReactNode;
   /** Подпись под значением: доля, пояснение. */
-  caption?: ReactNode
-  delta?: StatTileDelta
+  caption?: ReactNode;
+  delta?: StatTileDelta;
   /** Цветной маркер серии рядом с подписью, если плитка соответствует серии графика. */
-  swatchColor?: string
+  swatchColor?: string;
 }
 
 /** Плитка с одним показателем: подпись, крупное число, дельта или пояснение. */
-export function StatTile({ label, value, caption, delta, swatchColor }: StatTileProps) {
+export function StatTile({
+  label,
+  value,
+  caption,
+  delta,
+  swatchColor,
+}: StatTileProps) {
   return (
-    <Paper elevation={0} sx={styles.root}>
+    <Paper variant="outlined" sx={styles.root}>
       <Typography component="div" sx={styles.label}>
         {swatchColor && <Box sx={[styles.swatch, { bgcolor: swatchColor }]} />}
         {label}
@@ -41,14 +47,14 @@ export function StatTile({ label, value, caption, delta, swatchColor }: StatTile
         </Typography>
       )}
     </Paper>
-  )
+  );
 }
 
 function DeltaText({ delta }: { delta: StatTileDelta }) {
   if (delta.percent === null) {
-    return <Box component="span">нет данных за прошлый период</Box>
+    return <Box component="span">нет данных за прошлый период</Box>;
   }
-  const rounded = Math.round(delta.percent)
+  const rounded = Math.round(delta.percent);
   if (rounded === 0) {
     return (
       <Box component="span">
@@ -57,20 +63,21 @@ function DeltaText({ delta }: { delta: StatTileDelta }) {
         </Box>{' '}
         {delta.versus}
       </Box>
-    )
+    );
   }
-  const up = rounded > 0
+  const up = rounded > 0;
+  const Arrow = up ? ArrowUpwardIcon : ArrowDownwardIcon;
   return (
     <Box component="span">
       <Box component="span" sx={up ? styles.deltaUp : styles.deltaDown}>
-        {up ? (
-          <ArrowUpwardIcon sx={{ fontSize: 14 }} />
-        ) : (
-          <ArrowDownwardIcon sx={{ fontSize: 14 }} />
-        )}
+        <Arrow aria-hidden sx={styles.deltaIcon} />
+        {/* Стрелку экранный диктор не прочитает — направление словом. */}
+        <Box component="span" sx={styles.visuallyHidden}>
+          {up ? 'рост на' : 'снижение на'}
+        </Box>
         {Math.abs(rounded)} %
       </Box>{' '}
       {delta.versus}
     </Box>
-  )
+  );
 }

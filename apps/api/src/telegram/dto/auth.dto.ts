@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { Trim } from '../../common/decorators/trim.decorator.js';
 
 // Правила срабатывают снизу вверх, а наружу уходит первая ошибка

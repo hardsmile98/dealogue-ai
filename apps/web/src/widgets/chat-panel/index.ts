@@ -1,1 +1,1 @@
-export { ChatPanel } from './ui/ChatPanel'
+export { ChatPanel } from './ui/ChatPanel';

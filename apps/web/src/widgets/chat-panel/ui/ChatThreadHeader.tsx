@@ -1,32 +1,38 @@
-import type { ReactNode } from 'react'
-import Box from '@mui/material/Box'
-import IconButton from '@mui/material/IconButton'
-import Skeleton from '@mui/material/Skeleton'
-import Typography from '@mui/material/Typography'
-import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import { formatDateTime } from '@/shared/lib'
-import { LeadCodeChip } from '@/entities/chat'
-import type { Chat } from '@/entities/chat'
-import { AccountAvatar } from '@/entities/telegram-account'
-import { chatThreadStyles as styles } from './ChatThread.styles'
+import type { ReactNode } from 'react';
+import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
+import Skeleton from '@mui/material/Skeleton';
+import Typography from '@mui/material/Typography';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { formatDateTime } from '@/shared/lib';
+import { LeadCodeChip } from '@/entities/chat';
+import type { Chat } from '@/entities/chat';
+import { AccountAvatar, formatContacts } from '@/entities/telegram-account';
+import { chatThreadStyles as styles } from './ChatThread.styles';
 
 interface ChatThreadHeaderProps {
   /** undefined — чат ещё грузится. */
-  chat: Chat | undefined
-  onBack?: () => void
-  /** Действия справа: «В песочницу». */
-  actions?: ReactNode
+  chat: Chat | undefined;
+  onBack?: () => void;
+  /** Действия справа: агент, «В песочницу». */
+  actions?: ReactNode;
 }
 
-export function ChatThreadHeader({ chat, onBack, actions }: ChatThreadHeaderProps) {
-  const peerMeta = chat
-    ? [chat.peer.username ? `@${chat.peer.username}` : null, chat.peer.phone].filter(Boolean).join(' · ')
-    : ''
-
+/** Шапка переписки: собеседник, контакты, код из первого сообщения и действия. */
+export function ChatThreadHeader({
+  chat,
+  onBack,
+  actions,
+}: ChatThreadHeaderProps) {
   return (
-    <Box sx={styles.header}>
+    <Box component="header" sx={styles.header}>
       {onBack && (
-        <IconButton size="small" onClick={onBack} aria-label="К списку чатов" sx={styles.backButton}>
+        <IconButton
+          size="small"
+          onClick={onBack}
+          aria-label="К списку чатов"
+          sx={styles.backButton}
+        >
           <ArrowBackIcon fontSize="small" />
         </IconButton>
       )}
@@ -34,14 +40,24 @@ export function ChatThreadHeader({ chat, onBack, actions }: ChatThreadHeaderProp
         <>
           <AccountAvatar name={chat.peer.name} size={40} />
           <Box sx={styles.headerText}>
-            <Typography sx={styles.peerName}>{chat.peer.name}</Typography>
-            <Typography sx={styles.peerMeta}>{peerMeta || 'Без username и телефона'}</Typography>
+            <Typography
+              component="h2"
+              sx={styles.peerName}
+              title={chat.peer.name}
+            >
+              {chat.peer.name}
+            </Typography>
+            <Typography sx={styles.peerMeta}>
+              {formatContacts(chat.peer) || 'Без username и телефона'}
+            </Typography>
             <Box sx={styles.headerChips}>
               <LeadCodeChip code={chat.leadCode} showEmpty />
-              <span>Первое сообщение {formatDateTime(chat.firstMessageAt)}</span>
+              <span>
+                Первое сообщение {formatDateTime(chat.firstMessageAt)}
+              </span>
             </Box>
           </Box>
-          {actions}
+          {actions && <Box sx={styles.headerActions}>{actions}</Box>}
         </>
       ) : (
         <>
@@ -53,5 +69,5 @@ export function ChatThreadHeader({ chat, onBack, actions }: ChatThreadHeaderProp
         </>
       )}
     </Box>
-  )
+  );
 }

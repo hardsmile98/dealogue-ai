@@ -17,11 +17,15 @@ export class CreateAiFunnel1700000000007 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS "ai_exchanges"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "ai_style_profile"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "ai_agent_settings"`);
-    await queryRunner.query(`ALTER TABLE "telegram_messages" DROP COLUMN IF EXISTS "ai_run_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "telegram_messages" DROP COLUMN IF EXISTS "ai_run_id"`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS "ai_runs"`);
     await queryRunner.query(`DELETE FROM "ai_jobs"`);
     await queryRunner.query(`DELETE FROM "alerts"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_telegram_chats_ai_enabled"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_telegram_chats_ai_enabled"`,
+    );
     await queryRunner.query(`
       ALTER TABLE "telegram_chats"
         DROP COLUMN IF EXISTS "deep_history_synced",
@@ -35,7 +39,9 @@ export class CreateAiFunnel1700000000007 implements MigrationInterface {
         DROP COLUMN IF EXISTS "ai_followup_step",
         DROP COLUMN IF EXISTS "ai_followup_next_at"
     `);
-    await queryRunner.query(`ALTER TABLE "telegram_accounts" DROP COLUMN IF EXISTS "deep_history_status"`);
+    await queryRunner.query(
+      `ALTER TABLE "telegram_accounts" DROP COLUMN IF EXISTS "deep_history_status"`,
+    );
     // Пометка «требует внимания» остаётся, но причина теперь — тип алерта.
     await queryRunner.query(
       `UPDATE "telegram_chats" SET "needs_attention" = false, "attention_reason" = NULL, "attention_at" = NULL`,
@@ -125,7 +131,9 @@ export class CreateAiFunnel1700000000007 implements MigrationInterface {
     await queryRunner.query(
       `CREATE INDEX "IDX_ai_chat_state_account_mode_stage" ON "ai_chat_state" ("account_id", "mode", "stage")`,
     );
-    await queryRunner.query(`CREATE INDEX "IDX_ai_chat_state_next_touch" ON "ai_chat_state" ("next_touch_at")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_ai_chat_state_next_touch" ON "ai_chat_state" ("next_touch_at")`,
+    );
 
     // --- ходы и события ---------------------------------------------------------------
     await queryRunner.query(`
@@ -154,8 +162,12 @@ export class CreateAiFunnel1700000000007 implements MigrationInterface {
         "created_at" timestamptz NOT NULL DEFAULT now()
       )
     `);
-    await queryRunner.query(`CREATE INDEX "IDX_ai_turns_chat_created" ON "ai_turns" ("chat_id", "created_at" DESC)`);
-    await queryRunner.query(`CREATE INDEX "IDX_ai_turns_account_created" ON "ai_turns" ("account_id", "created_at" DESC)`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_ai_turns_chat_created" ON "ai_turns" ("chat_id", "created_at" DESC)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_ai_turns_account_created" ON "ai_turns" ("account_id", "created_at" DESC)`,
+    );
 
     await queryRunner.query(`
       CREATE TABLE "ai_events" (
@@ -167,7 +179,9 @@ export class CreateAiFunnel1700000000007 implements MigrationInterface {
         "created_at" timestamptz NOT NULL DEFAULT now()
       )
     `);
-    await queryRunner.query(`CREATE INDEX "IDX_ai_events_chat_created" ON "ai_events" ("chat_id", "created_at" DESC)`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_ai_events_chat_created" ON "ai_events" ("chat_id", "created_at" DESC)`,
+    );
 
     // --- библиотека ---------------------------------------------------------------------
     await queryRunner.query(`
@@ -281,7 +295,9 @@ export class CreateAiFunnel1700000000007 implements MigrationInterface {
         "created_at" timestamptz NOT NULL DEFAULT now()
       )
     `);
-    await queryRunner.query(`CREATE INDEX "IDX_ai_notes_account_enabled" ON "ai_notes" ("account_id", "enabled")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_ai_notes_account_enabled" ON "ai_notes" ("account_id", "enabled")`,
+    );
 
     // --- черновики -------------------------------------------------------------------------
     await queryRunner.query(`
@@ -310,7 +326,9 @@ export class CreateAiFunnel1700000000007 implements MigrationInterface {
     await queryRunner.query(
       `CREATE INDEX "IDX_ai_drafts_account_status_created" ON "ai_drafts" ("account_id", "status", "created_at" DESC)`,
     );
-    await queryRunner.query(`CREATE INDEX "IDX_ai_drafts_chat_created" ON "ai_drafts" ("chat_id", "created_at" DESC)`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_ai_drafts_chat_created" ON "ai_drafts" ("chat_id", "created_at" DESC)`,
+    );
     await queryRunner.query(
       `CREATE INDEX "IDX_ai_drafts_client_trgm" ON "ai_drafts" USING gin ("client_text" gin_trgm_ops)`,
     );
@@ -344,8 +362,12 @@ export class CreateAiFunnel1700000000007 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS "ai_turns"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "ai_chat_state"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "ai_account_settings"`);
-    await queryRunner.query(`ALTER TABLE "telegram_chats" DROP COLUMN IF EXISTS "read_outbox_max_id"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_telegram_messages_unread_out"`);
+    await queryRunner.query(
+      `ALTER TABLE "telegram_chats" DROP COLUMN IF EXISTS "read_outbox_max_id"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_telegram_messages_unread_out"`,
+    );
     await queryRunner.query(`
       ALTER TABLE "telegram_messages"
         DROP COLUMN IF EXISTS "read_at",

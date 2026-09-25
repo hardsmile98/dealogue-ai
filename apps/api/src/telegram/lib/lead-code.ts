@@ -33,7 +33,8 @@ const PATTERNS: { marker: LeadCodeMarker; regex: RegExp }[] = [
   {
     marker: 'word',
     // «код 6», «код - 6», «код: 6», «код №6», «код #6», «код6», «code 6», «промокод 6»
-    regex: /(?:^|[^\p{L}\p{N}])(?:промокод|код|code)\s*[:=\-–—]?\s*[#№]?\s*(\d{1,6})(?![\p{L}\p{N}])/iu,
+    regex:
+      /(?:^|[^\p{L}\p{N}])(?:промокод|код|code)\s*[:=\-–—]?\s*[#№]?\s*(\d{1,6})(?![\p{L}\p{N}])/iu,
   },
   {
     marker: 'hash',
@@ -69,8 +70,4 @@ export function parseLeadCode(text: string): LeadCodeMatch | null {
     }
   }
   return best ? { code: best.code, marker: best.marker } : null;
-}
-
-export function extractLeadCode(text: string): string | null {
-  return parseLeadCode(text)?.code ?? null;
 }

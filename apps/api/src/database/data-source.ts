@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
-import { buildTypeOrmOptions, readDatabaseConfigFromEnv } from './database.config.js';
+import {
+  buildTypeOrmOptions,
+  readDatabaseConfigFromEnv,
+} from './database.config.js';
 
 /**
  * Точка входа для CLI TypeORM (`npm run migration:*`).
@@ -9,5 +12,8 @@ import { buildTypeOrmOptions, readDatabaseConfigFromEnv } from './database.confi
  * дольше, чем разумно ждать обычный запрос.
  */
 export default new DataSource(
-  buildTypeOrmOptions({ ...readDatabaseConfigFromEnv(), statementTimeoutMs: 0 }),
+  buildTypeOrmOptions({
+    ...readDatabaseConfigFromEnv(),
+    statementTimeoutMs: 0,
+  }),
 );

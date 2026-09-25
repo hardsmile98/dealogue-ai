@@ -1,9 +1,6 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const connectAccountDialogStyles = {
-  paper: {
-    borderRadius: 3,
-  },
   stepper: {
     mb: 3,
   },
@@ -12,6 +9,10 @@ export const connectAccountDialogStyles = {
   },
   phoneEcho: {
     fontWeight: 600,
+    whiteSpace: 'nowrap',
+  },
+  changePhone: {
+    alignSelf: 'flex-start',
   },
   done: {
     alignItems: 'center',
@@ -22,9 +23,4 @@ export const connectAccountDialogStyles = {
     fontSize: 56,
     color: 'success.main',
   },
-  actions: {
-    px: 3,
-    pb: 3,
-    pt: 0,
-  },
-} satisfies SxStyles
+} satisfies SxStyles;

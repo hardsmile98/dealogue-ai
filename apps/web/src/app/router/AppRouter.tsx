@@ -1,35 +1,54 @@
-import { lazy } from 'react'
-import { Navigate, createBrowserRouter, RouterProvider } from 'react-router-dom'
-import { LoginPage } from '@/pages/login'
-import { NotFoundPage } from '@/pages/not-found'
-import { ROUTES } from '@/shared/config'
-import { RealtimeProvider } from '@/features/realtime'
-import { AppShell } from '@/widgets/app-shell'
-import { GuestRoute } from './GuestRoute'
-import { ProtectedRoute } from './ProtectedRoute'
+import { lazy } from 'react';
+import type { ComponentType } from 'react';
+import {
+  Navigate,
+  RouterProvider,
+  createBrowserRouter,
+} from 'react-router-dom';
+import { ROUTES } from '@/shared/config';
+import { LoginPage } from '@/pages/login';
+import { NotFoundPage } from '@/pages/not-found';
+import { RealtimeProvider } from '@/features/realtime';
+import { AppShell } from '@/widgets/app-shell';
+import { GuestRoute } from './GuestRoute';
+import { ProtectedRoute } from './ProtectedRoute';
 
-/**
- * Разделы за логином грузятся своими чанками: первый экран — это форма входа,
- * тянуть ради неё графики и переписку незачем. Заглушку на время загрузки
+/** `lazy` для именованного экспорта страницы: `lazyPage(() => import(…), 'Name')`. */
+function lazyPage<M, K extends keyof M>(load: () => Promise<M>, name: K) {
+  return lazy(async () => ({
+    default: (await load())[name] as ComponentType,
+  }));
+}
+
+/*
+ * Разделы за логином грузятся своими чанками: первый экран — это форма
+ * входа, тянуть ради неё графики и переписку незачем. Каждая вкладка
+ * аккаунта — отдельная страница и отдельный чанк: открывшему «Чаты» не
+ * нужны ни график статистики, ни формы агента. Заглушку на время загрузки
  * показывает `Suspense` внутри AppShell.
  */
-const AccountsPage = lazy(async () => ({ default: (await import('@/pages/accounts')).AccountsPage }))
-const AccountPage = lazy(async () => ({ default: (await import('@/pages/account')).AccountPage }))
-const AccountStatsPage = lazy(async () => ({
-  default: (await import('@/pages/account')).AccountStatsPage,
-}))
-const AccountChatsPage = lazy(async () => ({
-  default: (await import('@/pages/account')).AccountChatsPage,
-}))
-const AccountBotPage = lazy(async () => ({
-  default: (await import('@/pages/account')).AccountBotPage,
-}))
-const AccountHandoffsPage = lazy(async () => ({
-  default: (await import('@/pages/account')).AccountHandoffsPage,
-}))
-const AccountSandboxPage = lazy(async () => ({
-  default: (await import('@/pages/account')).AccountSandboxPage,
-}))
+const AccountsPage = lazyPage(() => import('@/pages/accounts'), 'AccountsPage');
+const AccountPage = lazyPage(() => import('@/pages/account'), 'AccountPage');
+const AccountStatsPage = lazyPage(
+  () => import('@/pages/account-stats'),
+  'AccountStatsPage',
+);
+const AccountChatsPage = lazyPage(
+  () => import('@/pages/account-chats'),
+  'AccountChatsPage',
+);
+const AccountHandoffsPage = lazyPage(
+  () => import('@/pages/account-handoffs'),
+  'AccountHandoffsPage',
+);
+const AccountBotPage = lazyPage(
+  () => import('@/pages/account-bot'),
+  'AccountBotPage',
+);
+const AccountSandboxPage = lazyPage(
+  () => import('@/pages/account-sandbox'),
+  'AccountSandboxPage',
+);
 
 const router = createBrowserRouter([
   {
@@ -47,7 +66,10 @@ const router = createBrowserRouter([
           </RealtimeProvider>
         ),
         children: [
-          { path: ROUTES.home, element: <Navigate to={ROUTES.accounts} replace /> },
+          {
+            path: ROUTES.home,
+            element: <Navigate to={ROUTES.accounts} replace />,
+          },
           { path: ROUTES.accounts, element: <AccountsPage /> },
           {
             path: ROUTES.account,
@@ -57,8 +79,8 @@ const router = createBrowserRouter([
               { path: 'stats', element: <AccountStatsPage /> },
               { path: 'chats', element: <AccountChatsPage /> },
               { path: 'chats/:chatId', element: <AccountChatsPage /> },
-              { path: 'bot', element: <AccountBotPage /> },
               { path: 'handoffs', element: <AccountHandoffsPage /> },
+              { path: 'bot', element: <AccountBotPage /> },
               { path: 'sandbox', element: <AccountSandboxPage /> },
               { path: 'sandbox/:sessionId', element: <AccountSandboxPage /> },
             ],
@@ -68,8 +90,8 @@ const router = createBrowserRouter([
     ],
   },
   { path: '*', element: <NotFoundPage /> },
-])
+]);
 
 export function AppRouter() {
-  return <RouterProvider router={router} />
+  return <RouterProvider router={router} />;
 }

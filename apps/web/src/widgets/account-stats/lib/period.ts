@@ -1,21 +1,21 @@
-import { addDays, toDayKey } from '@/shared/lib'
+import { addDays, toDayKey } from '@/shared/lib';
 
 export interface DateRange {
-  from: string
-  to: string
+  from: string;
+  to: string;
 }
 
-export type PeriodPresetKey = 'today' | 'yesterday' | '7d' | '30d'
+export type PeriodPresetKey = 'today' | 'yesterday' | '7d' | '30d';
 
 export interface PeriodPreset {
-  key: PeriodPresetKey
-  label: string
-  range: (now: Date) => DateRange
+  key: PeriodPresetKey;
+  label: string;
+  range: (now: Date) => DateRange;
 }
 
 /** Последние `days` дней, включая сегодня. */
 export function lastDaysRange(days: number, now = new Date()): DateRange {
-  return { from: toDayKey(addDays(now, -(days - 1))), to: toDayKey(now) }
+  return { from: toDayKey(addDays(now, -(days - 1))), to: toDayKey(now) };
 }
 
 export const PERIOD_PRESETS: PeriodPreset[] = [
@@ -23,8 +23,8 @@ export const PERIOD_PRESETS: PeriodPreset[] = [
     key: 'yesterday',
     label: 'Вчера',
     range: (now) => {
-      const day = toDayKey(addDays(now, -1))
-      return { from: day, to: day }
+      const day = toDayKey(addDays(now, -1));
+      return { from: day, to: day };
     },
   },
   {
@@ -34,26 +34,29 @@ export const PERIOD_PRESETS: PeriodPreset[] = [
   },
   { key: '7d', label: '7 дней', range: (now) => lastDaysRange(7, now) },
   { key: '30d', label: '30 дней', range: (now) => lastDaysRange(30, now) },
-]
+];
 
-export const DEFAULT_PERIOD: PeriodPresetKey = 'today'
+export const DEFAULT_PERIOD: PeriodPresetKey = 'today';
 
 export function presetRange(key: PeriodPresetKey, now = new Date()): DateRange {
-  const preset = PERIOD_PRESETS.find((item) => item.key === key)
-  return preset ? preset.range(now) : lastDaysRange(7, now)
+  const preset = PERIOD_PRESETS.find((item) => item.key === key);
+  return preset ? preset.range(now) : lastDaysRange(7, now);
 }
 
-const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 export function isDayKey(value: string | null): value is string {
-  return value !== null && DAY_KEY.test(value)
+  return value !== null && DAY_KEY.test(value);
 }
 
 /** Какой пресет соответствует диапазону; null — произвольный период. */
-export function matchPreset(range: DateRange, now = new Date()): PeriodPresetKey | null {
+export function matchPreset(
+  range: DateRange,
+  now = new Date(),
+): PeriodPresetKey | null {
   const match = PERIOD_PRESETS.find((preset) => {
-    const expected = preset.range(now)
-    return expected.from === range.from && expected.to === range.to
-  })
-  return match?.key ?? null
+    const expected = preset.range(now);
+    return expected.from === range.from && expected.to === range.to;
+  });
+  return match?.key ?? null;
 }

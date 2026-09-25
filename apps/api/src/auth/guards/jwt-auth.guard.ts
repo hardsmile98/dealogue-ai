@@ -32,7 +32,9 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
-      const payload = await this.jwt.verifyAsync<JwtPayload & { kind?: unknown }>(token);
+      const payload = await this.jwt.verifyAsync<
+        JwtPayload & { kind?: unknown }
+      >(token);
       // Тем же ключом подписан SSE-тикет (kind: 'sse'). Он живёт в URL и может
       // осесть в логах прокси — за access-токен его принимать нельзя.
       if (payload.kind !== undefined) throw new Error('not an access token');

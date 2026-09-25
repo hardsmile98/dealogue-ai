@@ -25,7 +25,10 @@ export class PersonaLinkDto {
   title: string;
 
   @MaxLength(512, { message: 'Слишком длинный адрес' })
-  @IsUrl({ require_protocol: true }, { message: 'Адрес должен начинаться с http:// или https://' })
+  @IsUrl(
+    { require_protocol: true },
+    { message: 'Адрес должен начинаться с http:// или https://' },
+  )
   @Trim()
   url: string;
 }

@@ -35,6 +35,7 @@ import { ChatMessagesPageIndex1700000000015 } from './migrations/1700000000015-C
 import { DropChatsFirstMessageIndex1700000000016 } from './migrations/1700000000016-DropChatsFirstMessageIndex.js';
 import { CreateBotTables1700000000017 } from './migrations/1700000000017-CreateBotTables.js';
 import { CreateBotSandbox1700000000018 } from './migrations/1700000000018-CreateBotSandbox.js';
+import { BotForeignKeyIndexes1700000000019 } from './migrations/1700000000019-BotForeignKeyIndexes.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -66,7 +67,11 @@ export function readDatabaseConfig(read: EnvReader): DatabaseConfig {
     database: read('DB_NAME') ?? 'dealogue',
     logging: read('DB_LOGGING') === 'true',
     poolSize: readPositiveInt(read, 'DB_POOL_SIZE', 10),
-    statementTimeoutMs: readPositiveInt(read, 'DB_STATEMENT_TIMEOUT_MS', 30_000),
+    statementTimeoutMs: readPositiveInt(
+      read,
+      'DB_STATEMENT_TIMEOUT_MS',
+      30_000,
+    ),
     slowQueryMs: readPositiveInt(read, 'DB_SLOW_QUERY_MS', 1_000),
   };
 }
@@ -149,13 +154,18 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       DropChatsFirstMessageIndex1700000000016,
       CreateBotTables1700000000017,
       CreateBotSandbox1700000000018,
+      BotForeignKeyIndexes1700000000019,
     ],
     // Схему меняем только миграциями.
     synchronize: false,
   };
 }
 
-function readPositiveInt(read: EnvReader, key: string, fallback: number): number {
+function readPositiveInt(
+  read: EnvReader,
+  key: string,
+  fallback: number,
+): number {
   const raw = read(key);
   const value = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
   return Number.isInteger(value) && value > 0 ? value : fallback;

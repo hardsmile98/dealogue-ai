@@ -1,6 +1,13 @@
-import { ArgumentsHost, Catch, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  Catch,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import type { ExceptionFilter } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { errorDetail } from '../errors.js';
 
 /**
  * Единый ответ на ошибку. Форму тела HttpException не трогаем — веб читает
@@ -19,7 +26,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
-      if (status >= HttpStatus.INTERNAL_SERVER_ERROR) this.log(request, exception);
+      if (status >= HttpStatus.INTERNAL_SERVER_ERROR)
+        this.log(request, exception);
       send(response, status, exception.getResponse());
       return;
     }
@@ -33,8 +41,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   }
 
   private log(request: Request, error: unknown): void {
-    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    this.logger.error(`${label(request)}: ${detail}`);
+    this.logger.error(`${label(request)}: ${errorDetail(error)}`);
   }
 }
 

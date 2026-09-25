@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { RequestWithUser } from '../auth/auth.types.js';
 
@@ -18,7 +23,8 @@ export class SseTicketGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
-    const ticket = typeof request.query?.ticket === 'string' ? request.query.ticket : '';
+    const ticket =
+      typeof request.query?.ticket === 'string' ? request.query.ticket : '';
     if (!ticket) throw new UnauthorizedException('Не передан тикет');
     try {
       const payload = await this.jwt.verifyAsync<SseTicketPayload>(ticket);

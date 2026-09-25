@@ -1,4 +1,10 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import type { MessageDirection } from '../../telegram/entities/telegram-chat.entity.js';
 import type { MediaKind } from '../../telegram/entities/telegram-message.entity.js';
 

@@ -1,4 +1,11 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import type { ChatLabel, ChatMode, HandoffReason } from '../library/kinds.js';
 
 /**
@@ -41,7 +48,12 @@ export class BotChatStateEntity {
   @Column({ name: 'generation_seq', type: 'integer', default: 0 })
   generationSeq: number;
 
-  @Column({ name: 'handoff_reason', type: 'varchar', length: 32, nullable: true })
+  @Column({
+    name: 'handoff_reason',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
   handoffReason: HandoffReason | null;
 
   @Column({ name: 'handoff_at', type: 'timestamptz', nullable: true })

@@ -20,11 +20,15 @@ export class DropGenderSource1700000000012 implements MigrationInterface {
       )
       WHERE "gender_source" = 'manual' AND "card" ? 'meta'
     `);
-    await queryRunner.query(`ALTER TABLE "ai_chat_state" DROP COLUMN IF EXISTS "gender_source"`);
+    await queryRunner.query(
+      `ALTER TABLE "ai_chat_state" DROP COLUMN IF EXISTS "gender_source"`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "ai_chat_state" ADD COLUMN IF NOT EXISTS "gender_source" varchar(16) NULL`);
+    await queryRunner.query(
+      `ALTER TABLE "ai_chat_state" ADD COLUMN IF NOT EXISTS "gender_source" varchar(16) NULL`,
+    );
     await queryRunner.query(
       `UPDATE "ai_chat_state" SET "gender_source" = 'manual' WHERE "card" #>> '{meta,gender,source}' = 'manager'`,
     );

@@ -7,7 +7,8 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type BotJobStatus = 'pending' | 'running' | 'done' | 'cancelled' | 'failed';
+export type BotJobStatus =
+  'pending' | 'running' | 'done' | 'cancelled' | 'failed';
 
 /**
  * Отложенные ходы: таймер вехи `diagnostic` и ступени лестницы молчания.

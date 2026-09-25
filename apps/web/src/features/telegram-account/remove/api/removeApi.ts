@@ -1,5 +1,5 @@
-import { TELEGRAM_ACCOUNT_TAG } from '@/shared/api'
-import { accountsApi } from '@/entities/telegram-account'
+import { TELEGRAM_ACCOUNT_TAG } from '@/shared/api';
+import { ACCOUNTS_LIST_TAG, accountsApi } from '@/entities/telegram-account';
 
 export const removeApi = accountsApi.injectEndpoints({
   endpoints: (build) => ({
@@ -9,11 +9,11 @@ export const removeApi = accountsApi.injectEndpoints({
         method: 'DELETE',
       }),
       invalidatesTags: (_result, _error, id) => [
-        { type: TELEGRAM_ACCOUNT_TAG, id: 'LIST' },
+        ACCOUNTS_LIST_TAG,
         { type: TELEGRAM_ACCOUNT_TAG, id },
       ],
     }),
   }),
-})
+});
 
-export const { useRemoveAccountMutation } = removeApi
+export const { useRemoveAccountMutation } = removeApi;

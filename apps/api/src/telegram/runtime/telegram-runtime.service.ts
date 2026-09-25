@@ -1,13 +1,12 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import type { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { HttpAdapterHost } from '@nestjs/core';
+import type { Subscription } from 'rxjs';
 import teleproto from 'teleproto';
 import type { TelegramClient } from 'teleproto';
 import { UpdateConnectionState } from 'teleproto/network/UpdateConnectionState.js';
 import { runDetached, sleep, withTimeout } from '../../common/async.js';
+import { whenListening } from '../../common/lifecycle.js';
 import {
   TelegramClientFactory,
   safeDestroy,
@@ -32,6 +31,7 @@ import {
   formatHealth,
   inspectClient,
   syncStageName,
+  watchdogTick,
 } from './live-account.js';
 import type { LiveAccount, SyncMode } from './live-account.js';
 import { TelegramEventsService } from './telegram-events.service.js';
@@ -47,38 +47,20 @@ const LOGOUT_TIMEOUT_MS = 5_000;
 /** Сколько ждать первый запрос (getMe) сразу после подключения. */
 const PROBE_TIMEOUT_MS = 30_000;
 
-/**
- * Сторожевые пороги. У запросов teleproto нет собственного таймаута: если
- * соединение «полуживое» (TCP открыт, ответы не приходят) или библиотека
- * застряла в reconnecting, промис запроса висит вечно — вместе с ним висела
- * бы и вся досинхронизация аккаунта до перезапуска процесса.
- */
-/** Дольше этого досинхронизация считается зависшей — клиент пересоздаётся. */
-const INCREMENTAL_SYNC_TIMEOUT_MS = 5 * 60_000;
-/** Первичная выгрузка сотен диалогов идёт долго, но не бесконечно. */
-const FULL_SYNC_TIMEOUT_MS = 60 * 60_000;
-/**
- * Столько молчания от Telegram считаем мёртвым соединением. В норме teleproto
- * пингует DC каждые 9 с и получает pong, а досинхронизация ходит раз в
- * `TELEGRAM_RESYNC_INTERVAL_SEC` — тишина в 5 минут возможна только при
- * сломанном сокете или умершем цикле обновлений.
- */
-const SILENCE_LIMIT_MS = 5 * 60_000;
-/** Сколько подряд проверок клиент может «переподключаться», прежде чем пересоздадим его сами. */
-const OFFLINE_TICKS_LIMIT = 2;
 /** Досинхронизация дольше этого — повод для предупреждения в логе. */
 const SLOW_SYNC_WARN_MS = 60_000;
 
 /**
  * Живые подключения: по одному клиенту teleproto на подключённый аккаунт.
- * Поднимает их при старте, по расписанию досинхронизирует пропущенное,
- * переподключается через другой MTProxy при сбое и переводит аккаунт в
- * «отключён», когда Telegram отзывает сессию. Приём апдейтов —
+ * Поднимает их, когда HTTP-сервер занял порт (второй экземпляр API на
+ * занятом порту клиентов на те же сессии не поднимет), по расписанию
+ * досинхронизирует пропущенное, переподключается через другой MTProxy при
+ * сбое и переводит аккаунт в «отключён», когда Telegram отзывает сессию. Приём апдейтов —
  * TelegramUpdatesService, здесь только жизненный цикл.
  *
- * Каждый плановый тик — ещё и проверка здоровья: зависшая синхронизация,
- * долгое молчание соединения или мёртвый sender приводят к пересозданию
- * клиента, а не к тихому простою до перезапуска процесса.
+ * Каждый плановый тик — ещё и проверка здоровья (`watchdogTick`): зависшая
+ * синхронизация, долгое молчание соединения или мёртвый sender приводят к
+ * пересозданию клиента, а не к тихому простою до перезапуска процесса.
  *
  * Всё, что работает в фоне (таймеры, обработчики, повторы), ловит свои
  * ошибки: временно недоступная база не должна ронять процесс.
@@ -93,6 +75,8 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
   private readonly abandoned = new Set<string>();
   private readonly retryTimers = new Map<string, NodeJS.Timeout>();
   private readonly retryAttempts = new Map<string, number>();
+  private bootTimer: NodeJS.Timeout | null = null;
+  private listening: Subscription | null = null;
   private shuttingDown = false;
 
   constructor(
@@ -103,6 +87,7 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     private readonly updates: TelegramUpdatesService,
     private readonly events: TelegramEventsService,
     private readonly accounts: TelegramAccountsRepository,
+    private readonly adapterHost: HttpAdapterHost,
   ) {}
 
   /** Живой клиент аккаунта или null, если он сейчас не подключён. */
@@ -120,16 +105,21 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     return this.live.has(accountId);
   }
 
-  async onModuleInit(): Promise<void> {
+  onModuleInit(): void {
     if (!this.config.enabled) return;
-    const rows = await this.accounts.findBootable();
-    this.logger.log(`Поднимаем ${rows.length} аккаунт(ов) Telegram`);
     // Не блокируем старт HTTP: аккаунты подключаются в фоне, с разбегом.
-    runDetached(this.bootAll(rows), this.logger, 'Запуск аккаунтов');
+    this.listening = whenListening(
+      this.adapterHost,
+      this.logger,
+      'Запуск аккаунтов',
+      () => this.boot(),
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
     this.shuttingDown = true;
+    this.listening?.unsubscribe();
+    if (this.bootTimer) clearTimeout(this.bootTimer);
     for (const timer of this.retryTimers.values()) clearTimeout(timer);
     this.retryTimers.clear();
     await Promise.all(
@@ -138,7 +128,10 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Подключить только что авторизованный клиент (после sign-in / password). */
-  async attach(account: TelegramAccountEntity, client: TelegramClient): Promise<void> {
+  async attach(
+    account: TelegramAccountEntity,
+    client: TelegramClient,
+  ): Promise<void> {
     await this.stop(account.id, { logout: false });
     this.retryAttempts.delete(account.id);
     this.register(account, client);
@@ -146,7 +139,11 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
 
   /** Поднять аккаунт из сохранённой сессии. Повторный вызов, пока идёт первый, ничего не делает. */
   async startFromRow(account: TelegramAccountEntity): Promise<void> {
-    if (this.shuttingDown || this.live.has(account.id) || this.starting.has(account.id)) {
+    if (
+      this.shuttingDown ||
+      this.live.has(account.id) ||
+      this.starting.has(account.id)
+    ) {
       return;
     }
     if (!account.sessionEncrypted) {
@@ -189,7 +186,9 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
         return;
       }
       const message = describeError(error);
-      this.logger.warn(`Аккаунт ${account.phone}: не удалось поднять — ${message}`);
+      this.logger.warn(
+        `Аккаунт ${account.phone}: не удалось поднять — ${message}`,
+      );
       await this.setStatus(account.id, 'error', message);
       this.scheduleRetry(account.id);
     } finally {
@@ -217,7 +216,10 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
 
     if (options.logout) {
       try {
-        await withTimeout(live.client.invoke(new Tl.auth.LogOut()), LOGOUT_TIMEOUT_MS);
+        await withTimeout(
+          live.client.invoke(new Tl.auth.LogOut()),
+          LOGOUT_TIMEOUT_MS,
+        );
       } catch (error) {
         this.logger.warn(
           `Аккаунт ${live.label}: не удалось разлогиниться — ${describeError(error)}`,
@@ -229,10 +231,37 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Аккаунт ${live.label}: клиент остановлен (прожил ${formatDuration(Date.now() - live.startedAt)})`,
     );
-    this.events.emit({ kind: 'account-stopped', accountId, userId: live.userId });
+    this.events.emit({
+      kind: 'account-stopped',
+      accountId,
+      userId: live.userId,
+    });
   }
 
   // --- внутреннее -----------------------------------------------------------
+
+  /**
+   * Аккаунты из базы. Если база на старте недоступна, попытка повторяется —
+   * иначе аккаунты остались бы без клиентов до перезапуска процесса.
+   */
+  private async boot(): Promise<void> {
+    if (this.shuttingDown) return;
+    let rows: TelegramAccountEntity[];
+    try {
+      rows = await this.accounts.findBootable();
+    } catch (error) {
+      this.logger.warn(
+        `Аккаунты не прочитаны из базы — ${describeError(error)}; повтор через ${RETRY_BASE_MS / 1000} с`,
+      );
+      this.bootTimer = setTimeout(() => {
+        this.bootTimer = null;
+        runDetached(this.boot(), this.logger, 'Запуск аккаунтов');
+      }, RETRY_BASE_MS);
+      return;
+    }
+    this.logger.log(`Поднимаем ${rows.length} аккаунт(ов) Telegram`);
+    await this.bootAll(rows);
+  }
 
   /**
    * Запуски идут с разбегом, но не ждут друг друга: аккаунт за медленным
@@ -241,12 +270,19 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
   private async bootAll(rows: TelegramAccountEntity[]): Promise<void> {
     for (const row of rows) {
       if (this.shuttingDown) return;
-      runDetached(this.startFromRow(row), this.logger, `Аккаунт ${row.phone}: запуск`);
+      runDetached(
+        this.startFromRow(row),
+        this.logger,
+        `Аккаунт ${row.phone}: запуск`,
+      );
       await sleep(BOOT_STAGGER_MS);
     }
   }
 
-  private register(account: TelegramAccountEntity, client: TelegramClient): void {
+  private register(
+    account: TelegramAccountEntity,
+    client: TelegramClient,
+  ): void {
     const now = Date.now();
     const live: LiveAccount = {
       id: account.id,
@@ -272,7 +308,8 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       fail: (target, error, stage) => this.handleFailure(target, error, stage),
     });
     const stateFilter = new events.Raw({ types: [UpdateConnectionState] });
-    const onState = (update: UpdateConnectionState) => this.onConnectionState(live, update);
+    const onState = (update: UpdateConnectionState) =>
+      this.onConnectionState(live, update);
     client.addEventHandler(onState as never, stateFilter);
     live.unbind = () => {
       unbindUpdates();
@@ -295,7 +332,11 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     };
 
     live.resyncTimer = setInterval(() => {
-      runDetached(this.onResyncTick(live), this.logger, `Аккаунт ${live.label}: плановый тик`);
+      runDetached(
+        this.onResyncTick(live),
+        this.logger,
+        `Аккаунт ${live.label}: плановый тик`,
+      );
     }, this.config.resyncIntervalMs);
 
     runDetached(
@@ -303,11 +344,19 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       this.logger,
       `Аккаунт ${live.label}: синхронизация`,
     );
-    this.events.emit({ kind: 'account-live', accountId: account.id, userId: account.userId });
+    this.events.emit({
+      kind: 'account-live',
+      accountId: account.id,
+      userId: account.userId,
+    });
   }
 
   private requestSync(live: LiveAccount): void {
-    runDetached(this.runSync(live, 'incremental'), this.logger, `Аккаунт ${live.label}: синхронизация`);
+    runDetached(
+      this.runSync(live, 'incremental'),
+      this.logger,
+      `Аккаунт ${live.label}: синхронизация`,
+    );
   }
 
   /**
@@ -316,60 +365,19 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
    */
   private async onResyncTick(live: LiveAccount): Promise<void> {
     if (live.stopped) return;
-    const health = inspectClient(live);
-
-    if (live.syncing) {
-      live.skippedTicks += 1;
-      const runningFor = Date.now() - live.syncStartedAt;
-      const limit =
-        live.syncMode === 'full' ? FULL_SYNC_TIMEOUT_MS : INCREMENTAL_SYNC_TIMEOUT_MS;
-      const stage = syncStageName(live.syncMode);
-      if (runningFor > limit) {
-        this.logger.error(
-          `Аккаунт ${live.label}: ${stage} зависла на ${formatDuration(runningFor)} (пропущено тиков: ${live.skippedTicks}; ${formatHealth(health)}) — пересоздаём клиент`,
-        );
-        await this.restart(live, `Синхронизация зависла (${formatDuration(runningFor)}), переподключаемся`);
+    const verdict = watchdogTick(live, inspectClient(live));
+    switch (verdict.action) {
+      case 'sync':
+        this.requestSync(live);
         return;
-      }
-      this.logger.warn(
-        `Аккаунт ${live.label}: тик пропущен — ${stage} идёт уже ${formatDuration(runningFor)} (${formatHealth(health)})`,
-      );
-      return;
-    }
-
-    if (health.lifecycle === 'dead') {
-      this.logger.error(
-        `Аккаунт ${live.label}: sender teleproto мёртв и сам не восстановится (${formatHealth(health)}) — пересоздаём клиент`,
-      );
-      await this.restart(live, 'Соединение с Telegram потеряно, переподключаемся');
-      return;
-    }
-
-    if (health.silentForMs > SILENCE_LIMIT_MS) {
-      this.logger.error(
-        `Аккаунт ${live.label}: от Telegram ничего не приходило ${formatDuration(health.silentForMs)} (${formatHealth(health)}) — пересоздаём клиент`,
-      );
-      await this.restart(live, 'Соединение с Telegram молчит, переподключаемся');
-      return;
-    }
-
-    if (!health.connected) {
-      live.offlineTicks += 1;
-      if (live.offlineTicks >= OFFLINE_TICKS_LIMIT) {
-        this.logger.error(
-          `Аккаунт ${live.label}: клиент не подключён уже ${live.offlineTicks} тика подряд (${formatHealth(health)}) — пересоздаём клиент`,
-        );
-        await this.restart(live, 'Автопереподключение не справилось, пересоздаём соединение');
+      case 'skip':
+        this.logger.warn(`Аккаунт ${live.label}: ${verdict.log}`);
         return;
-      }
-      this.logger.warn(
-        `Аккаунт ${live.label}: клиент не подключён, досинхронизацию откладываем (${formatHealth(health)})`,
-      );
-      return;
+      case 'restart':
+        this.logger.error(`Аккаунт ${live.label}: ${verdict.log}`);
+        await this.restart(live, verdict.reason);
+        return;
     }
-
-    live.offlineTicks = 0;
-    this.requestSync(live);
   }
 
   /** Синхронизация аккаунта; параллельный вызов получает уже идущую. Не отказывает. */
@@ -400,11 +408,17 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     return live.syncing;
   }
 
-  private logSyncDone(live: LiveAccount, stage: string, stats: SyncStats): void {
+  private logSyncDone(
+    live: LiveAccount,
+    stage: string,
+    stats: SyncStats,
+  ): void {
     const tookMs = Date.now() - live.syncStartedAt;
     const summary = `${stage} за ${formatDuration(tookMs)}: диалогов ${stats.dialogs}, догружено ${stats.caughtUp}`;
     if (tookMs > SLOW_SYNC_WARN_MS) {
-      this.logger.warn(`Аккаунт ${live.label}: медленная ${summary} (${this.describeHealth(live)})`);
+      this.logger.warn(
+        `Аккаунт ${live.label}: медленная ${summary} (${this.describeHealth(live)})`,
+      );
     } else if (stats.caughtUp > 0 || stage !== syncStageName('incremental')) {
       this.logger.log(`Аккаунт ${live.label}: ${summary}`);
     } else {
@@ -413,7 +427,10 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** teleproto сообщает о connected / disconnected / broken главного соединения. */
-  private onConnectionState(live: LiveAccount, update: UpdateConnectionState): void {
+  private onConnectionState(
+    live: LiveAccount,
+    update: UpdateConnectionState,
+  ): void {
     if (live.stopped) return;
     const state = connectionStateName(update.state);
     const previous = live.connectionState;
@@ -427,7 +444,11 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Решает, что делать с ошибкой синхронизации или приёма. Сама не бросает. */
-  private async handleFailure(live: LiveAccount, error: unknown, stage: string): Promise<void> {
+  private async handleFailure(
+    live: LiveAccount,
+    error: unknown,
+    stage: string,
+  ): Promise<void> {
     if (live.stopped) return;
     if (isAuthLost(error)) {
       await this.handleAuthLost(live);
@@ -435,7 +456,9 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     }
     const message = describeError(error);
     const health = inspectClient(live);
-    this.logger.warn(`Аккаунт ${live.label}: ${stage} — ${message} (${formatHealth(health)})`);
+    this.logger.warn(
+      `Аккаунт ${live.label}: ${stage} — ${message} (${formatHealth(health)})`,
+    );
     await this.setStatus(live.id, 'error', message);
 
     if (isFloodWait(error)) return; // подождём следующего цикла — библиотека сама выдержит паузу
@@ -475,7 +498,9 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.accounts.setStatus(accountId, status, statusMessage);
     } catch (error) {
-      this.logger.warn(`Аккаунт ${accountId}: статус «${status}» не записан — ${describeError(error)}`);
+      this.logger.warn(
+        `Аккаунт ${accountId}: статус «${status}» не записан — ${describeError(error)}`,
+      );
     }
   }
 
@@ -483,7 +508,9 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.accounts.markDisconnected(accountId, AUTH_LOST_MESSAGE);
     } catch (error) {
-      this.logger.error(`Аккаунт ${accountId}: не удалось отметить отключение — ${describeError(error)}`);
+      this.logger.error(
+        `Аккаунт ${accountId}: не удалось отметить отключение — ${describeError(error)}`,
+      );
     }
   }
 
@@ -498,7 +525,11 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
 
     const timer = setTimeout(() => {
       this.retryTimers.delete(accountId);
-      runDetached(this.retry(accountId), this.logger, `Аккаунт ${accountId}: повторное подключение`);
+      runDetached(
+        this.retry(accountId),
+        this.logger,
+        `Аккаунт ${accountId}: повторное подключение`,
+      );
     }, delay);
     this.retryTimers.set(accountId, timer);
   }
@@ -509,7 +540,9 @@ export class TelegramRuntimeService implements OnModuleInit, OnModuleDestroy {
       row = await this.accounts.findById(accountId);
     } catch (error) {
       // База недоступна — не теряем аккаунт, попробуем позже.
-      this.logger.warn(`Аккаунт ${accountId}: не удалось прочитать из базы — ${describeError(error)}`);
+      this.logger.warn(
+        `Аккаунт ${accountId}: не удалось прочитать из базы — ${describeError(error)}`,
+      );
       this.scheduleRetry(accountId);
       return;
     }

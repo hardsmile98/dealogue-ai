@@ -17,6 +17,8 @@ export interface HandoffRow {
   last_message_text: string;
   last_message_direction: 'in' | 'out' | null;
   waiting_since: Date | null;
+  /** Ключи доставленных вех по порядку — по ним вычисляется этап. */
+  milestones: string[];
 }
 
 /**
@@ -42,7 +44,11 @@ export class BotChatStateRepository {
    * передачу менеджеру и ярлык; `off` их сохраняет — видно, почему чат
    * ушёл менеджеру, даже если агент в нём выключен.
    */
-  async setMode(chatId: string, accountId: string, mode: ChatMode): Promise<BotChatStateEntity> {
+  async setMode(
+    chatId: string,
+    accountId: string,
+    mode: ChatMode,
+  ): Promise<BotChatStateEntity> {
     const { rows } = await execute(
       this.states.manager,
       `INSERT INTO bot_chat_state (chat_id, account_id, mode)
@@ -57,6 +63,37 @@ export class BotChatStateRepository {
       [chatId, accountId, mode],
     );
     return hydrate(this.states, rows[0] as Record<string, unknown>);
+  }
+
+  /** Виртуальный чат песочницы: сразу с `sandbox = true`, в режиме агента. */
+  async createSandbox(chatId: string, accountId: string): Promise<void> {
+    await execute(
+      this.states.manager,
+      `INSERT INTO bot_chat_state (chat_id, account_id, mode, sandbox)
+       VALUES ($1::uuid, $2::uuid, 'auto', true)`,
+      [chatId, accountId],
+    );
+  }
+
+  /**
+   * Удаляет виртуальный чат песочницы; сессия, переписка, память, задания
+   * и журнал уходят каскадом. Боевой чат (`sandbox = false`) не трогает.
+   */
+  async deleteSandbox(chatId: string): Promise<void> {
+    await execute(
+      this.states.manager,
+      `DELETE FROM bot_chat_state WHERE chat_id = $1::uuid AND sandbox`,
+      [chatId],
+    );
+  }
+
+  /** Граница обработанных сообщений клиента — для копии чата в песочнице. */
+  async setLastHandled(chatId: string, messageId: number): Promise<void> {
+    await execute(
+      this.states.manager,
+      `UPDATE bot_chat_state SET last_handled_message_id = $2::int WHERE chat_id = $1::uuid`,
+      [chatId, messageId],
+    );
   }
 
   /**
@@ -84,16 +121,18 @@ export class BotChatStateRepository {
 
   /** Ярлык чата у менеджера: «нужен ответ» при сообщении клиента, снимается ответом менеджера. */
   async setLabel(chatId: string, label: ChatLabel | null): Promise<void> {
-    await execute(this.states.manager, `UPDATE bot_chat_state SET label = $2::varchar, updated_at = now() WHERE chat_id = $1::uuid`, [
-      chatId,
-      label,
-    ]);
+    await execute(
+      this.states.manager,
+      `UPDATE bot_chat_state SET label = $2::varchar, updated_at = now() WHERE chat_id = $1::uuid`,
+      [chatId, label],
+    );
   }
 
   /**
    * Чаты аккаунта у менеджера (не песочница): сначала ждущие ответа — дольше
    * всех ждущие выше, потом «цены отправлены, молчит», потом остальные.
-   * `waiting_since` — первое сообщение клиента после нашего последнего.
+   * `waiting_since` — первое сообщение клиента после нашего последнего,
+   * `milestones` — доставленные вехи (этап) тем же запросом.
    */
   async handoffs(accountId: string, limit = 200): Promise<HandoffRow[]> {
     const { rows } = await execute<HandoffRow>(
@@ -105,7 +144,10 @@ export class BotChatStateRepository {
                  WHERE incoming.chat_id = state.chat_id AND incoming.direction = 'in'
                    AND incoming.sent_at > COALESCE(
                      (SELECT max(outgoing.sent_at) FROM telegram_messages outgoing WHERE outgoing.chat_id = state.chat_id AND outgoing.direction = 'out'),
-                     'epoch'::timestamptz)) AS waiting_since
+                     'epoch'::timestamptz)) AS waiting_since,
+                ARRAY(SELECT said.key FROM bot_chat_said said
+                      WHERE said.chat_id = state.chat_id AND said.kind = 'milestone'
+                      ORDER BY said.at) AS milestones
          FROM bot_chat_state state
          JOIN telegram_chats chat ON chat.id = state.chat_id
          WHERE state.account_id = $1::uuid AND state.mode = 'manager' AND NOT state.sandbox
@@ -117,20 +159,6 @@ export class BotChatStateRepository {
       [accountId, limit],
     );
     return rows;
-  }
-
-  /** Доставленные вехи по чатам разом — этап для списка. */
-  async milestonesByChat(chatIds: readonly string[]): Promise<Map<string, string[]>> {
-    const result = new Map<string, string[]>();
-    if (chatIds.length === 0) return result;
-    const { rows } = await execute<{ chat_id: string; keys: string[] }>(
-      this.said.manager,
-      `SELECT chat_id, array_agg(key ORDER BY at) AS keys FROM bot_chat_said
-       WHERE kind = 'milestone' AND chat_id = ANY($1::uuid[]) GROUP BY chat_id`,
-      [chatIds],
-    );
-    for (const row of rows) result.set(row.chat_id, row.keys);
-    return result;
   }
 
   /** Ключи доставленных вех — по ним вычисляется этап. */

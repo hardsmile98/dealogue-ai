@@ -8,10 +8,7 @@ import {
 } from 'typeorm';
 
 export type TelegramAccountStatus =
-  | 'connected'
-  | 'pending'
-  | 'disconnected'
-  | 'error';
+  'connected' | 'pending' | 'disconnected' | 'error';
 
 @Entity({ name: 'telegram_accounts' })
 @Index(['userId', 'phone'], { unique: true })
@@ -48,7 +45,6 @@ export class TelegramAccountEntity {
   /** Первичная выгрузка диалогов завершена — дальше только досинхронизация. */
   @Column({ name: 'history_synced', type: 'boolean', default: false })
   historySynced: boolean;
-
 
   @Column({ name: 'connected_at', type: 'timestamptz' })
   connectedAt: Date;

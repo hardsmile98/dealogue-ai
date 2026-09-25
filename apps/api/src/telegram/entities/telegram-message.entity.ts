@@ -8,11 +8,23 @@ import {
 import type { MessageDirection } from './telegram-chat.entity.js';
 
 /** Вид вложения; null — обычный текст. */
-export type MediaKind = 'photo' | 'voice' | 'video' | 'video_note' | 'audio' | 'document' | 'sticker' | 'other';
+export type MediaKind =
+  | 'photo'
+  | 'voice'
+  | 'video'
+  | 'video_note'
+  | 'audio'
+  | 'document'
+  | 'sticker'
+  | 'other';
 
 @Entity({ name: 'telegram_messages' })
 @Index(['chatId', 'telegramMessageId'], { unique: true })
-@Index('IDX_telegram_messages_chat_sent_id', ['chatId', 'sentAt', 'telegramMessageId'])
+@Index('IDX_telegram_messages_chat_sent_id', [
+  'chatId',
+  'sentAt',
+  'telegramMessageId',
+])
 export class TelegramMessageEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

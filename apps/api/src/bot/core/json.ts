@@ -11,7 +11,9 @@ export function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
   try {
     const value: unknown = JSON.parse(text.trim());
-    return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }
@@ -20,6 +22,11 @@ export function parseJsonObject(raw: string): Record<string, unknown> | null {
 /** Непустые строки из массива; всё остальное отбрасывается. */
 export function stringList(raw: unknown): string[] {
   return Array.isArray(raw)
-    ? raw.filter((item): item is string => typeof item === 'string' && item.trim() !== '').map((item) => item.trim())
+    ? raw
+        .filter(
+          (item): item is string =>
+            typeof item === 'string' && item.trim() !== '',
+        )
+        .map((item) => item.trim())
     : [];
 }

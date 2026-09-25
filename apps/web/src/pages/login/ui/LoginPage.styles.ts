@@ -1,4 +1,10 @@
-import type { SxStyles } from '@/shared/types'
+import { alpha } from '@mui/material/styles';
+import type { Theme } from '@mui/material/styles';
+import type { SxStyles } from '@/shared/types';
+
+/** Белый с прозрачностью — второстепенный текст на брендовом градиенте. */
+const onBrand = (opacity: number) => (theme: Theme) =>
+  alpha(theme.palette.common.white, opacity);
 
 export const loginPageStyles = {
   root: {
@@ -14,13 +20,14 @@ export const loginPageStyles = {
     justifyContent: 'space-between',
     p: 6,
     color: 'common.white',
-    background: 'linear-gradient(155deg, #4338ca 0%, #5b21b6 55%, #4f46e5 100%)',
+    background: (theme: Theme) =>
+      `linear-gradient(155deg, ${theme.palette.primary.dark} 0%, ${theme.palette.secondary.dark} 55%, ${theme.palette.primary.main} 100%)`,
   },
   brandHeader: {
     alignItems: 'center',
   },
   brandMark: {
-    bgcolor: 'rgba(255, 255, 255, 0.16)',
+    bgcolor: onBrand(0.16),
     color: 'common.white',
   },
   brandName: {
@@ -34,7 +41,12 @@ export const loginPageStyles = {
   },
   brandSubtitle: {
     mb: 5,
-    color: 'rgba(255, 255, 255, 0.78)',
+    color: onBrand(0.78),
+  },
+  highlights: {
+    listStyle: 'none',
+    m: 0,
+    p: 0,
   },
   highlightIcon: {
     mt: '2px',
@@ -44,10 +56,10 @@ export const loginPageStyles = {
     fontWeight: 600,
   },
   highlightText: {
-    color: 'rgba(255, 255, 255, 0.72)',
+    color: onBrand(0.72),
   },
   brandFooter: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: onBrand(0.6),
   },
 
   // Колонка с формой.
@@ -62,9 +74,6 @@ export const loginPageStyles = {
     width: '100%',
     maxWidth: 420,
     p: { xs: 3, sm: 4 },
-    border: '1px solid',
-    borderColor: 'divider',
-    borderRadius: 3,
   },
   cardHeader: {
     alignItems: 'center',
@@ -77,4 +86,7 @@ export const loginPageStyles = {
   cardSubtitle: {
     textAlign: 'center',
   },
-} satisfies SxStyles
+  expired: {
+    mb: 2,
+  },
+} satisfies SxStyles;

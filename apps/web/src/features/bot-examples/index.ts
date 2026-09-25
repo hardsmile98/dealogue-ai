@@ -1,3 +1,4 @@
-export { examplesApi } from './api/examplesApi'
-export { AddExampleButton } from './ui/AddExampleButton'
-export { ExamplesEditor } from './ui/ExamplesEditor'
+export { examplesApi } from './api/examplesApi';
+export { AddExampleDialog } from './ui/AddExampleDialog';
+export type { ExampleDraft } from './ui/AddExampleDialog';
+export { ExamplesEditor } from './ui/ExamplesEditor';

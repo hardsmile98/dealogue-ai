@@ -5,13 +5,55 @@ const enabledAt = new Date('2026-09-25T10:00:00Z');
 
 describe('какие диалоги агент берёт сам', () => {
   it('только начатые клиентом после включения агента', () => {
-    expect(isNewLead({ firstMessageDirection: 'in', firstMessageAt: new Date('2026-09-25T10:05:00Z') }, enabledAt)).toBe(true);
-    expect(isNewLead({ firstMessageDirection: 'in', firstMessageAt: enabledAt }, enabledAt)).toBe(true);
+    expect(
+      isNewLead(
+        {
+          firstMessageDirection: 'in',
+          firstMessageAt: new Date('2026-09-25T10:05:00Z'),
+        },
+        enabledAt,
+      ),
+    ).toBe(true);
+    expect(
+      isNewLead(
+        { firstMessageDirection: 'in', firstMessageAt: enabledAt },
+        enabledAt,
+      ),
+    ).toBe(true);
     // Старый чат, начатый нами, первое сообщение неизвестно, агент не включён.
-    expect(isNewLead({ firstMessageDirection: 'in', firstMessageAt: new Date('2026-09-20T10:00:00Z') }, enabledAt)).toBe(false);
-    expect(isNewLead({ firstMessageDirection: 'out', firstMessageAt: new Date('2026-09-25T11:00:00Z') }, enabledAt)).toBe(false);
-    expect(isNewLead({ firstMessageDirection: null, firstMessageAt: null }, enabledAt)).toBe(false);
-    expect(isNewLead({ firstMessageDirection: 'in', firstMessageAt: new Date('2026-09-25T11:00:00Z') }, null)).toBe(false);
+    expect(
+      isNewLead(
+        {
+          firstMessageDirection: 'in',
+          firstMessageAt: new Date('2026-09-20T10:00:00Z'),
+        },
+        enabledAt,
+      ),
+    ).toBe(false);
+    expect(
+      isNewLead(
+        {
+          firstMessageDirection: 'out',
+          firstMessageAt: new Date('2026-09-25T11:00:00Z'),
+        },
+        enabledAt,
+      ),
+    ).toBe(false);
+    expect(
+      isNewLead(
+        { firstMessageDirection: null, firstMessageAt: null },
+        enabledAt,
+      ),
+    ).toBe(false);
+    expect(
+      isNewLead(
+        {
+          firstMessageDirection: 'in',
+          firstMessageAt: new Date('2026-09-25T11:00:00Z'),
+        },
+        null,
+      ),
+    ).toBe(false);
   });
 });
 

@@ -18,7 +18,8 @@ export async function execute<Row = Record<string, unknown>>(
   sql: string,
   params: unknown[] = [],
 ): Promise<SqlResult<Row>> {
-  const transactional = db instanceof EntityManager ? db.queryRunner : undefined;
+  const transactional =
+    db instanceof EntityManager ? db.queryRunner : undefined;
   const dataSource = db instanceof EntityManager ? db.connection : db;
   const runner = transactional ?? dataSource.createQueryRunner();
   try {

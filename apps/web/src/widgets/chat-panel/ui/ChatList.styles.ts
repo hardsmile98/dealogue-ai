@@ -1,4 +1,4 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const chatListStyles = {
   pane: {
@@ -6,8 +6,10 @@ export const chatListStyles = {
     flexDirection: 'column',
     minHeight: 0,
     minWidth: 0,
-    borderRight: { md: '1px solid' },
-    borderColor: { md: 'divider' },
+    // Меняется по брейкпоинту только ширина полосы — цвет всегда из темы.
+    borderRightStyle: 'solid',
+    borderRightWidth: { xs: 0, md: 1 },
+    borderColor: 'divider',
   },
   tools: {
     p: 1.5,
@@ -43,10 +45,6 @@ export const chatListStyles = {
   skeletonText: {
     flexGrow: 1,
   },
-  message: {
-    p: 3,
-    textAlign: 'center',
-  },
   error: {
     m: 1.5,
   },
@@ -64,16 +62,12 @@ export const chatListStyles = {
     borderColor: 'divider',
   },
 
+  // Подсветку выбранной строки даёт тема MUI (primary с прозрачностью 8 %).
   item: {
     alignItems: 'flex-start',
     gap: 1.5,
     px: 1.5,
     py: 1.25,
-    borderRadius: 0,
-    '&.Mui-selected': {
-      bgcolor: 'rgba(79, 70, 229, 0.08)',
-      '&:hover': { bgcolor: 'rgba(79, 70, 229, 0.12)' },
-    },
   },
   itemBody: {
     minWidth: 0,
@@ -111,4 +105,4 @@ export const chatListStyles = {
     gap: 1,
     mt: 0.75,
   },
-} satisfies SxStyles
+} satisfies SxStyles;

@@ -1,4 +1,4 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const queryBoundaryStyles = {
   empty: {
@@ -6,4 +6,7 @@ export const queryBoundaryStyles = {
     textAlign: 'center',
     py: 3,
   },
-} satisfies SxStyles
+  staleWarning: {
+    mb: 2,
+  },
+} satisfies SxStyles;

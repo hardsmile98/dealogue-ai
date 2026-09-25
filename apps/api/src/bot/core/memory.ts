@@ -1,5 +1,12 @@
 import type { Gender } from '../library/kinds.js';
-import type { Analysis, CardField, ClientCard, ClientFact, Memory, SaidEntry } from './types.js';
+import type {
+  Analysis,
+  CardField,
+  ClientCard,
+  ClientFact,
+  Memory,
+  SaidEntry,
+} from './types.js';
 
 /** Ниже этих порогов пол и категория считаются неизвестными (раздел 4). */
 export const GENDER_CONFIDENCE = 0.8;
@@ -17,16 +24,26 @@ export function readCard(raw: unknown): ClientCard {
   if (typeof raw !== 'object' || raw === null) return {};
   const source = raw as Record<string, unknown>;
   const card: ClientCard = {};
-  for (const key of ['name', 'gender', 'birthDate', 'birthPlace', 'category', 'language'] as const) {
+  for (const key of [
+    'name',
+    'gender',
+    'birthDate',
+    'birthPlace',
+    'category',
+    'language',
+  ] as const) {
     const field = source[key];
     if (typeof field !== 'object' || field === null) continue;
-    const { value, confidence, sourceMessageId } = field as Partial<CardField<unknown>>;
+    const { value, confidence, sourceMessageId } = field as Partial<
+      CardField<unknown>
+    >;
     if (value === undefined || value === null || value === '') continue;
     const normalized: CardField<string> = {
       value: String(value),
       confidence: typeof confidence === 'number' ? confidence : 1,
     };
-    if (typeof sourceMessageId === 'number') normalized.sourceMessageId = sourceMessageId;
+    if (typeof sourceMessageId === 'number')
+      normalized.sourceMessageId = sourceMessageId;
     (card as Record<string, CardField<string>>)[key] = normalized;
   }
   return card;
@@ -80,7 +97,10 @@ export interface FactsUpdate {
  * не добавляются, противоречия помечают старые факты. Результат — что
  * записать в базу и новый список активных фактов для промпта.
  */
-export function applyFacts(active: readonly ClientFact[], analysis: Analysis): { facts: ClientFact[]; update: FactsUpdate } {
+export function applyFacts(
+  active: readonly ClientFact[],
+  analysis: Analysis,
+): { facts: ClientFact[]; update: FactsUpdate } {
   const normalize = (text: string) => text.trim().toLowerCase();
   const superseded = new Set(analysis.supersedes.map(normalize));
   const kept = active.filter((fact) => !superseded.has(normalize(fact.text)));
@@ -97,7 +117,9 @@ export function applyFacts(active: readonly ClientFact[], analysis: Analysis): {
     facts,
     update: {
       added,
-      superseded: active.filter((fact) => superseded.has(normalize(fact.text))).map((fact) => fact.text),
+      superseded: active
+        .filter((fact) => superseded.has(normalize(fact.text)))
+        .map((fact) => fact.text),
     },
   };
 }
@@ -105,7 +127,8 @@ export function applyFacts(active: readonly ClientFact[], analysis: Analysis): {
 /** Сколько букв в тексте (любой письменности); цифры, эмодзи и знаки не считаются. */
 export function letterCount(text: string): number {
   let count = 0;
-  for (const char of text) if (char.toLowerCase() !== char.toUpperCase()) count += 1;
+  for (const char of text)
+    if (char.toLowerCase() !== char.toUpperCase()) count += 1;
   return count;
 }
 
@@ -114,15 +137,24 @@ export function letterCount(text: string): number {
  * смена — только по ходу с настоящим текстом. Так план и ответчик не
  * прыгают между языками от реплики к реплике.
  */
-export function nextLanguage(card: ClientCard, detected: string | null, newText: string): ClientCard['language'] {
+export function nextLanguage(
+  card: ClientCard,
+  detected: string | null,
+  newText: string,
+): ClientCard['language'] {
   const current = card.language;
   if (!detected || detected === current?.value) return current;
-  if (!current || letterCount(newText) >= LANGUAGE_SWITCH_MIN_LETTERS) return { value: detected, confidence: 1 };
+  if (!current || letterCount(newText) >= LANGUAGE_SWITCH_MIN_LETTERS)
+    return { value: detected, confidence: 1 };
   return current;
 }
 
 /** Память после анализа — то, что видят план и ответчик в этом ходе. */
-export function applyAnalysis(memory: Memory, analysis: Analysis, newText = ''): { memory: Memory; factsUpdate: FactsUpdate } {
+export function applyAnalysis(
+  memory: Memory,
+  analysis: Analysis,
+  newText = '',
+): { memory: Memory; factsUpdate: FactsUpdate } {
   const { facts, update } = applyFacts(memory.facts, analysis);
   const card = mergeCard(memory.card, analysis.card);
   const language = nextLanguage(memory.card, analysis.language, newText);
@@ -139,10 +171,17 @@ export function applyAnalysis(memory: Memory, analysis: Analysis, newText = ''):
 }
 
 /** Сколько раз подход по категории возражения уже использован. */
-export function argumentsUsed(said: readonly SaidEntry[], category: string): number {
-  return said.filter((entry) => entry.kind === 'argument' && entry.key.startsWith(`${category}:`)).length;
+export function argumentsUsed(
+  said: readonly SaidEntry[],
+  category: string,
+): number {
+  return said.filter(
+    (entry) =>
+      entry.kind === 'argument' && entry.key.startsWith(`${category}:`),
+  ).length;
 }
 
 export function nudgesSaid(said: readonly SaidEntry[], nudge: string): number {
-  return said.filter((entry) => entry.kind === 'nudge' && entry.key === nudge).length;
+  return said.filter((entry) => entry.kind === 'nudge' && entry.key === nudge)
+    .length;
 }

@@ -4,7 +4,11 @@ import { Account, Chat } from '../../telegram/decorators/account.decorator.js';
 import type { TelegramAccountEntity } from '../../telegram/entities/telegram-account.entity.js';
 import type { TelegramChatEntity } from '../../telegram/entities/telegram-chat.entity.js';
 import { AccountAccessGuard } from '../../telegram/guards/account-access.guard.js';
-import type { ChatBotStateResponse, ChatJournalResponse, SandboxSessionDto } from '../bot.types.js';
+import type {
+  ChatBotStateResponse,
+  ChatJournalResponse,
+  SandboxSessionDto,
+} from '../bot.types.js';
 import { SetChatModeDto } from '../dto/chat.dto.js';
 import { SandboxFromChatDto } from '../dto/sandbox.dto.js';
 import { BotChatStateService } from '../services/bot-chat-state.service.js';

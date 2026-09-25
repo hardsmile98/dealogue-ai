@@ -5,7 +5,11 @@ import { repliesSince } from './history.js';
 import type { HistoryMessage } from './types.js';
 
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 25, 10, minute));
-const msg = (id: number, direction: 'in' | 'out', text = '…'): HistoryMessage => ({
+const msg = (
+  id: number,
+  direction: 'in' | 'out',
+  text = '…',
+): HistoryMessage => ({
   id,
   direction,
   text,
@@ -15,7 +19,16 @@ const msg = (id: number, direction: 'in' | 'out', text = '…'): HistoryMessage 
 });
 
 describe('ответы на этапе — по истории', () => {
-  const history = [msg(1, 'in'), msg(2, 'out'), msg(3, 'out'), msg(4, 'in'), msg(5, 'out'), msg(6, 'out'), msg(7, 'in'), msg(8, 'out')];
+  const history = [
+    msg(1, 'in'),
+    msg(2, 'out'),
+    msg(3, 'out'),
+    msg(4, 'in'),
+    msg(5, 'out'),
+    msg(6, 'out'),
+    msg(7, 'in'),
+    msg(8, 'out'),
+  ];
 
   it('с начала переписки считается каждая серия исходящих', () => {
     expect(repliesSince(history, null)).toBe(3);
@@ -32,15 +45,21 @@ describe('ответы на этапе — по истории', () => {
 });
 
 describe('переписка из реального чата', () => {
-  const diagnostic = 'Я провёл для вас диагностику, и готов поделиться результатами работы ❤️ Хочу подчеркнуть, что мне было приятно работать с вами';
-  const prices = 'Ознакомлю вас со стоимостью 🙌 Работа будет полностью индивидуальной, только вы и я. Это общение, переписка';
+  const diagnostic =
+    'Я провёл для вас диагностику, и готов поделиться результатами работы ❤️ Хочу подчеркнуть, что мне было приятно работать с вами';
+  const prices =
+    'Ознакомлю вас со стоимостью 🙌 Работа будет полностью индивидуальной, только вы и я. Это общение, переписка';
 
   it('вехи — по началу текста из библиотеки, без учёта переносов и эмодзи', () => {
     const history = [
       msg(1, 'in', 'Здравствуйте'),
       msg(2, 'out', 'Здравствуйте! Пришлите дату рождения'),
       msg(3, 'in', '04.01.1999'),
-      msg(4, 'out', 'Я провёл для вас диагностику,\nи готов поделиться результатами работы!!! Хочу подчеркнуть, что мне было приятно работать с вами. Дальше текст менеджер поправил'),
+      msg(
+        4,
+        'out',
+        'Я провёл для вас диагностику,\nи готов поделиться результатами работы!!! Хочу подчеркнуть, что мне было приятно работать с вами. Дальше текст менеджер поправил',
+      ),
       msg(5, 'in', 'Спасибо, а сколько стоит?'),
     ];
     const found = findMilestones(history, [
@@ -51,12 +70,26 @@ describe('переписка из реального чата', () => {
   });
 
   it('входящие сообщения и короткие тела не считаются', () => {
-    expect(findMilestones([msg(1, 'in', prices)], [{ key: 'prices', text: prices }])).toEqual([]);
-    expect(findMilestones([msg(1, 'out', 'Цены')], [{ key: 'prices', text: 'Цены' }])).toEqual([]);
+    expect(
+      findMilestones([msg(1, 'in', prices)], [{ key: 'prices', text: prices }]),
+    ).toEqual([]);
+    expect(
+      findMilestones(
+        [msg(1, 'out', 'Цены')],
+        [{ key: 'prices', text: 'Цены' }],
+      ),
+    ).toEqual([]);
   });
 
   it('обработанные сообщения клиента — до нашего последнего ответа', () => {
-    expect(lastAnsweredIncoming([msg(1, 'in'), msg(2, 'out'), msg(3, 'in'), msg(4, 'in')])).toBe(1);
+    expect(
+      lastAnsweredIncoming([
+        msg(1, 'in'),
+        msg(2, 'out'),
+        msg(3, 'in'),
+        msg(4, 'in'),
+      ]),
+    ).toBe(1);
     expect(lastAnsweredIncoming([msg(1, 'in'), msg(2, 'in')])).toBeNull();
     expect(lastAnsweredIncoming([msg(1, 'out'), msg(2, 'in')])).toBeNull();
   });

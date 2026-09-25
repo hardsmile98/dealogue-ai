@@ -1,6 +1,1 @@
-export { AccountPage } from './ui/AccountPage'
-export { AccountStatsPage } from './ui/AccountStatsPage'
-export { AccountChatsPage } from './ui/AccountChatsPage'
-export { AccountBotPage } from './ui/AccountBotPage'
-export { AccountSandboxPage } from './ui/AccountSandboxPage'
-export { AccountHandoffsPage } from './ui/AccountHandoffsPage'
+export { AccountPage } from './ui/AccountPage';

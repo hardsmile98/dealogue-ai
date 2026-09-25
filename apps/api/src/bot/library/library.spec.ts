@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { nextMilestone, stageFromMilestones } from './kinds.js';
-import { defaultPersona, readPersona, renderPersona, unknownPlaceholders } from './persona.js';
+import {
+  defaultPersona,
+  readPersona,
+  renderPersona,
+  unknownPlaceholders,
+} from './persona.js';
 import { selectDiagnostic } from './select-diagnostic.js';
 import type { DiagnosticCandidate } from './select-diagnostic.js';
-import { DEFAULT_TIMINGS, mergeTimings, readTimings, validateTimings } from './timings.js';
+import {
+  DEFAULT_TIMINGS,
+  mergeTimings,
+  readTimings,
+  validateTimings,
+} from './timings.js';
 
 describe('этап по вехам', () => {
   it('без вех — intake, дальше последняя доставленная', () => {
@@ -32,7 +42,12 @@ describe('образ', () => {
   };
 
   it('подставляет биографию и ссылки', () => {
-    expect(renderPersona('Приятно познакомиться) {{bio}}\n\nЧто беспокоит?', persona)).toBe(
+    expect(
+      renderPersona(
+        'Приятно познакомиться) {{bio}}\n\nЧто беспокоит?',
+        persona,
+      ),
+    ).toBe(
       'Приятно познакомиться) Родился в Киеве, живу в Шамони.\n\nЧто беспокоит?',
     );
     expect(renderPersona('Мои страницы:\n\n{{links}}', persona)).toBe(
@@ -42,17 +57,32 @@ describe('образ', () => {
 
   it('пустое значение убирает плейсхолдер и лишние пробелы', () => {
     const empty = defaultPersona('Имя');
-    expect(renderPersona('Приятно познакомиться) {{bio}} Что беспокоит?', empty)).toBe(
-      'Приятно познакомиться) Что беспокоит?',
+    expect(
+      renderPersona('Приятно познакомиться) {{bio}} Что беспокоит?', empty),
+    ).toBe('Приятно познакомиться) Что беспокоит?');
+    expect(renderPersona('Страницы:\n\n{{links}}\n\nВернусь.', empty)).toBe(
+      'Страницы:\n\nВернусь.',
     );
-    expect(renderPersona('Страницы:\n\n{{links}}\n\nВернусь.', empty)).toBe('Страницы:\n\nВернусь.');
   });
 
   it('читает jsonb, отбрасывая мусор', () => {
     expect(readPersona(null, 'Имя')).toEqual(defaultPersona('Имя'));
     expect(
-      readPersona({ name: '', gender: 'x', bio: 'Био', links: [{ title: 'a', url: 'b' }, { nope: 1 }] }, 'Имя'),
-    ).toEqual({ name: 'Имя', gender: 'm', bio: 'Био', links: [{ title: 'a', url: 'b' }] });
+      readPersona(
+        {
+          name: '',
+          gender: 'x',
+          bio: 'Био',
+          links: [{ title: 'a', url: 'b' }, { nope: 1 }],
+        },
+        'Имя',
+      ),
+    ).toEqual({
+      name: 'Имя',
+      gender: 'm',
+      bio: 'Био',
+      links: [{ title: 'a', url: 'b' }],
+    });
   });
 
   it('находит неизвестные плейсхолдеры', () => {
@@ -67,7 +97,12 @@ describe('тайминги', () => {
   });
 
   it('читает jsonb поверх умолчаний', () => {
-    const timings = readTimings({ stepHours: { min: 10 }, maxReminders: 2, junk: 1, typingMaxSec: 'x' });
+    const timings = readTimings({
+      stepHours: { min: 10 },
+      maxReminders: 2,
+      junk: 1,
+      typingMaxSec: 'x',
+    });
     expect(timings.stepHours).toEqual({ min: 10, max: 16 });
     expect(timings.maxReminders).toBe(2);
     expect(timings.typingMaxSec).toBe(DEFAULT_TIMINGS.typingMaxSec);
@@ -91,8 +126,20 @@ describe('тайминги', () => {
 });
 
 describe('выбор диагностики', () => {
-  const item = (id: string, category: string, gender: 'f' | 'm' | null, language = 'ru', enabled = true): DiagnosticCandidate =>
-    ({ id, category, gender, language, enabled, sort: 0 });
+  const item = (
+    id: string,
+    category: string,
+    gender: 'f' | 'm' | null,
+    language = 'ru',
+    enabled = true,
+  ): DiagnosticCandidate => ({
+    id,
+    category,
+    gender,
+    language,
+    enabled,
+    sort: 0,
+  });
   const first = <T>(list: readonly T[]) => list[0] as T;
   const items = [
     item('breakup-f', 'relationships.breakup', 'f'),
@@ -106,22 +153,70 @@ describe('выбор диагностики', () => {
   ];
 
   it('категория × пол × язык', () => {
-    expect(selectDiagnostic(items, { category: 'relationships.breakup', gender: 'f', language: 'ru' }, first)?.id).toBe('breakup-f');
-    expect(selectDiagnostic(items, { category: 'relationships.breakup', gender: null, language: 'en' }, first)?.id).toBe('breakup-en');
+    expect(
+      selectDiagnostic(
+        items,
+        { category: 'relationships.breakup', gender: 'f', language: 'ru' },
+        first,
+      )?.id,
+    ).toBe('breakup-f');
+    expect(
+      selectDiagnostic(
+        items,
+        { category: 'relationships.breakup', gender: null, language: 'en' },
+        first,
+      )?.id,
+    ).toBe('breakup-en');
   });
 
   it('пол неизвестен — текст «для любого», категория без пола подходит всем', () => {
-    expect(selectDiagnostic(items, { category: 'relationships.breakup', gender: null, language: 'ru' }, first)?.id).toBe('uni-any');
-    expect(selectDiagnostic(items, { category: 'money.instability', gender: 'm', language: 'ru' }, first)?.id).toBe('money-any');
+    expect(
+      selectDiagnostic(
+        items,
+        { category: 'relationships.breakup', gender: null, language: 'ru' },
+        first,
+      )?.id,
+    ).toBe('uni-any');
+    expect(
+      selectDiagnostic(
+        items,
+        { category: 'money.instability', gender: 'm', language: 'ru' },
+        first,
+      )?.id,
+    ).toBe('money-any');
   });
 
   it('нет категории — универсальная по полу, потом любая', () => {
-    expect(selectDiagnostic(items, { category: 'health.own', gender: 'm', language: 'ru' }, first)?.id).toBe('uni-m');
-    expect(selectDiagnostic(items, { category: null, gender: null, language: 'ru' }, first)?.id).toBe('uni-any');
+    expect(
+      selectDiagnostic(
+        items,
+        { category: 'health.own', gender: 'm', language: 'ru' },
+        first,
+      )?.id,
+    ).toBe('uni-m');
+    expect(
+      selectDiagnostic(
+        items,
+        { category: null, gender: null, language: 'ru' },
+        first,
+      )?.id,
+    ).toBe('uni-any');
   });
 
   it('нет материалов на языке — null, выключенные не считаются', () => {
-    expect(selectDiagnostic(items, { category: 'money.instability', gender: 'f', language: 'de' }, first)).toBeNull();
-    expect(selectDiagnostic([items[7] as DiagnosticCandidate], { category: null, gender: null, language: 'ru' }, first)).toBeNull();
+    expect(
+      selectDiagnostic(
+        items,
+        { category: 'money.instability', gender: 'f', language: 'de' },
+        first,
+      ),
+    ).toBeNull();
+    expect(
+      selectDiagnostic(
+        [items[7] as DiagnosticCandidate],
+        { category: null, gender: null, language: 'ru' },
+        first,
+      ),
+    ).toBeNull();
   });
 });

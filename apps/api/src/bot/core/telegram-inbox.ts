@@ -53,6 +53,9 @@ export class OwnOutgoing {
   }
 
   isOwn(chatId: string, messageId: number, text: string): boolean {
-    return (this.ids.get(chatId)?.includes(messageId) ?? false) || (this.inFlight.get(chatId)?.includes(text) ?? false);
+    return (
+      (this.ids.get(chatId)?.includes(messageId) ?? false) ||
+      (this.inFlight.get(chatId)?.includes(text) ?? false)
+    );
   }
 }

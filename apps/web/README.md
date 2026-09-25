@@ -16,12 +16,17 @@ npm run dev
 
 ## Скрипты
 
-| Команда | Что делает |
-|---|---|
-| `npm run dev` | dev-сервер с HMR |
-| `npm run build` | `tsc -b` + production-сборка в `dist/` |
-| `npm run preview` | локальный просмотр собранного `dist/` |
-| `npm run lint` | oxlint |
+| Команда                | Что делает                                  |
+| ---------------------- | ------------------------------------------- |
+| `npm run dev`          | dev-сервер с HMR                            |
+| `npm run build`        | `tsc -b` + production-сборка в `dist/`      |
+| `npm run preview`      | локальный просмотр собранного `dist/`       |
+| `npm run lint`         | oxlint                                      |
+| `npm run format`       | Prettier по всему проекту (`--write`)       |
+| `npm run format:check` | проверка форматирования без правок (для CI) |
+
+Prettier настроен как в `apps/api` (`.prettierrc`: одинарные кавычки,
+запятые везде); `dist`, `node_modules` и `coverage` в `.prettierignore`.
 
 ## Что умеет
 
@@ -33,22 +38,35 @@ npm run dev
 - подключение аккаунта через диалог «как в Telegram»: номер → код из
   приложения → облачный пароль, если включена 2FA; переподключение
   отвалившегося аккаунта — тот же диалог с подставленным номером;
-- удаление с подтверждением.
+- удаление с подтверждением (в таблице — иконкой, на странице аккаунта —
+  в меню «⋯»).
 
-Внутри аккаунта две вкладки:
+Внутри аккаунта пять вкладок:
 
 - **Статистика** — сколько людей написали первое сообщение за день и с каким
   кодом («#1», «# 1», «Код 6», «код - 6», «код: 6»; без совпадения — «Без кода»).
   Фильтр периода (сегодня, вчера, 7 / 30 дней или произвольные даты) живёт в query-строке
   `?from=&to=`, плитки с итогами и дельтой к прошлому периоду, столбчатый
-  график с накоплением по кодам, таблица кодов с долями и таблица по дням.
+  график с накоплением по кодам (стрелки на клавиатуре листают дни), таблица
+  кодов с долями и таблица по дням.
 - **Чаты** — все диалоги аккаунта: список догружается по 100 при прокрутке
   вниз, поиск и фильтры (с кодом, без кода) работают на сервере по всем
   чатам, а не только по загруженным. Справа — переписка: открывается на
   свежих сообщениях, при прокрутке вверх догружает более старые по 50, не
-  сбивая положение; отправка сообщений от имени аккаунта; первое сообщение
-  диалога помечено кодом. Выбранный чат — в URL, по прямой ссылке он
-  открывается, даже если в списке ещё не загружен.
+  сбивая положение; отправка сообщений от имени аккаунта (если чат ведёт
+  агент, под полем предупреждение: после отправки чат уйдёт менеджеру);
+  первое сообщение диалога помечено кодом, у медиа — вид вложения.
+  В шапке — чей чат (агент или менеджер) и панель агента: режим, журнал
+  ходов, память, задания. У сообщений — «продолжить в песочнице» и «в
+  примеры». Выбранный чат — в URL, по прямой ссылке он открывается, даже
+  если в списке ещё не загружен.
+- **У менеджера** — чаты, которые агент передал: «ждут ответа» сверху,
+  «цены отправлены, молчат» ниже, затем те, что менеджер уже ведёт.
+- **Агент** — `?section=` выбирает раздел: настройки (включение агента на
+  аккаунте с подтверждением, стандартная библиотека, образ практика,
+  тайминги), библиотека текстов и примеры диалогов.
+- **Песочница** — агент ведёт диалог без Telegram: за клиента пишет
+  владелец, время виртуальное, рядом журнал ходов, память и задания.
 
 ## Архитектура (FSD)
 
@@ -58,14 +76,19 @@ npm run dev
 ```
 src/
   app/                     инициализация приложения
-    providers/             Redux Provider + ThemeProvider + CssBaseline
-    router/                createBrowserRouter, ProtectedRoute, GuestRoute
+    providers/             Redux Provider + ThemeProvider + CssBaseline + уведомления
+    router/                createBrowserRouter, ProtectedRoute, GuestRoute, ленивые страницы
     store/                 configureStore, типы RootState / AppDispatch
-    styles/                тема MUI, global.css
-  pages/
+    styles/                тема MUI (палитра, типографика, переопределения компонентов), global.css
+  pages/                   одна страница — один маршрут и один чанк
     login/                 форма входа
     accounts/              список аккаунтов Telegram
-    account/               шапка аккаунта + вкладки (stats, chats)
+    account/               шапка аккаунта, меню «⋯», вкладки, Outlet
+    account-stats/         вкладка «Статистика»
+    account-chats/         вкладка «Чаты»
+    account-handoffs/      вкладка «У менеджера»
+    account-bot/           вкладка «Агент»: настройки, библиотека, примеры
+    account-sandbox/       вкладка «Песочница»
     not-found/
   widgets/                 готовые блоки, из которых собраны страницы
     app-shell/             боковое меню + Outlet для авторизованной части
@@ -73,22 +96,31 @@ src/
     chat-panel/            список чатов + переписка
   features/                действия пользователя
     auth/login/, auth/logout/
-    telegram-account/connect/   диалог подключения (номер → код → 2FA)
+    telegram-account/connect/   диалог подключения (номер → код → 2FA), хук useConnectFlow
     telegram-account/remove/    удаление с подтверждением
     realtime/                   SSE-подключение и реакция на события
+    bot-chat/                   агент в чате: режим, панель с журналом
+    bot-settings/               включение агента, импорт библиотеки, образ, тайминги
+    bot-library/                редактор библиотеки текстов
+    bot-examples/               примеры диалогов и «в примеры» из переписки
+    bot-sandbox/                песочница: сессии, лента, ввод, журнал; «продолжить в песочнице»
   entities/
     session/               слайс сессии, селекторы, хуки, персист в storage
-    telegram-account/      аккаунт: типы, RTK Query (список, карточка, статистика), чип статуса, аватар
-    chat/                  чат и сообщение: типы, RTK Query, чип кода, пузырь сообщения
+    telegram-account/      аккаунт: RTK Query (список, карточка, статистика), чип статуса, аватар, контакты
+    chat/                  чат и сообщение: RTK Query, чип кода, пузырь сообщения, вид вложения
+    bot/                   агент: RTK Query (настройки, состояние, журнал, «у менеджера»),
+                           подписи кодов, чипы режима и этапа, журнал (ход, память, задания)
   shared/
-    api/                   baseApi (единственный createApi), провайдер токена,
+    api/                   baseApi (единственный createApi), провайдер токена, SSE,
                            tags.ts (реестр тегов кэша), contracts/ (DTO backend-API)
-    config/                env, ROUTES, палитра графиков
-    lib/                   даты, форматирование, ошибки API, хелперы RTK Query,
-                           хуки useDebouncedValue и useInfiniteScroll
-    types/                 SxStyles
+    config/                env, ROUTES, APP_NAME, палитры графиков и аватаров
+    lib/                   даты, форматирование, ошибки API, хелперы RTK Query, хуки
+                           (useDraft, useDocumentTitle, useElementWidth, useDebouncedValue,
+                           useInfiniteScroll, useStoredState)
+    types/                 SxStyles, типы своих токенов темы (theme.d.ts)
     ui/                    BrandMark, PageHeader, EmptyState, StatTile, StackedColumnChart,
-                           QueryBoundary, SectionCard, FormDialog, ConfirmAction
+                           ChatBubble, QueryBoundary, SectionCard, FormDialog, ConfirmAction,
+                           Notifications (useNotify)
 ```
 
 Алиас `@/*` указывает на `src/*` (настроен в `vite.config.ts` и `tsconfig.app.json`).
@@ -97,25 +129,41 @@ src/
 
 Слой определяется не темой, а ролью:
 
-- **entities** — данные: RTK Query-эндпоинты, типы, метаданные (подписи
-  статусов) и мелкие представления одной записи (чип, аватар, пузырь).
-- **features** — действие пользователя: войти, подключить или удалить аккаунт.
+- **entities** — данные: RTK Query-эндпоинты, типы, подписи кодов и мелкие
+  представления одной записи (чип, аватар, пузырь, ход журнала).
+- **features** — действие пользователя: войти, подключить или удалить
+  аккаунт, настроить агента, прогнать диалог в песочнице. Логика действия —
+  в `model/` (хуки), разметка — в `ui/`.
 - **widgets** — собранный блок экрана из нескольких сущностей и фич: дашборд
   статистики, панель чатов. Они ничего не «делают», они компонуют.
-- **pages** — маршрут: собирает виджеты и отдаёт им `accountId` из URL.
+- **pages** — маршрут: собирает виджеты и фичи и отдаёт им `accountId` из URL.
+
+Контракты API (`shared/api/contracts`) — только зеркала серверных типов и
+справочников (`contracts/bot/` разбит по темам: справочники, настройки,
+библиотека, журнал, чат, песочница). Подписи для людей («Цены отправлены»,
+«Диагностики») — в `entities/bot/lib/labels.ts`.
 
 ### Общие примитивы `shared/ui`
 
-Четыре компонента убирают обвязку, которая иначе расползается по панелям:
+Компоненты, которые убирают обвязку, иначе расползающуюся по панелям:
 
-- `QueryBoundary` — три состояния запроса RTK Query (ошибка, загрузка, пусто)
-  одинаково во всём приложении. Дети — функция от данных, поэтому внутри
-  не нужны проверки на `undefined`; хуки в ней вызывать нельзя.
-- `SectionCard` — карточка-раздел с заголовком и пояснением.
+- `QueryBoundary` — три состояния запроса RTK Query (ошибка с «Повторить»,
+  загрузка, пусто) одинаково во всём приложении. Если данные уже были, а упал
+  фоновый перезапрос, данные остаются на экране, сверху — предупреждение.
+  Дети — функция от данных, поэтому внутри не нужны проверки на `undefined`;
+  хуки в ней вызывать нельзя.
+- `SectionCard` — карточка-раздел с заголовком (h2) и пояснением.
 - `FormDialog` — диалог создания/правки: поля, ошибка мутации, две кнопки,
-  Enter отправляет форму.
-- `ConfirmAction` — подтверждение необратимого действия вместо `window.confirm`.
-  Триггер передаётся функцией, поэтому одинаково работает с кнопкой и иконкой.
+  Enter отправляет форму; пока идёт сохранение, диалог не закрывается.
+- `ConfirmAction` — подтверждение действия вместо `window.confirm`. Если
+  `onConfirm` вернул промис, диалог ждёт его с крутилкой на кнопке, а ошибку
+  показывает у себя. Триггер передаётся функцией, поэтому одинаково работает
+  с кнопкой, иконкой и пунктом меню.
+- `useNotify()` — короткое уведомление о результате действия
+  (`notify.success('Образ сохранён')`, `notify.error(...)`). Ошибки, без
+  которых форму не исправить, по-прежнему показываются рядом с полями.
+- `ChatBubble` / `ReadReceipt` — пузырь сообщения и галочки: один для чата и
+  песочницы. Действия у сообщения видны при наведении, на тач-экранах — всегда.
 
 ### Стили
 
@@ -128,8 +176,21 @@ ui/
   LoginPage.styles.ts
 ```
 
-Скругления карточек, бумаги и скелетонов задаёт тема (`shape.borderRadius`),
-дублировать их через `sx={{ borderRadius: 3 }}` не нужно.
+Цвета — только из темы: стандартные токены MUI и свои (`background.subtle` —
+подложка ленты, `chat.outgoing`, `chat.milestone*` — пузыри). Их типы — в
+`shared/types/theme.d.ts`, значения — в `app/styles/theme.ts`. Hex в
+компонентах не пишем; исключение — палитры графиков и аватаров в
+`shared/config`, это данные, а не оформление.
+
+Скругление карточек, бумаги и панелей — `shape.borderRadius` (12px), его
+даёт тема. В `sx` число у `borderRadius` — **множитель** этого значения
+(`borderRadius: 3` — это 36px, а не 3px), поэтому для карточек его не пишут
+вовсе, а мелкие детали задают строкой (`'4px'`). Отступы `CardContent`,
+заголовки таблиц, вкладки и `DialogActions` тоже настроены в теме.
+
+Страницы с панелями (чаты, песочница) растягиваются на остаток экрана через
+flex-цепочку `AppShell` → `AccountPage` → панель (`flex: 1 1 0`), без
+`calc(100dvh - …)`.
 
 ### Пара тонкостей, которые легко сломать
 
@@ -141,12 +202,18 @@ ui/
 - Сессия пишется в storage не из компонентов, а слушателем
   (`entities/session/model/lifecycle.ts`) на экшены `sessionEstablished` /
   `sessionCleared`.
-- Теги кэша объявлены в одном месте — `shared/api/tags.ts`. На приложение один
-  `createApi`, поэтому пространство тегов общее, и сущности не импортируют друг
-  друга ради тега. Мутации из `features/*` инжектятся в api той же сущности,
-  чтобы инвалидировать кэш теми же тегами.
-- Страницы за логином подключены через `React.lazy`: в первый чанк попадает
-  только форма входа. Заглушку на время загрузки даёт `Suspense` в `AppShell`.
+- Теги кэша объявлены в одном месте — `shared/api/tags.ts` — и все сразу
+  переданы в `createApi({ tagTypes })`, поэтому слайсам не нужен
+  `enhanceEndpoints`. У тега один смысл `id`: список и одна запись — разные
+  теги (`CHAT_LIST_TAG` / `CHAT_TAG`, `BOT_SANDBOX_LIST_TAG` / `BOT_SANDBOX_TAG`).
+- Каждая страница за логином — отдельный слайс и отдельный чанк
+  (`React.lazy` в `app/router`). Заглушку на время загрузки даёт `Suspense`
+  в `AppShell`, а для вкладок аккаунта — `Suspense` вокруг `Outlet` в
+  `AccountPage`, чтобы шапка не пропадала.
+- В `package.json` стоит `"sideEffects": ["*.css"]`: без него сборщик
+  считает, что любой модуль может иметь побочные эффекты, и через барели
+  `index.ts` тянет в чанк страницы весь слайс. Если модуль нужен только ради
+  побочного эффекта (кроме CSS), его придётся добавить в этот список.
 - Цвета серий на графике закреплены за кодом по его числовому порядку среди
   показанных, а не по рангу (`widgets/account-stats/lib/buildSeries.ts`):
   при смене периода код не меняет цвет. Больше 6 кодов сворачиваются в
@@ -154,19 +221,30 @@ ui/
   проверен на различимость (в том числе при дальтонизме), не перетасовывать.
 - Код из первого сообщения вычленяет backend (`apps/api/src/telegram/lib/lead-code.ts`);
   фронтенд только показывает готовый `leadCode`.
+- `Tooltip` MUI по умолчанию подставляет свой текст в `aria-label` ребёнка.
+  У кнопки с видимым текстом это подменяет её имя для экранного диктора —
+  такие подсказки пишем с `describeChild`.
 
 ## Маршруты
 
-| Путь | Доступ | Страница |
-|---|---|---|
-| `/login` | только гость | `pages/login` |
-| `/` | только авторизованный | редирект на `/accounts` |
-| `/accounts` | только авторизованный | `pages/accounts` |
-| `/accounts/:accountId` | только авторизованный | редирект на `…/stats` |
-| `/accounts/:accountId/stats` | только авторизованный | `pages/account` → статистика |
-| `/accounts/:accountId/chats` | только авторизованный | `pages/account` → чаты |
-| `/accounts/:accountId/chats/:chatId` | только авторизованный | то же, с открытым чатом |
-| `*` | всем | `pages/not-found` |
+| Путь                                      | Доступ                | Страница                  |
+| ----------------------------------------- | --------------------- | ------------------------- |
+| `/login`                                  | только гость          | `pages/login`             |
+| `/`                                       | только авторизованный | редирект на `/accounts`   |
+| `/accounts`                               | только авторизованный | `pages/accounts`          |
+| `/accounts/:accountId`                    | только авторизованный | редирект на `…/stats`     |
+| `/accounts/:accountId/stats`              | только авторизованный | `pages/account-stats`     |
+| `/accounts/:accountId/chats`              | только авторизованный | `pages/account-chats`     |
+| `/accounts/:accountId/chats/:chatId`      | только авторизованный | то же, с открытым чатом   |
+| `/accounts/:accountId/handoffs`           | только авторизованный | `pages/account-handoffs`  |
+| `/accounts/:accountId/bot?section=`       | только авторизованный | `pages/account-bot`       |
+| `/accounts/:accountId/sandbox`            | только авторизованный | `pages/account-sandbox`   |
+| `/accounts/:accountId/sandbox/:sessionId` | только авторизованный | то же, с открытой сессией |
+| `*`                                       | всем                  | `pages/not-found`         |
+
+Вкладки аккаунта — дочерние маршруты `pages/account`: шапка и вкладки
+общие, содержимое — в `Outlet`. Заголовок вкладки браузера ставит
+`useDocumentTitle`: «Чаты · Jakara — Dealogue AI».
 
 Редиректом после успешного входа занимается `GuestRoute`: форма только
 диспатчит `sessionEstablished`, а роутер сам уводит с `/login`.
@@ -178,6 +256,7 @@ ui/
 
 По умолчанию `VITE_API_URL` не задан, и мутация входа работает на **моке**
 (`features/auth/login/api/mockLogin.ts`) с парой `demo` / `demo1234` — сети нет.
+Живые события в этом режиме не подключаются.
 
 Чтобы ходить в реальный API, скопируйте `.env.example` в `.env`:
 
@@ -227,19 +306,47 @@ VITE_API_URL=http://localhost:3000
 
 Контракт описан типами в `shared/api/contracts/telegram.ts`:
 
-| Метод | Путь | Ответ |
-|---|---|---|
-| GET | `/telegram/accounts` | `TelegramAccountDto[]` |
-| GET | `/telegram/accounts/:id` | `TelegramAccountDto` |
-| DELETE | `/telegram/accounts/:id` | — |
-| POST | `/telegram/accounts/send-code` `{ phone }` | `SendCodeResponse` |
-| POST | `/telegram/accounts/sign-in` `{ attemptId, code }` | `SignInResponse` (`connected` или `password_required`) |
-| POST | `/telegram/accounts/password` `{ attemptId, password }` | `SubmitPasswordResponse` |
-| GET | `/telegram/accounts/:id/stats?from=YYYY-MM-DD&to=YYYY-MM-DD&tz=Europe/Moscow` | `AccountStatsDto` |
-| GET | `/telegram/accounts/:id/chats?cursor=&limit=100&search=&code=with\|without` | `ChatsPageDto` |
-| GET | `/telegram/accounts/:id/chats/:chatId` | `ChatDto` |
-| GET | `/telegram/accounts/:id/chats/:chatId/messages?cursor=&limit=50` | `MessagesPageDto` |
-| POST | `/telegram/accounts/:id/chats/:chatId/messages` `{ text }` | `MessageDto` |
+| Метод  | Путь                                                                          | Ответ                                                  |
+| ------ | ----------------------------------------------------------------------------- | ------------------------------------------------------ |
+| GET    | `/telegram/accounts`                                                          | `TelegramAccountDto[]`                                 |
+| GET    | `/telegram/accounts/:id`                                                      | `TelegramAccountDto`                                   |
+| DELETE | `/telegram/accounts/:id`                                                      | —                                                      |
+| POST   | `/telegram/accounts/send-code` `{ phone }`                                    | `SendCodeResponse`                                     |
+| POST   | `/telegram/accounts/sign-in` `{ attemptId, code }`                            | `SignInResponse` (`connected` или `password_required`) |
+| POST   | `/telegram/accounts/password` `{ attemptId, password }`                       | `SubmitPasswordResponse`                               |
+| GET    | `/telegram/accounts/:id/stats?from=YYYY-MM-DD&to=YYYY-MM-DD&tz=Europe/Moscow` | `AccountStatsDto`                                      |
+| GET    | `/telegram/accounts/:id/chats?cursor=&limit=100&search=&code=with\|without`   | `ChatsPageDto`                                         |
+| GET    | `/telegram/accounts/:id/chats/:chatId`                                        | `ChatDto`                                              |
+| GET    | `/telegram/accounts/:id/chats/:chatId/messages?cursor=&limit=50`              | `MessagesPageDto`                                      |
+| POST   | `/telegram/accounts/:id/chats/:chatId/messages` `{ text }`                    | `MessageDto`                                           |
+
+### Агент
+
+Контракт — `shared/api/contracts/bot/`. Префикс всех путей —
+`/telegram/accounts/:id`.
+
+| Метод        | Путь                                                                                           | Ответ                                       |
+| ------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| GET / PUT    | `/bot` (PUT: `{ persona?, timings?, model? }`)                                                 | `BotSettingsDto`                            |
+| PUT          | `/bot/enabled` `{ enabled }`                                                                   | `BotSettingsDto`                            |
+| POST         | `/bot/library/import` `{ mode: keep \| replace }`                                              | `LibraryImportResultDto`                    |
+| GET / POST   | `/bot/library`                                                                                 | `LibraryItemDto[]` / `LibraryItemDto`       |
+| PUT / DELETE | `/bot/library/:itemId`                                                                         | `LibraryItemDto` / —                        |
+| GET / POST   | `/bot/examples`                                                                                | `ExampleDto[]` / `ExampleDto`               |
+| PUT / DELETE | `/bot/examples/:exampleId`                                                                     | `ExampleDto` / —                            |
+| GET          | `/bot/handoffs`                                                                                | `HandoffChatDto[]`                          |
+| GET          | `/chats/:chatId/bot`                                                                           | `ChatBotStateResponse`                      |
+| PUT          | `/chats/:chatId/bot/mode` `{ mode: auto \| off }`                                              | `ChatBotStateResponse`                      |
+| GET          | `/chats/:chatId/bot/journal`                                                                   | `ChatJournalResponse`                       |
+| POST         | `/chats/:chatId/bot/sandbox` `{ messageId? }`                                                  | `SandboxSessionDto`                         |
+| GET / POST   | `/bot/sandbox` (POST: `{ title? }`)                                                            | `SandboxSummaryDto[]` / `SandboxSessionDto` |
+| GET / DELETE | `/bot/sandbox/:sessionId`                                                                      | `SandboxSessionDto` / —                     |
+| POST         | `/bot/sandbox/:sessionId/messages` `{ texts }`, `/respond`, `/read`, `/advance` `{ minutes? }` | `SandboxSessionDto`                         |
+| PUT          | `/bot/sandbox/:sessionId/mode` `{ mode }`                                                      | `SandboxSessionDto`                         |
+
+Действия песочницы возвращают сессию целиком — ею и обновляется кэш. Ход
+идёт на сервере в фоне (`running: true`), пока он идёт, сессия опрашивается
+раз в секунду.
 
 Ошибки ожидаются в формате NestJS: `{ "message": "..." }` — текст показывается
 пользователю как есть (`shared/lib/getApiErrorMessage.ts`).
@@ -248,6 +355,8 @@ VITE_API_URL=http://localhost:3000
 
 `shared/api/realtime.ts` держит SSE-подключение по тикету, контракт событий —
 `shared/api/contracts/realtime.ts`. `features/realtime` (`RealtimeProvider`)
-превращает события в инвалидацию кэшей: новое сообщение обновляет переписку и
-список чатов, прочтение — галочки в переписке. Опрос по таймеру остаётся
-страховкой на случай обрыва соединения.
+превращает события в инвалидацию кэшей: новое сообщение обновляет переписку,
+список чатов, состояние агента в чате и список «у менеджера», прочтение —
+галочки и состояние агента. Опрос по таймеру остаётся страховкой на случай
+обрыва соединения. При закрытии соединения недолетевший запрос тикета
+отменяется; без backend'а (мок) подключения нет вовсе.

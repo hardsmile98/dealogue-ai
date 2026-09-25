@@ -25,7 +25,7 @@ const ACTION_TIMEOUT_MS = 10_000;
 
 /**
  * Исходящие действия от имени подключённого аккаунта: отправка текста,
- * «печатает…», отметка о прочтении, уведомление самому себе.
+ * «печатает…», отметка о прочтении.
  * Единственное место, где приложение что-то пишет в Telegram.
  *
  * Ошибки — AccountOfflineError, PeerUnresolvedError, TimeoutError и
@@ -38,19 +38,31 @@ export class TelegramOutboundService {
   constructor(private readonly runtime: TelegramRuntimeService) {}
 
   /** Отправить обычный текст (без markdown-разметки — как есть). */
-  async sendText(accountId: string, chat: TelegramChatEntity, text: string): Promise<Api.Message> {
+  async sendText(
+    accountId: string,
+    chat: TelegramChatEntity,
+    text: string,
+  ): Promise<Api.Message> {
     const client = this.requireClient(accountId);
     return withTimeout(
       (async () => {
         const peer = await this.resolvePeer(client, chat);
-        return client.sendMessage(peer, { message: text, parseMode: false, linkPreview: false });
+        return client.sendMessage(peer, {
+          message: text,
+          parseMode: false,
+          linkPreview: false,
+        });
       })(),
       SEND_TIMEOUT_MS,
     );
   }
 
   /** Показать или снять индикатор «печатает…». Ошибки глотаем — это косметика. */
-  async setTyping(accountId: string, chat: TelegramChatEntity, on: boolean): Promise<void> {
+  async setTyping(
+    accountId: string,
+    chat: TelegramChatEntity,
+    on: boolean,
+  ): Promise<void> {
     try {
       const client = this.requireClient(accountId);
       await withTimeout(
@@ -59,14 +71,18 @@ export class TelegramOutboundService {
           await client.invoke(
             new Tl.messages.SetTyping({
               peer,
-              action: on ? new Tl.SendMessageTypingAction() : new Tl.SendMessageCancelAction(),
+              action: on
+                ? new Tl.SendMessageTypingAction()
+                : new Tl.SendMessageCancelAction(),
             }),
           );
         })(),
         ACTION_TIMEOUT_MS,
       );
     } catch (error) {
-      this.logger.debug(`Аккаунт ${accountId}: typing не удался — ${describeError(error)}`);
+      this.logger.debug(
+        `Аккаунт ${accountId}: typing не удался — ${describeError(error)}`,
+      );
     }
   }
 
@@ -82,21 +98,10 @@ export class TelegramOutboundService {
         ACTION_TIMEOUT_MS,
       );
     } catch (error) {
-      this.logger.debug(`Аккаунт ${accountId}: markAsRead не удался — ${describeError(error)}`);
+      this.logger.debug(
+        `Аккаунт ${accountId}: markAsRead не удался — ${describeError(error)}`,
+      );
     }
-  }
-
-  /**
-   * Служебное сообщение от аккаунта: в «Избранное» (`'me'`) или указанному
-   * собеседнику (@username / телефон) — например, уведомление менеджеру.
-   */
-  async sendToPeer(accountId: string, target: string, text: string): Promise<Api.Message> {
-    const client = this.requireClient(accountId);
-    const entity = target === 'me' || target === '' ? 'me' : target;
-    return withTimeout(
-      client.sendMessage(entity, { message: text, parseMode: false, linkPreview: false }),
-      SEND_TIMEOUT_MS,
-    );
   }
 
   isOnline(accountId: string): boolean {
@@ -132,7 +137,10 @@ export class TelegramOutboundService {
       });
     }
     // Username и телефон резолвятся через Telegram без кэша.
-    const handles = [chat.peerUsername ? `@${chat.peerUsername}` : null, chat.peerPhone];
+    const handles = [
+      chat.peerUsername ? `@${chat.peerUsername}` : null,
+      chat.peerPhone,
+    ];
     for (const handle of handles) {
       if (!handle) continue;
       try {

@@ -14,14 +14,18 @@ export class AiLearning1700000000009 implements MigrationInterface {
   name = 'AiLearning1700000000009';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "ai_turns" ADD COLUMN IF NOT EXISTS "client_text" text NOT NULL DEFAULT ''`);
+    await queryRunner.query(
+      `ALTER TABLE "ai_turns" ADD COLUMN IF NOT EXISTS "client_text" text NOT NULL DEFAULT ''`,
+    );
     await queryRunner.query(
       `ALTER TABLE "ai_turns" ADD COLUMN IF NOT EXISTS "similar_case_ids" uuid[] NOT NULL DEFAULT '{}'::uuid[]`,
     );
     await queryRunner.query(
       `ALTER TABLE "ai_turns" ADD COLUMN IF NOT EXISTS "library_ids" uuid[] NOT NULL DEFAULT '{}'::uuid[]`,
     );
-    await queryRunner.query(`ALTER TABLE "ai_turns" ADD COLUMN IF NOT EXISTS "replied_at" timestamptz NULL`);
+    await queryRunner.query(
+      `ALTER TABLE "ai_turns" ADD COLUMN IF NOT EXISTS "replied_at" timestamptz NULL`,
+    );
 
     // Старым ходам собираем текст клиента из сообщений пачки.
     await queryRunner.query(`
@@ -57,9 +61,17 @@ export class AiLearning1700000000009 implements MigrationInterface {
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_ai_turns_rated_good"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_ai_turns_client_fts"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_ai_turns_client_trgm"`);
-    await queryRunner.query(`ALTER TABLE "ai_turns" DROP COLUMN IF EXISTS "replied_at"`);
-    await queryRunner.query(`ALTER TABLE "ai_turns" DROP COLUMN IF EXISTS "library_ids"`);
-    await queryRunner.query(`ALTER TABLE "ai_turns" DROP COLUMN IF EXISTS "similar_case_ids"`);
-    await queryRunner.query(`ALTER TABLE "ai_turns" DROP COLUMN IF EXISTS "client_text"`);
+    await queryRunner.query(
+      `ALTER TABLE "ai_turns" DROP COLUMN IF EXISTS "replied_at"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "ai_turns" DROP COLUMN IF EXISTS "library_ids"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "ai_turns" DROP COLUMN IF EXISTS "similar_case_ids"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "ai_turns" DROP COLUMN IF EXISTS "client_text"`,
+    );
   }
 }

@@ -1,1 +1,1 @@
-export { AccountStatsDashboard } from './ui/AccountStatsDashboard'
+export { AccountStatsDashboard } from './ui/AccountStatsDashboard';

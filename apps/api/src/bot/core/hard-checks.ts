@@ -101,7 +101,11 @@ export function splitLong(text: string, limit = MESSAGE_MAX_LENGTH): string[] {
       // Абзац длиннее лимита — режем по предложениям, в крайнем случае по символам.
       let rest = paragraph;
       while (rest.length > limit) {
-        const cut = Math.max(rest.lastIndexOf('. ', limit), rest.lastIndexOf('\n', limit), limit - 1);
+        const cut = Math.max(
+          rest.lastIndexOf('. ', limit),
+          rest.lastIndexOf('\n', limit),
+          limit - 1,
+        );
         chunks.push(rest.slice(0, cut + 1).trim());
         rest = rest.slice(cut + 1).trim();
       }
@@ -112,7 +116,6 @@ export function splitLong(text: string, limit = MESSAGE_MAX_LENGTH): string[] {
   return chunks;
 }
 
-
 /**
  * Жёсткие проверки кодом, последняя линия перед отправкой (раздел 3.7):
  * тело вехи только из библиотеки и на своём месте, сумм в тексте нет,
@@ -121,11 +124,14 @@ export function splitLong(text: string, limit = MESSAGE_MAX_LENGTH): string[] {
  */
 export function hardChecks(input: HardCheckInput): HardCheckResult {
   const removed: HardCheckResult['removed'] = [];
-  const text = (parts: readonly string[]) => parts.flatMap((part) => textParts(part.trim(), input, removed));
+  const text = (parts: readonly string[]) =>
+    parts.flatMap((part) => textParts(part.trim(), input, removed));
 
   const before = text(input.parts);
   const after = text(input.after);
-  const block: FinalPart[] = input.block ? splitLong(input.block).map((chunk) => ({ text: chunk, block: true })) : [];
+  const block: FinalPart[] = input.block
+    ? splitLong(input.block).map((chunk) => ({ text: chunk, block: true }))
+    : [];
 
   // Лимит на части относится к тексту ответчика; тело вехи не считается.
   // Одно место держим под продолжение после вехи — это вопрос-отклик, он
@@ -134,7 +140,10 @@ export function hardChecks(input: HardCheckInput): HardCheckResult {
   const limit = (parts: FinalPart[], budget: number) =>
     parts.filter((part, index) => {
       if (index < budget) return true;
-      removed.push({ part: part.text, reason: `больше ${input.maxParts} частей` });
+      removed.push({
+        part: part.text,
+        reason: `больше ${input.maxParts} частей`,
+      });
       return false;
     });
   const keptBefore = limit(before, input.maxParts - reserved);
@@ -143,7 +152,11 @@ export function hardChecks(input: HardCheckInput): HardCheckResult {
   return { parts, removed, blocked: parts.length === 0 };
 }
 
-function textParts(text: string, input: HardCheckInput, removed: HardCheckResult['removed']): FinalPart[] {
+function textParts(
+  text: string,
+  input: HardCheckInput,
+  removed: HardCheckResult['removed'],
+): FinalPart[] {
   if (!text) return [];
   if (MARKUP.some((token) => text.includes(token))) {
     removed.push({ part: text, reason: 'служебная разметка в тексте' });
@@ -159,7 +172,10 @@ function textParts(text: string, input: HardCheckInput, removed: HardCheckResult
     return [];
   }
   if (wrongScript(text, input.language)) {
-    removed.push({ part: text, reason: `не та письменность (ожидался ${input.language})` });
+    removed.push({
+      part: text,
+      reason: `не та письменность (ожидался ${input.language})`,
+    });
     return [];
   }
   return splitLong(text).map((chunk) => ({ text: chunk, block: false }));

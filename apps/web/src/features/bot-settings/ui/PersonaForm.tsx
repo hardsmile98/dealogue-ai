@@ -1,90 +1,108 @@
-import { useState } from 'react'
-import Alert from '@mui/material/Alert'
-import Button from '@mui/material/Button'
-import IconButton from '@mui/material/IconButton'
-import MenuItem from '@mui/material/MenuItem'
-import Stack from '@mui/material/Stack'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
-import AddIcon from '@mui/icons-material/Add'
-import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined'
-import type { Persona, PersonaLink } from '@/shared/api'
-import { getApiErrorMessage } from '@/shared/lib'
-import { useUpdateBotSettingsMutation } from '../api/botSettingsApi'
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import MenuItem from '@mui/material/MenuItem';
+import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import type { Persona, PersonaLink } from '@/shared/api';
+import { getApiErrorMessage, useDraft } from '@/shared/lib';
+import { useNotify } from '@/shared/ui';
+import { useUpdateBotSettingsMutation } from '../api/botSettingsApi';
+import { FormActions } from './FormActions';
+import { settingsFormStyles as styles } from './settingsForm.styles';
 
 interface PersonaFormProps {
-  accountId: string
+  accountId: string;
   /** Текущий образ с сервера; форма подхватывает его, когда он меняется. */
-  initial: Persona
+  initial: Persona;
 }
+
+const MAX_LINKS = 10;
 
 const LINK_PLACEHOLDERS: PersonaLink[] = [
   { title: '🔮 Instagram', url: 'https://www.instagram.com/…' },
   { title: '📲 Telegram', url: 'https://t.me/…' },
-]
+];
 
 /**
  * Образ практика: имя, пол, биография, ссылки на страницы. Биография
  * подставляется в тексты библиотеки вместо {{bio}}, ссылки — вместо {{links}}.
  */
 export function PersonaForm({ accountId, initial }: PersonaFormProps) {
-  const [persona, setPersona] = useState<Persona>(initial)
-  const [update, { isLoading }] = useUpdateBotSettingsMutation()
-  const [error, setError] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
+  const { draft: persona, setDraft, dirty, reset } = useDraft(initial);
+  const [update, { isLoading }] = useUpdateBotSettingsMutation();
+  const notify = useNotify();
+  const nameMissing = persona.name.trim() === '';
 
-  // Сервер прислал новый образ (после сохранения или обновления кэша) —
-  // подхватываем его, не перемонтируя форму: иначе теряется «сохранено».
-  const initialJson = JSON.stringify(initial)
-  const [syncedJson, setSyncedJson] = useState(initialJson)
-  if (syncedJson !== initialJson) {
-    setSyncedJson(initialJson)
-    setPersona(JSON.parse(initialJson) as Persona)
-  }
+  const patch = (next: Partial<Persona>) =>
+    setDraft((current) => ({ ...current, ...next }));
 
-  const dirty = JSON.stringify(persona) !== initialJson
-
-  const setLink = (index: number, patch: Partial<PersonaLink>) => {
-    setPersona((current) => ({
+  const setLink = (index: number, next: Partial<PersonaLink>) =>
+    setDraft((current) => ({
       ...current,
-      links: current.links.map((link, i) => (i === index ? { ...link, ...patch } : link)),
-    }))
-  }
+      links: current.links.map((link, i) =>
+        i === index ? { ...link, ...next } : link,
+      ),
+    }));
+
+  const removeLink = (index: number) =>
+    setDraft((current) => ({
+      ...current,
+      links: current.links.filter((_, i) => i !== index),
+    }));
+
+  const addLink = () =>
+    setDraft((current) => ({
+      ...current,
+      links: [...current.links, { title: '', url: '' }],
+    }));
 
   const submit = async () => {
-    setError(null)
-    setSaved(false)
     try {
-      await update({ accountId, body: { persona } }).unwrap()
-      setSaved(true)
-    } catch (caught) {
-      setError(getApiErrorMessage(caught, 'Не удалось сохранить образ'))
+      await update({ accountId, body: { persona } }).unwrap();
+      notify.success('Образ сохранён');
+    } catch (error) {
+      notify.error(getApiErrorMessage(error, 'Не удалось сохранить образ'));
     }
-  }
+  };
 
   return (
     <Stack
       component="form"
       spacing={2}
+      noValidate
       onSubmit={(event) => {
-        event.preventDefault()
-        void submit()
+        event.preventDefault();
+        if (dirty && !nameMissing) void submit();
       }}
     >
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
         <TextField
           label="Имя"
           value={persona.name}
-          onChange={(event) => setPersona({ ...persona, name: event.target.value })}
+          onChange={(event) => patch({ name: event.target.value })}
           required
+          // Ошибку показываем, только когда форму начали править.
+          error={dirty && nameMissing}
+          helperText={
+            dirty && nameMissing
+              ? 'Без имени агенту не от чьего лица писать'
+              : ' '
+          }
           fullWidth
         />
         <TextField
           select
           label="Пол практика"
           value={persona.gender}
-          onChange={(event) => setPersona({ ...persona, gender: event.target.value as Persona['gender'] })}
-          sx={{ minWidth: 180 }}
+          onChange={(event) =>
+            patch({ gender: event.target.value as Persona['gender'] })
+          }
+          helperText=" "
+          sx={styles.genderSelect}
         >
           <MenuItem value="m">Мужской</MenuItem>
           <MenuItem value="f">Женский</MenuItem>
@@ -95,63 +113,86 @@ export function PersonaForm({ accountId, initial }: PersonaFormProps) {
         label="Биография"
         helperText="Откуда, где живёт, как пришёл к практике. Подставляется в тексты вместо {{bio}} и нужна, чтобы отвечать на вопросы о себе."
         value={persona.bio}
-        onChange={(event) => setPersona({ ...persona, bio: event.target.value })}
+        onChange={(event) => patch({ bio: event.target.value })}
         multiline
         minRows={3}
         fullWidth
       />
 
-      <Stack spacing={1}>
-        <Typography variant="subtitle2">Ссылки на страницы</Typography>
-        <Typography variant="body2" color="text.secondary">
-          Подставляются в тексты вместо {'{{links}}'}: подпись с эмодзи и адрес с новой строки.
+      <Stack
+        spacing={{ xs: 2.5, sm: 1.5 }}
+        component="fieldset"
+        sx={styles.fieldset}
+      >
+        <Typography variant="subtitle2" component="legend">
+          Ссылки на страницы
         </Typography>
-        {persona.links.map((link, index) => (
-          <Stack key={index} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-            <TextField
-              label="Подпись"
-              placeholder={LINK_PLACEHOLDERS[index % LINK_PLACEHOLDERS.length]?.title}
-              value={link.title}
-              onChange={(event) => setLink(index, { title: event.target.value })}
-              size="small"
-              sx={{ width: 200 }}
-            />
-            <TextField
-              label="Адрес"
-              placeholder={LINK_PLACEHOLDERS[index % LINK_PLACEHOLDERS.length]?.url}
-              value={link.url}
-              onChange={(event) => setLink(index, { url: event.target.value })}
-              size="small"
-              fullWidth
-            />
-            <IconButton
-              aria-label="Убрать ссылку"
-              onClick={() =>
-                setPersona({ ...persona, links: persona.links.filter((_, i) => i !== index) })
-              }
-            >
-              <DeleteOutlinedIcon fontSize="small" />
-            </IconButton>
-          </Stack>
-        ))}
-        {persona.links.length < 10 && (
+        <Typography variant="body2" color="text.secondary">
+          Подставляются в тексты вместо {'{{links}}'}: подпись с эмодзи и адрес
+          с новой строки.
+        </Typography>
+        {persona.links.map((link, index) => {
+          const placeholder =
+            LINK_PLACEHOLDERS[index % LINK_PLACEHOLDERS.length];
+          return (
+            <Stack key={index} direction="row" spacing={1} sx={styles.linkRow}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1}
+                sx={styles.linkFields}
+              >
+                <TextField
+                  label="Подпись"
+                  placeholder={placeholder?.title}
+                  value={link.title}
+                  onChange={(event) =>
+                    setLink(index, { title: event.target.value })
+                  }
+                  size="small"
+                  sx={styles.linkTitle}
+                />
+                <TextField
+                  label="Адрес"
+                  placeholder={placeholder?.url}
+                  value={link.url}
+                  onChange={(event) =>
+                    setLink(index, { url: event.target.value })
+                  }
+                  size="small"
+                  type="url"
+                  fullWidth
+                />
+              </Stack>
+              <Tooltip title="Убрать ссылку">
+                <IconButton
+                  aria-label={`Убрать ссылку ${link.title || index + 1}`}
+                  onClick={() => removeLink(index)}
+                >
+                  <DeleteOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          );
+        })}
+        {persona.links.length < MAX_LINKS && (
           <Button
             size="small"
             startIcon={<AddIcon />}
-            onClick={() => setPersona({ ...persona, links: [...persona.links, { title: '', url: '' }] })}
-            sx={{ alignSelf: 'flex-start' }}
+            onClick={addLink}
+            sx={styles.addLink}
           >
             Добавить ссылку
           </Button>
         )}
       </Stack>
 
-      {error && <Alert severity="error">{error}</Alert>}
-      {saved && !dirty && <Alert severity="success">Образ сохранён.</Alert>}
-
-      <Button type="submit" variant="contained" loading={isLoading} disabled={!dirty} sx={{ alignSelf: 'flex-start' }}>
-        Сохранить образ
-      </Button>
+      <FormActions
+        submitLabel="Сохранить образ"
+        dirty={dirty}
+        invalid={nameMissing}
+        saving={isLoading}
+        onReset={reset}
+      />
     </Stack>
-  )
+  );
 }

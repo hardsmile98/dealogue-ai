@@ -5,7 +5,10 @@ import { execute } from '../../database/sql.js';
 import { BotPromptSnapshotEntity } from '../entities/bot-prompt-snapshot.entity.js';
 import type { PromptKind } from '../entities/bot-prompt-snapshot.entity.js';
 import { BotTurnEntity } from '../entities/bot-turn.entity.js';
-import type { BotTurnStatus, BotTurnTrigger } from '../entities/bot-turn.entity.js';
+import type {
+  BotTurnStatus,
+  BotTurnTrigger,
+} from '../entities/bot-turn.entity.js';
 
 export interface TurnPatch {
   status?: BotTurnStatus;
@@ -47,7 +50,13 @@ export class BotTurnsRepository {
        VALUES ($1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::jsonb)
        ON CONFLICT (idempotency_key) DO NOTHING
        RETURNING id`,
-      [fields.chatId, fields.accountId, fields.trigger, fields.idempotencyKey, JSON.stringify(fields.input)],
+      [
+        fields.chatId,
+        fields.accountId,
+        fields.trigger,
+        fields.idempotencyKey,
+        JSON.stringify(fields.input),
+      ],
     );
     return rows[0]?.id ?? null;
   }
@@ -60,24 +69,82 @@ export class BotTurnsRepository {
       sets.push(`${column} = $${params.length}::${cast}`);
     };
     if (patch.status !== undefined) add('status', patch.status, 'varchar');
-    if (patch.analysis !== undefined) add('analysis', patch.analysis === null ? null : JSON.stringify(patch.analysis), 'jsonb');
-    if (patch.plan !== undefined) add('plan', patch.plan === null ? null : JSON.stringify(patch.plan), 'jsonb');
+    if (patch.analysis !== undefined)
+      add(
+        'analysis',
+        patch.analysis === null ? null : JSON.stringify(patch.analysis),
+        'jsonb',
+      );
+    if (patch.plan !== undefined)
+      add(
+        'plan',
+        patch.plan === null ? null : JSON.stringify(patch.plan),
+        'jsonb',
+      );
     if (patch.draft !== undefined) add('draft', patch.draft, 'text');
-    if (patch.review !== undefined) add('review', patch.review === null ? null : JSON.stringify(patch.review), 'jsonb');
-    if (patch.final !== undefined) add('final', patch.final === null ? null : JSON.stringify(patch.final), 'jsonb');
-    if (patch.sent !== undefined) add('sent', patch.sent === null ? null : JSON.stringify(patch.sent), 'jsonb');
+    if (patch.review !== undefined)
+      add(
+        'review',
+        patch.review === null ? null : JSON.stringify(patch.review),
+        'jsonb',
+      );
+    if (patch.final !== undefined)
+      add(
+        'final',
+        patch.final === null ? null : JSON.stringify(patch.final),
+        'jsonb',
+      );
+    if (patch.sent !== undefined)
+      add(
+        'sent',
+        patch.sent === null ? null : JSON.stringify(patch.sent),
+        'jsonb',
+      );
     if (patch.error !== undefined) add('error', patch.error, 'text');
     if (patch.finished) sets.push('finished_at = now()');
     if (sets.length === 0) return;
-    await execute(this.turns.manager, `UPDATE bot_turns SET ${sets.join(', ')} WHERE id = $1::uuid`, params);
+    await execute(
+      this.turns.manager,
+      `UPDATE bot_turns SET ${sets.join(', ')} WHERE id = $1::uuid`,
+      params,
+    );
   }
 
-  async addSnapshot(turnId: string, kind: PromptKind, request: string, response: string | null): Promise<void> {
+  async addSnapshot(
+    turnId: string,
+    kind: PromptKind,
+    request: string,
+    response: string | null,
+  ): Promise<void> {
     await this.snapshots.insert({ turnId, kind, request, response });
   }
 
   /** Последние ходы чата — для журнала в вебе. */
   listRecent(chatId: string, limit = 50): Promise<BotTurnEntity[]> {
-    return this.turns.find({ where: { chatId }, order: { startedAt: 'DESC' }, take: limit });
+    return this.turns.find({
+      where: { chatId },
+      order: { startedAt: 'DESC' },
+      take: limit,
+    });
+  }
+
+  /**
+   * Удаляет снимки промптов старше `before` — не больше `limit` за раз, по
+   * индексу (created_at), чтобы не держать долгую блокировку. Возвращает,
+   * сколько удалено.
+   */
+  async deleteSnapshotsBefore(before: Date, limit: number): Promise<number> {
+    const { affected } = await execute(
+      this.snapshots.manager,
+      `DELETE FROM bot_prompt_snapshots
+       WHERE id IN (
+         SELECT id FROM bot_prompt_snapshots
+         WHERE created_at < $1::timestamptz
+         ORDER BY created_at
+         LIMIT $2::int
+       )`,
+      [before, limit],
+    );
+    return affected;
   }
 }

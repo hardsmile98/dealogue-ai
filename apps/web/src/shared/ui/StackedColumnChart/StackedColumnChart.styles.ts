@@ -1,4 +1,7 @@
-import type { SxStyles } from '@/shared/types'
+import { alpha } from '@mui/material/styles';
+import type { Theme } from '@mui/material/styles';
+import type { SxStyles } from '@/shared/types';
+import { visuallyHidden } from '../visuallyHidden';
 
 export const stackedColumnChartStyles = {
   root: {
@@ -9,8 +12,12 @@ export const stackedColumnChartStyles = {
     display: 'block',
     width: '100%',
     overflow: 'visible',
-    '& .hit:focus-visible': {
-      outline: 'none',
+    borderRadius: '4px',
+    '&:focus': { outline: 'none' },
+    '&:focus-visible': {
+      outline: '2px solid',
+      outlineColor: 'primary.main',
+      outlineOffset: '4px',
     },
   },
   empty: {
@@ -28,11 +35,12 @@ export const stackedColumnChartStyles = {
     pointerEvents: 'none',
     minWidth: 180,
     p: 1.5,
-    borderRadius: 2,
+    borderRadius: 1,
     bgcolor: 'background.paper',
     border: '1px solid',
     borderColor: 'divider',
-    boxShadow: '0 8px 24px rgba(16, 24, 40, 0.12)',
+    boxShadow: (theme: Theme) =>
+      `0 8px 24px ${alpha(theme.palette.text.primary, 0.12)}`,
   },
   tooltipTitle: {
     fontSize: 12,
@@ -57,7 +65,7 @@ export const stackedColumnChartStyles = {
   tooltipKey: {
     width: 12,
     height: 3,
-    borderRadius: 2,
+    borderRadius: '2px',
     flexShrink: 0,
   },
   tooltipLabel: {
@@ -73,6 +81,9 @@ export const stackedColumnChartStyles = {
     display: 'flex',
     flexWrap: 'wrap',
     gap: '6px 16px',
+    listStyle: 'none',
+    p: 0,
+    m: 0,
     mb: 2,
   },
   legendItem: {
@@ -87,4 +98,5 @@ export const stackedColumnChartStyles = {
     height: 12,
     borderRadius: '3px',
   },
-} satisfies SxStyles
+  visuallyHidden,
+} satisfies SxStyles;

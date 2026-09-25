@@ -29,7 +29,12 @@ export class TelegramChatEntity {
   @Column({ name: 'peer_name', type: 'varchar', length: 256 })
   peerName: string;
 
-  @Column({ name: 'peer_username', type: 'varchar', length: 64, nullable: true })
+  @Column({
+    name: 'peer_username',
+    type: 'varchar',
+    length: 64,
+    nullable: true,
+  })
   peerUsername: string | null;
 
   @Column({ name: 'peer_phone', type: 'varchar', length: 32, nullable: true })
@@ -42,7 +47,12 @@ export class TelegramChatEntity {
   @Column({ name: 'first_message_id', type: 'integer', nullable: true })
   firstMessageId: number | null;
 
-  @Column({ name: 'first_message_direction', type: 'varchar', length: 3, nullable: true })
+  @Column({
+    name: 'first_message_direction',
+    type: 'varchar',
+    length: 3,
+    nullable: true,
+  })
   firstMessageDirection: MessageDirection | null;
 
   /** Код из первого входящего сообщения («Код: 5» → "5"). */
@@ -55,7 +65,12 @@ export class TelegramChatEntity {
   @Column({ name: 'last_message_at', type: 'timestamptz', nullable: true })
   lastMessageAt: Date | null;
 
-  @Column({ name: 'last_message_direction', type: 'varchar', length: 3, nullable: true })
+  @Column({
+    name: 'last_message_direction',
+    type: 'varchar',
+    length: 3,
+    nullable: true,
+  })
   lastMessageDirection: MessageDirection | null;
 
   /** Максимальный id сообщения Telegram, который уже сохранён, — для догрузки. */
@@ -70,7 +85,12 @@ export class TelegramChatEntity {
   historySynced: boolean;
 
   /** access hash собеседника — чтобы писать ему после перезапуска без прогрева кэша. */
-  @Column({ name: 'peer_access_hash', type: 'varchar', length: 32, nullable: true })
+  @Column({
+    name: 'peer_access_hash',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
   peerAccessHash: string | null;
 
   /** До какого id (включительно) собеседник прочитал наши исходящие. */

@@ -2,13 +2,37 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { execute } from '../../database/sql.js';
-import { readCard } from '../core/memory.js';
+import { FACTS_LIMIT, readCard } from '../core/memory.js';
 import type { FactsUpdate } from '../core/memory.js';
-import type { ClientCard, Memory, SaidEntry } from '../core/types.js';
+import type {
+  ClientCard,
+  ClientFact,
+  Memory,
+  SaidEntry,
+} from '../core/types.js';
 import { BotChatSaidEntity } from '../entities/bot-chat-said.entity.js';
 import { BotChatStateEntity } from '../entities/bot-chat-state.entity.js';
 import { BotClientFactEntity } from '../entities/bot-client-fact.entity.js';
 import type { ChatLabel, HandoffReason } from '../library/kinds.js';
+
+/** Факты и реестр сказанного — то, что лежит вне строки состояния чата. */
+export interface MemoryRecords {
+  facts: ClientFact[];
+  said: SaidEntry[];
+}
+
+/** Память целиком: карточка и резюме из состояния чата плюс факты и сказанное. */
+export function memoryOf(
+  state: Pick<BotChatStateEntity, 'card' | 'summary'>,
+  records: MemoryRecords,
+): Memory {
+  return {
+    card: readCard(state.card),
+    facts: records.facts,
+    summary: state.summary,
+    said: records.said,
+  };
+}
 
 /** Память о клиенте в базе: карточка и резюме в состоянии чата, факты и реестр сказанного — отдельными таблицами. */
 @Injectable()
@@ -23,12 +47,23 @@ export class BotMemoryRepository {
   ) {}
 
   async load(state: BotChatStateEntity): Promise<Memory> {
+    return memoryOf(state, await this.records(state.chatId));
+  }
+
+  /**
+   * Факты и сказанное без строки состояния — чтобы читать их параллельно с
+   * ней (журнал, песочница) и собирать память через `memoryOf`.
+   */
+  async records(chatId: string): Promise<MemoryRecords> {
     const [facts, said] = await Promise.all([
-      this.facts.find({ where: { chatId: state.chatId, status: 'active' }, order: { createdAt: 'DESC' }, take: 30 }),
-      this.said.find({ where: { chatId: state.chatId }, order: { at: 'ASC' } }),
+      this.facts.find({
+        where: { chatId, status: 'active' },
+        order: { createdAt: 'DESC' },
+        take: FACTS_LIMIT,
+      }),
+      this.said.find({ where: { chatId }, order: { at: 'ASC' } }),
     ]);
     return {
-      card: readCard(state.card),
       facts: facts.map((fact) => ({
         id: fact.id,
         kind: fact.kind,
@@ -36,46 +71,92 @@ export class BotMemoryRepository {
         confidence: fact.confidence,
         sourceMessageId: fact.sourceMessageId,
       })),
-      summary: state.summary,
-      said: said.map((entry) => ({ kind: entry.kind, key: entry.key, messageId: entry.messageId, at: entry.at })),
+      said: said.map((entry) => ({
+        kind: entry.kind,
+        key: entry.key,
+        messageId: entry.messageId,
+        at: entry.at,
+      })),
     };
   }
 
-  /** Итог анализа: карточка, резюме, новые и устаревшие факты. */
-  async saveAnalysis(chatId: string, card: ClientCard, summary: string, update: FactsUpdate): Promise<void> {
-    await execute(
-      this.states.manager,
-      `UPDATE bot_chat_state SET card = $2::jsonb, summary = $3::text, updated_at = now() WHERE chat_id = $1::uuid`,
-      [chatId, JSON.stringify(card), summary],
-    );
-    if (update.superseded.length > 0) {
+  /**
+   * Итог анализа: карточка, резюме, новые и устаревшие факты — одной
+   * транзакцией, чтобы карточка и факты не разошлись при сбое посередине.
+   */
+  async saveAnalysis(
+    chatId: string,
+    card: ClientCard,
+    summary: string,
+    update: FactsUpdate,
+  ): Promise<void> {
+    await this.states.manager.transaction(async (manager) => {
       await execute(
-        this.facts.manager,
-        `UPDATE bot_client_facts SET status = 'superseded' WHERE chat_id = $1::uuid AND status = 'active' AND text = ANY($2::text[])`,
-        [chatId, update.superseded],
+        manager,
+        `UPDATE bot_chat_state SET card = $2::jsonb, summary = $3::text, updated_at = now() WHERE chat_id = $1::uuid`,
+        [chatId, JSON.stringify(card), summary],
       );
-    }
-    if (update.added.length > 0) {
-      await this.facts.insert(
-        update.added.map((fact) => ({
-          chatId,
-          kind: fact.kind,
-          text: fact.text,
-          confidence: fact.confidence,
-          sourceMessageId: fact.sourceMessageId,
-          status: 'active' as const,
-        })),
-      );
-    }
+      if (update.superseded.length > 0) {
+        await execute(
+          manager,
+          `UPDATE bot_client_facts SET status = 'superseded' WHERE chat_id = $1::uuid AND status = 'active' AND text = ANY($2::text[])`,
+          [chatId, update.superseded],
+        );
+      }
+      if (update.added.length > 0) {
+        await manager.insert(
+          BotClientFactEntity,
+          update.added.map((fact) => ({
+            chatId,
+            kind: fact.kind,
+            text: fact.text,
+            confidence: fact.confidence,
+            sourceMessageId: fact.sourceMessageId,
+            status: 'active' as const,
+          })),
+        );
+      }
+    });
   }
 
-  async addSaid(chatId: string, entries: readonly Omit<SaidEntry, 'at'>[], at: Date): Promise<void> {
+  /** Сказанное ходом — все записи с одним временем. */
+  addSaid(
+    chatId: string,
+    entries: readonly Omit<SaidEntry, 'at'>[],
+    at: Date,
+  ): Promise<void> {
+    return this.addSaidEntries(
+      chatId,
+      entries.map((entry) => ({ ...entry, at })),
+    );
+  }
+
+  /** Сказанное со своим временем у каждой записи — одним INSERT. */
+  async addSaidEntries(
+    chatId: string,
+    entries: readonly SaidEntry[],
+  ): Promise<void> {
     if (entries.length === 0) return;
-    await this.said.insert(entries.map((entry) => ({ chatId, kind: entry.kind, key: entry.key, messageId: entry.messageId, at })));
+    await this.said.insert(
+      entries.map((entry) => ({
+        chatId,
+        kind: entry.kind,
+        key: entry.key,
+        messageId: entry.messageId,
+        at: entry.at,
+      })),
+    );
   }
 
   /** Счётчики по итогу хода и поколение генерации. */
-  async closeTurn(chatId: string, result: { nudged: boolean; reminders: number; lastHandledMessageId: number | null }): Promise<void> {
+  async closeTurn(
+    chatId: string,
+    result: {
+      nudged: boolean;
+      reminders: number;
+      lastHandledMessageId: number | null;
+    },
+  ): Promise<void> {
     await execute(
       this.states.manager,
       `UPDATE bot_chat_state SET
@@ -97,7 +178,11 @@ export class BotMemoryRepository {
   }
 
   /** Передача менеджеру: режим, причина, ярлык — одним UPDATE. */
-  async setHandoff(chatId: string, reason: HandoffReason, label: ChatLabel | null): Promise<void> {
+  async setHandoff(
+    chatId: string,
+    reason: HandoffReason,
+    label: ChatLabel | null,
+  ): Promise<void> {
     await execute(
       this.states.manager,
       `UPDATE bot_chat_state SET mode = 'manager', handoff_reason = $2::varchar, handoff_at = now(), label = $3::varchar, updated_at = now()

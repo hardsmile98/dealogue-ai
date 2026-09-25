@@ -49,6 +49,8 @@ export class CreateBotSandbox1700000000018 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE IF EXISTS "bot_sandbox_messages", "bot_sandbox_sessions"`);
+    await queryRunner.query(
+      `DROP TABLE IF EXISTS "bot_sandbox_messages", "bot_sandbox_sessions"`,
+    );
   }
 }

@@ -13,10 +13,10 @@ export const CHART_SERIES_COLORS = [
   '#008300', // green
   '#4a3aa7', // violet
   '#e34948', // red
-] as const
+] as const;
 
 /** Нейтральный серый для «фоновой» серии (например, «без кода»). */
-export const CHART_NEUTRAL_COLOR = '#b9b8b0'
+export const CHART_NEUTRAL_COLOR = '#b9b8b0';
 
 /**
  * Цвет слота по индексу. За пределами палитры — нейтральный серый: серия
@@ -24,5 +24,5 @@ export const CHART_NEUTRAL_COLOR = '#b9b8b0'
  * чем есть цветов.
  */
 export function chartSeriesColor(index: number): string {
-  return CHART_SERIES_COLORS[index] ?? CHART_NEUTRAL_COLOR
+  return CHART_SERIES_COLORS[index] ?? CHART_NEUTRAL_COLOR;
 }

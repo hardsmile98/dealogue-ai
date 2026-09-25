@@ -36,10 +36,14 @@ export class TelegramIngestService {
     private readonly dialogStarts: TelegramDialogStartsService,
   ) {}
 
-  async upsertChat(accountId: string, user: Api.User): Promise<TelegramChatEntity> {
+  async upsertChat(
+    accountId: string,
+    user: Api.User,
+  ): Promise<TelegramChatEntity> {
     const chats = await this.upsertChats(accountId, [user]);
     const chat = chats.get(user.id.toString());
-    if (!chat) throw new Error(`Чат с собеседником ${user.id.toString()} не сохранился`);
+    if (!chat)
+      throw new Error(`Чат с собеседником ${user.id.toString()} не сохранился`);
     return chat;
   }
 
@@ -59,18 +63,25 @@ export class TelegramIngestService {
     }
 
     const byPeer = new Map<string, TelegramChatEntity>();
-    for (const chat of await this.chats.findByPeers(accountId, [...peers.keys()])) {
+    for (const chat of await this.chats.findByPeers(accountId, [
+      ...peers.keys(),
+    ])) {
       byPeer.set(chat.peerId, chat);
     }
 
-    const missing = [...peers.values()].filter((peer) => !byPeer.has(peer.peerId));
+    const missing = [...peers.values()].filter(
+      (peer) => !byPeer.has(peer.peerId),
+    );
     if (missing.length > 0) {
       for (const chat of await this.chats.insertMissing(accountId, missing)) {
         byPeer.set(chat.peerId, chat);
       }
       // Остались те, кого параллельно успела завести другая запись.
       const raced = missing.filter((peer) => !byPeer.has(peer.peerId));
-      for (const chat of await this.chats.findByPeers(accountId, raced.map((peer) => peer.peerId))) {
+      for (const chat of await this.chats.findByPeers(
+        accountId,
+        raced.map((peer) => peer.peerId),
+      )) {
         byPeer.set(chat.peerId, chat);
       }
     }
@@ -101,7 +112,9 @@ export class TelegramIngestService {
       const direction = messageDirection(message);
       // Начало диалога со стороны собеседника — источник правды для статистики.
       const leadCode =
-        direction === 'in' ? await this.dialogStarts.record(chat, message) : null;
+        direction === 'in'
+          ? await this.dialogStarts.record(chat, message)
+          : null;
       if (direction === 'out') await this.dialogStarts.clear(chat.id);
       first = {
         at: messageSentAt(message),
@@ -123,13 +136,16 @@ export class TelegramIngestService {
     chat: TelegramChatEntity,
     message: Api.Message,
   ): Promise<TelegramMessageEntity> {
-    const [row] = await this.messages.insertMany(chat.id, [toMessageRow(message)]);
+    const [row] = await this.messages.insertMany(chat.id, [
+      toMessageRow(message),
+    ]);
     if (row) {
       await this.applyToChat(chat, [row], 0, null);
       return row;
     }
     const existing = await this.messages.findByTelegramId(chat.id, message.id);
-    if (!existing) throw new Error(`Не удалось сохранить исходящее #${message.id}`);
+    if (!existing)
+      throw new Error(`Не удалось сохранить исходящее #${message.id}`);
     return existing;
   }
 
@@ -139,7 +155,10 @@ export class TelegramIngestService {
    * сдвиг границы не запишется, следующее событие повторит всё целиком.
    * Возвращает true, если граница сдвинулась.
    */
-  async applyReadOutbox(chat: TelegramChatEntity, maxId: number): Promise<boolean> {
+  async applyReadOutbox(
+    chat: TelegramChatEntity,
+    maxId: number,
+  ): Promise<boolean> {
     if (maxId <= chat.readOutboxMaxId) return false;
     await this.messages.markReadUpTo(chat.id, maxId);
     const advanced = await this.chats.advanceReadOutbox(chat.id, maxId);
@@ -154,7 +173,8 @@ export class TelegramIngestService {
     first: ChatIngestUpdate['first'],
   ): Promise<void> {
     // Все сообщения уже были в базе, а счётчик не отстаёт от Telegram — писать нечего.
-    if (inserted.length === 0 && first === null && total <= chat.messagesCount) return;
+    if (inserted.length === 0 && first === null && total <= chat.messagesCount)
+      return;
 
     const newest = inserted.reduce<TelegramMessageEntity | null>(
       (best, row) => (best === null || isNewer(row, best) ? row : best),
@@ -167,7 +187,10 @@ export class TelegramIngestService {
         sentAt: newest.sentAt,
         direction: newest.direction,
       },
-      maxTelegramMessageId: Math.max(0, ...inserted.map((row) => row.telegramMessageId)),
+      maxTelegramMessageId: Math.max(
+        0,
+        ...inserted.map((row) => row.telegramMessageId),
+      ),
       total,
       first,
     });
@@ -203,6 +226,7 @@ function peerChanged(chat: TelegramChatEntity, peer: PeerFields): boolean {
     chat.peerName !== peer.peerName ||
     chat.peerUsername !== peer.peerUsername ||
     chat.peerPhone !== peer.peerPhone ||
-    (peer.peerAccessHash !== null && chat.peerAccessHash !== peer.peerAccessHash)
+    (peer.peerAccessHash !== null &&
+      chat.peerAccessHash !== peer.peerAccessHash)
   );
 }

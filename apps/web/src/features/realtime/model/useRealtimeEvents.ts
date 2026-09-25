@@ -1,52 +1,58 @@
-import { useEffect, useState } from 'react'
-import { useDispatch } from 'react-redux'
-import { BOT_CHAT_TAG, CHAT_TAG, MESSAGE_TAG, connectRealtime, unauthorized } from '@/shared/api'
-import type { RealtimeEvent } from '@/shared/api'
-import { botApi } from '@/entities/bot'
-import { chatsApi } from '@/entities/chat'
+import { useEffect, useState } from 'react';
+import { useDispatch } from 'react-redux';
+import {
+  BOT_CHAT_TAG,
+  BOT_HANDOFFS_TAG,
+  CHAT_LIST_TAG,
+  MESSAGE_TAG,
+  baseApi,
+  connectRealtime,
+  unauthorized,
+} from '@/shared/api';
+import type { RealtimeEvent } from '@/shared/api';
 
-type ChatTags = Parameters<typeof chatsApi.util.invalidateTags>[0]
+type Tags = Parameters<typeof baseApi.util.invalidateTags>[0];
 
-/** Какие кэши RTK Query устарели после события. */
-export function tagsForEvent(event: RealtimeEvent): ChatTags {
+/**
+ * Какие кэши RTK Query устарели после события. Сообщение или прочтение в
+ * чате меняет и состояние агента: ход, передачу менеджеру, ярлык.
+ */
+export function tagsForEvent(event: RealtimeEvent): Tags {
   switch (event.type) {
     case 'message.created':
       return [
         { type: MESSAGE_TAG, id: event.chatId },
-        { type: CHAT_TAG, id: event.accountId },
-      ]
+        { type: CHAT_LIST_TAG, id: event.accountId },
+        { type: BOT_CHAT_TAG, id: event.chatId },
+        { type: BOT_HANDOFFS_TAG, id: event.accountId },
+      ];
     case 'message.read':
-      return [{ type: MESSAGE_TAG, id: event.chatId }]
+      return [
+        { type: MESSAGE_TAG, id: event.chatId },
+        { type: BOT_CHAT_TAG, id: event.chatId },
+        { type: BOT_HANDOFFS_TAG, id: event.accountId },
+      ];
     default:
-      return []
+      return [];
   }
 }
 
 /** Держит SSE-соединение, пока смонтирован, и превращает события в инвалидацию кэшей. */
 export function useRealtimeEvents(): { connected: boolean } {
-  const dispatch = useDispatch()
-  const [connected, setConnected] = useState(false)
+  const dispatch = useDispatch();
+  const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const connection = connectRealtime(
-      (event) => {
-        const tags = tagsForEvent(event)
-        if (tags.length > 0) dispatch(chatsApi.util.invalidateTags(tags))
-        // Сообщение или прочтение в чате меняет состояние агента: ход, передачу, ярлык.
-        if (event.type === 'message.created' || event.type === 'message.read') {
-          dispatch(
-            botApi.util.invalidateTags([
-              { type: BOT_CHAT_TAG, id: event.chatId },
-              { type: BOT_CHAT_TAG, id: `handoffs-${event.accountId}` },
-            ]),
-          )
-        }
+    const connection = connectRealtime({
+      onEvent: (event) => {
+        const tags = tagsForEvent(event);
+        if (tags.length > 0) dispatch(baseApi.util.invalidateTags(tags));
       },
-      setConnected,
-      () => dispatch(unauthorized()),
-    )
-    return () => connection.close()
-  }, [dispatch])
+      onStatus: setConnected,
+      onUnauthorized: () => dispatch(unauthorized()),
+    });
+    return () => connection.close();
+  }, [dispatch]);
 
-  return { connected }
+  return { connected };
 }

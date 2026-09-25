@@ -1,39 +1,11 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const accountStatsStyles = {
-  filters: {
-    mb: 3,
-  },
-  loadError: {
-    mb: 3,
-  },
-  skeletonRow: {
-    mb: 2,
-  },
-  chartSkeleton: {
-    mb: 2,
-  },
   /** Пока грузится новый период — держим старый рендер, слегка приглушив. */
   refetching: {
     opacity: 0.55,
     transition: 'opacity 150ms',
     pointerEvents: 'none',
-  },
-  card: {
-    p: { xs: 2, sm: 3 },
-    border: '1px solid',
-    borderColor: 'divider',
-    borderRadius: 3,
-    height: '100%',
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: 600,
-  },
-  cardSubtitle: {
-    color: 'text.secondary',
-    fontSize: 13,
-    mb: 2,
   },
   rule: {
     display: 'flex',
@@ -47,19 +19,22 @@ export const accountStatsStyles = {
     fontSize: 13,
     '& svg': { fontSize: 18, mt: '1px', flexShrink: 0 },
   },
+  // Заголовки ячеек оформляет тема (MuiTableCell.head); здесь — только фон
+  // для «липкой» шапки и плотность.
   table: {
-    '& .MuiTableCell-head': {
-      fontSize: 12,
-      fontWeight: 600,
-      color: 'text.secondary',
-      whiteSpace: 'nowrap',
-      bgcolor: 'background.paper',
-    },
-    '& .MuiTableCell-root': { borderColor: 'divider', px: 1.25 },
+    '& .MuiTableCell-head': { bgcolor: 'background.paper' },
+    '& .MuiTableCell-root': { px: 1.25 },
   },
   tableScroll: {
     maxHeight: 420,
     overflow: 'auto',
+  },
+  shareHead: {
+    width: '45%',
+  },
+  empty: {
+    py: 2,
+    color: 'text.secondary',
   },
   headerWithSwatch: {
     display: 'inline-flex',
@@ -96,13 +71,13 @@ export const accountStatsStyles = {
   shareTrack: {
     flexGrow: 1,
     height: 6,
-    borderRadius: 3,
+    borderRadius: '999px',
     bgcolor: 'action.hover',
     overflow: 'hidden',
   },
   shareFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: '999px',
   },
   shareValue: {
     width: 44,
@@ -121,4 +96,4 @@ export const accountStatsStyles = {
       bgcolor: 'background.default',
     },
   },
-} satisfies SxStyles
+} satisfies SxStyles;

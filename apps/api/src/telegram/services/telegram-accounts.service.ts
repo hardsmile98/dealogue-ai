@@ -45,33 +45,24 @@ export class TelegramAccountsService {
     await this.accounts.delete(account.id);
   }
 
-  /** Аккаунт пользователя или 404: чужой аккаунт неотличим от несуществующего. */
-  async requireAccount(userId: string, accountId: string): Promise<TelegramAccountEntity> {
-    const account = await this.accounts.findOwned(userId, accountId);
-    if (!account) throw new NotFoundException('Аккаунт не найден');
-    return account;
-  }
-
-  /** Чат внутри аккаунта или 404. */
-  async requireChat(account: TelegramAccountEntity, chatId: string): Promise<TelegramChatEntity> {
-    const chat = await this.chats.findOwned(account.id, chatId);
-    if (!chat) throw new NotFoundException('Чат не найден');
-    return chat;
-  }
-
   /**
    * Аккаунт и чат одним заходом: оба запроса идут параллельно, поэтому
    * проверка доступа к переписке стоит одного обращения к базе по времени.
    * Чат ищется только внутри аккаунта из пути, а решение принимается по
    * аккаунту первым — чужой чат наружу не просочится.
    */
-  async requireAccess(userId: string, accountId: string, chatId?: string): Promise<AccountAccess> {
+  async requireAccess(
+    userId: string,
+    accountId: string,
+    chatId?: string,
+  ): Promise<AccountAccess> {
     const [account, chat] = await Promise.all([
       this.accounts.findOwned(userId, accountId),
       chatId === undefined ? null : this.chats.findOwned(accountId, chatId),
     ]);
     if (!account) throw new NotFoundException('Аккаунт не найден');
-    if (chatId !== undefined && !chat) throw new NotFoundException('Чат не найден');
+    if (chatId !== undefined && !chat)
+      throw new NotFoundException('Чат не найден');
     return { account, chat };
   }
 

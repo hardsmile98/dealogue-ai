@@ -14,7 +14,9 @@ export class AiClientCard1700000000011 implements MigrationInterface {
   name = 'AiClientCard1700000000011';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "ai_chat_state" ADD COLUMN IF NOT EXISTS "card" jsonb NOT NULL DEFAULT '{}'::jsonb`);
+    await queryRunner.query(
+      `ALTER TABLE "ai_chat_state" ADD COLUMN IF NOT EXISTS "card" jsonb NOT NULL DEFAULT '{}'::jsonb`,
+    );
     await queryRunner.query(`
       UPDATE "ai_chat_state" SET "card" = jsonb_build_object(
         'birthDate', to_char("birth_date", 'YYYY-MM-DD'),
@@ -32,6 +34,8 @@ export class AiClientCard1700000000011 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "ai_chat_state" DROP COLUMN IF EXISTS "card"`);
+    await queryRunner.query(
+      `ALTER TABLE "ai_chat_state" DROP COLUMN IF EXISTS "card"`,
+    );
   }
 }

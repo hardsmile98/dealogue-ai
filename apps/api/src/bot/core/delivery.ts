@@ -37,9 +37,12 @@ export function planDelays(input: DelayPlanInput): DelayPlan {
     if (input.isNewLead || !input.lastOutgoingAt) {
       initialSec = pick(timings.newLeadReplySec, random);
     } else {
-      const sinceOutMin = (input.now.getTime() - input.lastOutgoingAt.getTime()) / 60_000;
-      if (sinceOutMin <= timings.inChatWindowMin) initialSec = pick(timings.inChatReplySec, random);
-      else if (sinceOutMin <= timings.recentWindowMin) initialSec = pick(timings.recentReplyMin, random) * 60;
+      const sinceOutMin =
+        (input.now.getTime() - input.lastOutgoingAt.getTime()) / 60_000;
+      if (sinceOutMin <= timings.inChatWindowMin)
+        initialSec = pick(timings.inChatReplySec, random);
+      else if (sinceOutMin <= timings.recentWindowMin)
+        initialSec = pick(timings.recentReplyMin, random) * 60;
       else initialSec = pick(timings.awayReplyMin, random) * 60;
     }
   }
@@ -47,9 +50,13 @@ export function planDelays(input: DelayPlanInput): DelayPlan {
     typingMs: Math.round(
       (part.block
         ? pick(timings.blockTypingSec, random)
-        : Math.min(part.text.length / Math.max(1, timings.typingCharsPerSec), timings.typingMaxSec)) * 1000,
+        : Math.min(
+            part.text.length / Math.max(1, timings.typingCharsPerSec),
+            timings.typingMaxSec,
+          )) * 1000,
     ),
-    pauseMs: index === 0 ? 0 : Math.round(pick(timings.partPauseSec, random) * 1000),
+    pauseMs:
+      index === 0 ? 0 : Math.round(pick(timings.partPauseSec, random) * 1000),
   }));
   return { initialMs: Math.round(initialSec * 1000), parts };
 }
@@ -65,7 +72,11 @@ export interface DeliverInput {
 }
 
 /** Доставка по плану задержек; возвращает, что реально ушло. Устаревший ход останавливается между частями. */
-export async function deliver(input: DeliverInput, channel: Channel, clock: Clock): Promise<{ sent: SentPart[]; aborted: boolean }> {
+export async function deliver(
+  input: DeliverInput,
+  channel: Channel,
+  clock: Clock,
+): Promise<{ sent: SentPart[]; aborted: boolean }> {
   const sent: SentPart[] = [];
   await clock.sleep(input.delays.initialMs);
   if (input.isStale()) return { sent, aborted: true };

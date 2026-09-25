@@ -1,3 +1,6 @@
+/** Название продукта — в заголовке вкладки браузера и на логотипе. */
+export const APP_NAME = 'Dealogue AI';
+
 /**
  * Пути приложения. Живут в shared, чтобы на них могли ссылаться и роутер
  * из слоя app, и любые ссылки на страницах, не нарушая порядок слоёв FSD.
@@ -8,14 +11,9 @@ export const ROUTES = {
   accounts: '/accounts',
   /** Шаблоны для роутера: сегменты `:accountId` / `:chatId` подставляет React Router. */
   account: '/accounts/:accountId',
-  accountStats: '/accounts/:accountId/stats',
-  accountChats: '/accounts/:accountId/chats',
-  accountChat: '/accounts/:accountId/chats/:chatId',
-  accountBot: '/accounts/:accountId/bot',
-  accountHandoffs: '/accounts/:accountId/handoffs',
-  accountSandbox: '/accounts/:accountId/sandbox',
-  accountSandboxSession: '/accounts/:accountId/sandbox/:sessionId',
-} as const
+  /** Любой раздел аккаунта — по нему страница понимает, какая вкладка открыта. */
+  accountSection: '/accounts/:accountId/:section/*',
+} as const;
 
 /** Готовые ссылки на страницы аккаунта — чтобы не собирать пути руками. */
 export const accountLinks = {
@@ -28,4 +26,4 @@ export const accountLinks = {
   handoffs: (accountId: string) => `${ROUTES.accounts}/${accountId}/handoffs`,
   sandbox: (accountId: string, sessionId?: string) =>
     `${ROUTES.accounts}/${accountId}/sandbox${sessionId ? `/${sessionId}` : ''}`,
-}
+};

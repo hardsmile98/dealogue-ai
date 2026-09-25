@@ -1,31 +1,43 @@
-import Box from '@mui/material/Box'
-import useMediaQuery from '@mui/material/useMediaQuery'
-import { useTheme } from '@mui/material/styles'
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined'
-import { EmptyState } from '@/shared/ui'
-import { ChatList } from './ChatList'
-import { chatPanelStyles as styles } from './ChatPanel.styles'
-import { ChatThread } from './ChatThread'
+import Box from '@mui/material/Box';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
+import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
+import { EmptyState } from '@/shared/ui';
+import { ChatList } from './ChatList';
+import { chatPanelStyles as styles } from './ChatPanel.styles';
+import { ChatThread } from './ChatThread';
 
 interface ChatPanelProps {
-  accountId: string
-  selectedChatId: string | null
-  onSelectChat: (chatId: string | null) => void
+  accountId: string;
+  selectedChatId: string | null;
+  onSelectChat: (chatId: string | null) => void;
 }
 
 /**
  * Две колонки: список чатов и переписка. На узких экранах показывается
  * одна из них — в зависимости от того, выбран ли чат.
  */
-export function ChatPanel({ accountId, selectedChatId, onSelectChat }: ChatPanelProps) {
-  const theme = useTheme()
-  const isNarrow = useMediaQuery(theme.breakpoints.down('md'))
-  const showList = !isNarrow || selectedChatId === null
-  const showThread = !isNarrow || selectedChatId !== null
+export function ChatPanel({
+  accountId,
+  selectedChatId,
+  onSelectChat,
+}: ChatPanelProps) {
+  const theme = useTheme();
+  // noSsr: без него первый рендер считает экран широким, и на телефоне
+  // на мгновение мелькают обе колонки.
+  const isNarrow = useMediaQuery(theme.breakpoints.down('md'), { noSsr: true });
+  const showList = !isNarrow || selectedChatId === null;
+  const showThread = !isNarrow || selectedChatId !== null;
 
   return (
     <Box sx={[styles.root, isNarrow && styles.singleColumn]}>
-      {showList && <ChatList accountId={accountId} selectedId={selectedChatId} onSelect={onSelectChat} />}
+      {showList && (
+        <ChatList
+          accountId={accountId}
+          selectedId={selectedChatId}
+          onSelect={onSelectChat}
+        />
+      )}
 
       {showThread &&
         (selectedChatId ? (
@@ -46,5 +58,5 @@ export function ChatPanel({ accountId, selectedChatId, onSelectChat }: ChatPanel
           </Box>
         ))}
     </Box>
-  )
+  );
 }

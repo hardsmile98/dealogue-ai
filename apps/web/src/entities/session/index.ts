@@ -3,25 +3,25 @@ export {
   sessionCleared,
   sessionEstablished,
   sessionReducer,
-} from './model/slice'
-export { sessionLifecycleMiddleware } from './model/lifecycle'
+} from './model/slice';
+export { sessionLifecycleMiddleware } from './model/lifecycle';
 export {
   selectAccessToken,
   selectCurrentUser,
   selectIsAuthenticated,
   selectSession,
   selectSessionExpired,
-} from './model/selectors'
+} from './model/selectors';
 export {
   useCurrentUser,
   useIsAuthenticated,
   useSession,
   useSessionExpired,
-} from './model/hooks'
-export { useSessionExpiry } from './model/useSessionExpiry'
+} from './model/hooks';
+export { useSessionExpiry } from './model/useSessionExpiry';
 export type {
   AuthUser,
   Session,
   SessionState,
   WithSessionState,
-} from './model/types'
+} from './model/types';

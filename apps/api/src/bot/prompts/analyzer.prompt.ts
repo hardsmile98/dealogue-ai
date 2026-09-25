@@ -2,7 +2,12 @@ import type { HistoryLine } from '../core/history.js';
 import type { IncomingMessage, Memory } from '../core/types.js';
 import type { LlmMessage } from '../llm/llm.types.js';
 import { LANGUAGES, OBJECTION_CATEGORIES } from '../library/kinds.js';
-import { categoriesBlock, historyBlock, memoryBlock, turnBlock } from './blocks.js';
+import {
+  categoriesBlock,
+  historyBlock,
+  memoryBlock,
+  turnBlock,
+} from './blocks.js';
 
 /** Сколько последних сообщений истории видит анализатор. */
 export const ANALYZER_HISTORY = 10;
@@ -40,7 +45,9 @@ export function buildAnalyzerPrompt(input: AnalyzerPromptInput): LlmMessage[] {
     memoryBlock(input.memory),
     '',
     '## Последние сообщения переписки',
-    historyBlock(input.history.slice(-(input.historyLimit ?? ANALYZER_HISTORY))),
+    historyBlock(
+      input.history.slice(-(input.historyLimit ?? ANALYZER_HISTORY)),
+    ),
     '',
     '## Новые сообщения клиента (проанализируй их)',
     turnBlock(input.messages),

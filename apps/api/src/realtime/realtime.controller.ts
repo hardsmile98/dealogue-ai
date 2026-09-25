@@ -1,4 +1,12 @@
-import { Controller, HttpCode, HttpStatus, Post, Res, Sse, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Res,
+  Sse,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Response } from 'express';
 import { map } from 'rxjs';
@@ -23,9 +31,17 @@ export class RealtimeController {
   @Post('ticket')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  async ticket(@CurrentUser() user: AuthenticatedUser): Promise<{ ticket: string; expiresInSec: number }> {
-    const payload: SseTicketPayload = { sub: user.id, login: user.login, kind: 'sse' };
-    const ticket = await this.jwt.signAsync(payload, { expiresIn: TICKET_TTL_SEC });
+  async ticket(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ ticket: string; expiresInSec: number }> {
+    const payload: SseTicketPayload = {
+      sub: user.id,
+      login: user.login,
+      kind: 'sse',
+    };
+    const ticket = await this.jwt.signAsync(payload, {
+      expiresIn: TICKET_TTL_SEC,
+    });
     return { ticket, expiresInSec: TICKET_TTL_SEC };
   }
 
@@ -39,6 +55,8 @@ export class RealtimeController {
     response.setHeader('X-Accel-Buffering', 'no');
     return this.realtime
       .subscribe(user.id)
-      .pipe(map((event) => ({ data: event, type: event.type }) as MessageEvent));
+      .pipe(
+        map((event) => ({ data: event, type: event.type }) as MessageEvent),
+      );
   }
 }

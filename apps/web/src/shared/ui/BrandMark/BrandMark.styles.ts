@@ -1,14 +1,15 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const brandMarkStyles = {
   root: {
     width: 44,
     height: 44,
-    borderRadius: 2,
+    // Доля от размера: плашка остаётся «скруглённым квадратом» при любом размере.
+    borderRadius: '30%',
     display: 'grid',
     placeItems: 'center',
     bgcolor: 'primary.main',
     color: 'primary.contrastText',
     flexShrink: 0,
   },
-} satisfies SxStyles
+} satisfies SxStyles;

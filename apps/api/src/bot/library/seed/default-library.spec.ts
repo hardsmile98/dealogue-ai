@@ -24,7 +24,8 @@ describe('стандартная библиотека', () => {
     for (const item of items) {
       expect(LIBRARY_KINDS, item.seedKey).toContain(item.kind);
       expect(LANGUAGES, item.seedKey).toContain(item.language);
-      if (item.gender !== null) expect(GENDERS, item.seedKey).toContain(item.gender);
+      if (item.gender !== null)
+        expect(GENDERS, item.seedKey).toContain(item.gender);
       expect(item.title.length, item.seedKey).toBeGreaterThan(0);
       expect(item.text.length, item.seedKey).toBeGreaterThan(10);
       expect(Number.isInteger(item.sort), item.seedKey).toBe(true);
@@ -35,7 +36,9 @@ describe('стандартная библиотека', () => {
     for (const item of items) {
       if (item.kind === 'diagnostic') {
         expect(item.category, item.seedKey).not.toBeNull();
-        expect(isRequestCategory(item.category as string), item.seedKey).toBe(true);
+        expect(isRequestCategory(item.category as string), item.seedKey).toBe(
+          true,
+        );
       }
       if (item.kind === 'objection') {
         expect(OBJECTION_CATEGORIES, item.seedKey).toContain(item.category);
@@ -45,7 +48,10 @@ describe('стандартная библиотека', () => {
 
   it('универсальные диагностики есть на русском для любого пола', () => {
     const universal = items.filter(
-      (item) => item.kind === 'diagnostic' && item.category === 'universal.general' && item.language === 'ru',
+      (item) =>
+        item.kind === 'diagnostic' &&
+        item.category === 'universal.general' &&
+        item.language === 'ru',
     );
     expect(universal.some((item) => item.gender === null)).toBe(true);
     expect(universal.some((item) => item.gender === 'm')).toBe(true);
@@ -53,7 +59,9 @@ describe('стандартная библиотека', () => {
 
   it('по одной включённой вехе offer и prices на русском', () => {
     for (const kind of ['offer', 'prices'] as const) {
-      const enabled = items.filter((item) => item.kind === kind && item.language === 'ru' && item.enabled);
+      const enabled = items.filter(
+        (item) => item.kind === kind && item.language === 'ru' && item.enabled,
+      );
       expect(enabled, kind).toHaveLength(1);
     }
     expect(MILESTONE_KINDS).toContain('offer');
@@ -62,10 +70,15 @@ describe('стандартная библиотека', () => {
   it('плейсхолдеры только известные и только вне диагностик', () => {
     for (const item of items) {
       expect(unknownPlaceholders(item.text), item.seedKey).toEqual([]);
-      if (item.kind === 'diagnostic') expect(item.text, item.seedKey).not.toMatch(/\{\{/);
+      if (item.kind === 'diagnostic')
+        expect(item.text, item.seedKey).not.toMatch(/\{\{/);
     }
-    expect(items.find((item) => item.seedKey === 'funnel.F9')?.text).toContain('{{links}}');
-    expect(items.find((item) => item.seedKey === 'funnel.B6')?.text).toContain('{{bio}}');
+    expect(items.find((item) => item.seedKey === 'funnel.F9')?.text).toContain(
+      '{{links}}',
+    );
+    expect(items.find((item) => item.seedKey === 'funnel.B6')?.text).toContain(
+      '{{bio}}',
+    );
   });
 
   it('в текстах не осталось адресов чужого аккаунта', () => {

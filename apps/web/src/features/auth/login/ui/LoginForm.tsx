@@ -1,66 +1,74 @@
-import { useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
-import { useDispatch } from 'react-redux'
-import Alert from '@mui/material/Alert'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
-import Stack from '@mui/material/Stack'
-import TextField from '@mui/material/TextField'
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
-import PersonOutlinedIcon from '@mui/icons-material/PersonOutlined'
-import VisibilityIcon from '@mui/icons-material/Visibility'
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
-import { sessionEstablished } from '@/entities/session'
-import { useLoginMutation } from '../api/loginApi'
-import { getLoginErrorMessage } from '../lib/getLoginErrorMessage'
-import type { Credentials } from '../model/types'
-import { hasErrors, validateCredentials } from '../model/validation'
-import type { LoginFormErrors } from '../model/validation'
-import { loginFormStyles } from './LoginForm.styles'
+import { useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
+import { useDispatch } from 'react-redux';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
+import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import PersonOutlinedIcon from '@mui/icons-material/PersonOutlined';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import { sessionEstablished } from '@/entities/session';
+import { useLoginMutation } from '../api/loginApi';
+import { getLoginErrorMessage } from '../lib/getLoginErrorMessage';
+import type { Credentials } from '../model/types';
+import { hasErrors, validateCredentials } from '../model/validation';
+import type { LoginFormErrors } from '../model/validation';
+import { loginFormStyles } from './LoginForm.styles';
 
-const EMPTY_CREDENTIALS: Credentials = { login: '', password: '' }
+const EMPTY_CREDENTIALS: Credentials = { login: '', password: '' };
 
 export function LoginForm() {
-  const dispatch = useDispatch()
-  const [login, { isLoading }] = useLoginMutation()
+  const dispatch = useDispatch();
+  const [login, { isLoading }] = useLoginMutation();
 
-  const [values, setValues] = useState<Credentials>(EMPTY_CREDENTIALS)
-  const [errors, setErrors] = useState<LoginFormErrors>({})
-  const [wasSubmitted, setWasSubmitted] = useState(false)
-  const [remember, setRemember] = useState(true)
-  const [showPassword, setShowPassword] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [values, setValues] = useState<Credentials>(EMPTY_CREDENTIALS);
+  const [errors, setErrors] = useState<LoginFormErrors>({});
+  const [wasSubmitted, setWasSubmitted] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleChange =
     (field: keyof Credentials) => (event: ChangeEvent<HTMLInputElement>) => {
-      const next = { ...values, [field]: event.target.value }
-      setValues(next)
-      setSubmitError(null)
+      const next = { ...values, [field]: event.target.value };
+      setValues(next);
+      setSubmitError(null);
       // Пока форму не отправляли — не пугаем пользователя ошибками во время ввода.
-      if (wasSubmitted) setErrors(validateCredentials(next))
-    }
+      if (wasSubmitted) setErrors(validateCredentials(next));
+    };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setWasSubmitted(true)
+    event.preventDefault();
+    setWasSubmitted(true);
 
-    const nextErrors = validateCredentials(values)
-    setErrors(nextErrors)
-    if (hasErrors(nextErrors)) return
-
-    setSubmitError(null)
-    try {
-      const session = await login(values).unwrap()
-      // Дальше сработает GuestRoute и уведёт с /login на защищённый маршрут.
-      dispatch(sessionEstablished({ session, remember }))
-    } catch (error) {
-      setSubmitError(getLoginErrorMessage(error))
+    const nextErrors = validateCredentials(values);
+    setErrors(nextErrors);
+    if (hasErrors(nextErrors)) {
+      // Фокус — на первое поле с ошибкой: клавиатуре и экранному диктору
+      // не нужно искать, что именно не так.
+      const firstInvalid = nextErrors.login ? 'login' : 'password';
+      event.currentTarget
+        .querySelector<HTMLInputElement>(`input[name="${firstInvalid}"]`)
+        ?.focus();
+      return;
     }
-  }
+
+    setSubmitError(null);
+    try {
+      const session = await login(values).unwrap();
+      // Дальше сработает GuestRoute и уведёт с /login на защищённый маршрут.
+      dispatch(sessionEstablished({ session, remember }));
+    } catch (error) {
+      setSubmitError(getLoginErrorMessage(error));
+    }
+  };
 
   return (
     <Box component="form" onSubmit={handleSubmit} noValidate>
@@ -117,7 +125,9 @@ export function LoginForm() {
                     onClick={() => setShowPassword((visible) => !visible)}
                     edge="end"
                     disabled={isLoading}
-                    aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                    aria-label={
+                      showPassword ? 'Скрыть пароль' : 'Показать пароль'
+                    }
                   >
                     {showPassword ? (
                       <VisibilityOffIcon fontSize="small" />
@@ -156,5 +166,5 @@ export function LoginForm() {
         </Button>
       </Stack>
     </Box>
-  )
+  );
 }

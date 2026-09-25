@@ -1,5 +1,10 @@
 import type { ClientFactKind } from '../entities/bot-client-fact.entity.js';
-import type { Gender, HandoffReason, Milestone, Stage } from '../library/kinds.js';
+import type {
+  Gender,
+  HandoffReason,
+  Milestone,
+  Stage,
+} from '../library/kinds.js';
 
 /**
  * Типы ядра хода (docs/agent-architecture.md, разделы 3–4). Чистые данные:
@@ -66,7 +71,13 @@ export interface Memory {
   said: SaidEntry[];
 }
 
-export const RISK_FLAGS = ['aggression', 'crisis', 'wants_human', 'asks_if_bot', 'unclear'] as const;
+export const RISK_FLAGS = [
+  'aggression',
+  'crisis',
+  'wants_human',
+  'asks_if_bot',
+  'unclear',
+] as const;
 export type RiskFlag = (typeof RISK_FLAGS)[number];
 
 export const INTENTS = [
@@ -84,14 +95,27 @@ export const INTENTS = [
 ] as const;
 export type Intent = (typeof INTENTS)[number];
 
-export const MOODS = ['calm', 'sad', 'anxious', 'skeptical', 'irritated'] as const;
+export const MOODS = [
+  'calm',
+  'sad',
+  'anxious',
+  'skeptical',
+  'irritated',
+] as const;
 export type Mood = (typeof MOODS)[number];
 
 /**
  * О чём пункт ответа. По теме код решает, можно ли раскрывать её на текущем
  * этапе (цена — только вехой «стоимость», диагностика — вехой «диагностика»).
  */
-export const ANSWER_TOPICS = ['price', 'practice', 'diagnostic', 'practitioner', 'client', 'other'] as const;
+export const ANSWER_TOPICS = [
+  'price',
+  'practice',
+  'diagnostic',
+  'practitioner',
+  'client',
+  'other',
+] as const;
 export type AnswerTopic = (typeof ANSWER_TOPICS)[number];
 
 export interface AnswerPoint {

@@ -2,7 +2,12 @@ import type { Stage } from '../library/kinds.js';
 import type { Range, Timings } from '../library/timings.js';
 import { milestoneAt } from './history.js';
 import { hasBirthData, nudgesSaid } from './memory.js';
-import type { ClientCard, HistoryMessage, JobKind, SaidEntry } from './types.js';
+import type {
+  ClientCard,
+  HistoryMessage,
+  JobKind,
+  SaidEntry,
+} from './types.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -52,10 +57,16 @@ export function stableFraction(seed: string): number {
 }
 
 function pick(seed: string, range: Range): number {
-  return range.min + Math.floor(stableFraction(seed) * (range.max - range.min + 1));
+  return (
+    range.min + Math.floor(stableFraction(seed) * (range.max - range.min + 1))
+  );
 }
 
-function lastSaidAt(said: readonly SaidEntry[], kind: SaidEntry['kind'], key: string): Date | null {
+function lastSaidAt(
+  said: readonly SaidEntry[],
+  kind: SaidEntry['kind'],
+  key: string,
+): Date | null {
   for (let index = said.length - 1; index >= 0; index -= 1) {
     const entry = said[index] as SaidEntry;
     if (entry.kind === kind && entry.key === key) return entry.at;
@@ -85,9 +96,18 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
   const last = history[history.length - 1];
   if (!last || last.direction !== 'out') return null;
 
-  const step = (kind: JobKind, anchor: Date, range: Range, unit: number, reason: string): LadderStep => ({
+  const step = (
+    kind: JobKind,
+    anchor: Date,
+    range: Range,
+    unit: number,
+    reason: string,
+  ): LadderStep => ({
     kind,
-    runAt: new Date(anchor.getTime() + pick(`${input.chatId}:${kind}:${anchor.toISOString()}`, range) * unit),
+    runAt: new Date(
+      anchor.getTime() +
+        pick(`${input.chatId}:${kind}:${anchor.toISOString()}`, range) * unit,
+    ),
     reason,
   });
   const remindersLeft = input.remindersSent < timings.maxReminders;
@@ -97,16 +117,35 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
     if (!linksAt) return null;
     const reminderAt = lastSaidAt(said, 'nudge', 'birth_data_reminder');
     return reminderAt && reminderAt > linksAt
-      ? step('diagnostic', reminderAt, timings.diagnosticDelayMin, MINUTE, 'после напоминания о данных')
-      : step('diagnostic', linksAt, timings.diagnosticDelayMin, MINUTE, 'после ссылок');
+      ? step(
+          'diagnostic',
+          reminderAt,
+          timings.diagnosticDelayMin,
+          MINUTE,
+          'после напоминания о данных',
+        )
+      : step(
+          'diagnostic',
+          linksAt,
+          timings.diagnosticDelayMin,
+          MINUTE,
+          'после ссылок',
+        );
   }
 
   if (!last.readAt) {
-    const alreadyReminded = said.some((entry) => entry.kind === 'nudge' && entry.key === 'unread_reminder' && entry.messageId === last.id);
+    const alreadyReminded = said.some(
+      (entry) =>
+        entry.kind === 'nudge' &&
+        entry.key === 'unread_reminder' &&
+        entry.messageId === last.id,
+    );
     if (!remindersLeft || alreadyReminded) return null;
     return {
       kind: 'unread_reminder',
-      runAt: new Date(last.sentAt.getTime() + timings.unreadReminderHours * HOUR),
+      runAt: new Date(
+        last.sentAt.getTime() + timings.unreadReminderHours * HOUR,
+      ),
       reason: 'последнее сообщение не прочитано',
     };
   }
@@ -117,18 +156,48 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
       const asked = nudgesSaid(said, 'ask_birth_data') > 0;
       const reminded = nudgesSaid(said, 'birth_data_reminder') > 0;
       if (hasBirthData(input.card) || !asked || reminded) return null;
-      return step('birth_data_reminder', readAt, timings.birthDataReminderMin, MINUTE, 'просьба о данных прочитана');
+      return step(
+        'birth_data_reminder',
+        readAt,
+        timings.birthDataReminderMin,
+        MINUTE,
+        'просьба о данных прочитана',
+      );
     }
     case 'diagnostic':
       if (remindersLeft && nudgesSaid(said, 'ask_feedback') === 0) {
-        return step('return_question', readAt, timings.returnQuestionMin, MINUTE, 'диагностика прочитана');
+        return step(
+          'return_question',
+          readAt,
+          timings.returnQuestionMin,
+          MINUTE,
+          'диагностика прочитана',
+        );
       }
-      return step('offer', readAt, timings.stepHours, HOUR, 'клиент молчит после диагностики');
+      return step(
+        'offer',
+        readAt,
+        timings.stepHours,
+        HOUR,
+        'клиент молчит после диагностики',
+      );
     case 'offer':
       if (remindersLeft && nudgesSaid(said, 'ask_offer_questions') === 0) {
-        return step('offer_nudge', readAt, timings.stepHours, HOUR, 'описание практик прочитано');
+        return step(
+          'offer_nudge',
+          readAt,
+          timings.stepHours,
+          HOUR,
+          'описание практик прочитано',
+        );
       }
-      return step('prices', readAt, timings.stepHours, HOUR, 'клиент молчит после предложения');
+      return step(
+        'prices',
+        readAt,
+        timings.stepHours,
+        HOUR,
+        'клиент молчит после предложения',
+      );
     default:
       return null;
   }

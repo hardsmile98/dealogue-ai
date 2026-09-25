@@ -1,15 +1,15 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react';
 
 interface InfiniteScrollOptions {
   /** Есть ли что догружать. */
-  hasMore: boolean
+  hasMore: boolean;
   /** Идёт загрузка — новую не начинаем, пока не закончится текущая. */
-  isLoading: boolean
-  onLoadMore: () => void
+  isLoading: boolean;
+  onLoadMore: () => void;
   /** С какого края догружать: список — снизу, переписка — сверху. */
-  edge?: 'top' | 'bottom'
+  edge?: 'top' | 'bottom';
   /** За сколько пикселей до края начинать догрузку. */
-  threshold?: number
+  threshold?: number;
 }
 
 /**
@@ -27,29 +27,33 @@ export function useInfiniteScroll<TRoot extends HTMLElement>({
   edge = 'bottom',
   threshold = 400,
 }: InfiniteScrollOptions) {
-  const rootRef = useRef<TRoot>(null)
-  const sentinelRef = useRef<HTMLDivElement>(null)
-  const onLoadMoreRef = useRef(onLoadMore)
+  const rootRef = useRef<TRoot>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const onLoadMoreRef = useRef(onLoadMore);
 
   useEffect(() => {
-    onLoadMoreRef.current = onLoadMore
-  }, [onLoadMore])
+    onLoadMoreRef.current = onLoadMore;
+  }, [onLoadMore]);
 
   useEffect(() => {
-    const root = rootRef.current
-    const sentinel = sentinelRef.current
-    if (!root || !sentinel || !hasMore || isLoading) return
+    const root = rootRef.current;
+    const sentinel = sentinelRef.current;
+    if (!root || !sentinel || !hasMore || isLoading) return;
 
-    const rootMargin = edge === 'top' ? `${threshold}px 0px 0px 0px` : `0px 0px ${threshold}px 0px`
+    const rootMargin =
+      edge === 'top'
+        ? `${threshold}px 0px 0px 0px`
+        : `0px 0px ${threshold}px 0px`;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) onLoadMoreRef.current()
+        if (entries.some((entry) => entry.isIntersecting))
+          onLoadMoreRef.current();
       },
       { root, rootMargin },
-    )
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [hasMore, isLoading, edge, threshold])
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, isLoading, edge, threshold]);
 
-  return { rootRef, sentinelRef }
+  return { rootRef, sentinelRef };
 }

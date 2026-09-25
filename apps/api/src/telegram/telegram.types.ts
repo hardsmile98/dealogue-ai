@@ -2,8 +2,14 @@ import type {
   TelegramAccountEntity,
   TelegramAccountStatus,
 } from './entities/telegram-account.entity.js';
-import type { MessageDirection, TelegramChatEntity } from './entities/telegram-chat.entity.js';
-import type { MediaKind, TelegramMessageEntity } from './entities/telegram-message.entity.js';
+import type {
+  MessageDirection,
+  TelegramChatEntity,
+} from './entities/telegram-chat.entity.js';
+import type {
+  MediaKind,
+  TelegramMessageEntity,
+} from './entities/telegram-message.entity.js';
 
 /**
  * Формы ответов — зеркало контракта фронтенда

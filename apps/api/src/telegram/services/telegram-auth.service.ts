@@ -13,7 +13,10 @@ import { LessThan, Repository } from 'typeorm';
 import teleproto from 'teleproto';
 import type { Api, TelegramClient } from 'teleproto';
 import { runDetached } from '../../common/async.js';
-import { TelegramClientFactory, safeDestroy } from '../client/telegram-client.factory.js';
+import {
+  TelegramClientFactory,
+  safeDestroy,
+} from '../client/telegram-client.factory.js';
 import { TelegramLoginAttemptEntity } from '../entities/telegram-login-attempt.entity.js';
 import { normalizePhone } from '../lib/phone.js';
 import { SessionCrypto } from '../lib/session-crypto.js';
@@ -72,7 +75,9 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
-    await Promise.all([...this.liveAttempts.values()].map((a) => safeDestroy(a.client)));
+    await Promise.all(
+      [...this.liveAttempts.values()].map((a) => safeDestroy(a.client)),
+    );
     this.liveAttempts.clear();
   }
 
@@ -86,9 +91,11 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
     // Код запросили заново — прежняя попытка больше не нужна, её клиент закрываем.
     await this.dropAttemptsFor(userId, phone);
 
-    const { client } = await this.factory.connect('').catch((error: unknown) => {
-      throw loginError(error);
-    });
+    const { client } = await this.factory
+      .connect('')
+      .catch((error: unknown) => {
+        throw loginError(error);
+      });
 
     try {
       const sent = await client.sendCode(this.factory.credentials, phone);
@@ -108,7 +115,9 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
         phone,
         expiresAt: attempt.expiresAt.getTime(),
       });
-      this.logger.log(`Код отправлен на ${phone} (${sent.isCodeViaApp ? 'в приложение' : 'по SMS'})`);
+      this.logger.log(
+        `Код отправлен на ${phone} (${sent.isCodeViaApp ? 'в приложение' : 'по SMS'})`,
+      );
       return { attemptId: attempt.id, phone };
     } catch (error) {
       await safeDestroy(client);
@@ -116,7 +125,11 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async signIn(userId: string, attemptId: string, code: string): Promise<SignInResponse> {
+  async signIn(
+    userId: string,
+    attemptId: string,
+    code: string,
+  ): Promise<SignInResponse> {
     const attempt = await this.loadAttempt(userId, attemptId);
     const client = await this.clientFor(attempt);
 
@@ -128,7 +141,10 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
           phoneCode: code,
         }),
       );
-      return { status: 'connected', account: await this.finish(attempt, client, result) };
+      return {
+        status: 'connected',
+        account: await this.finish(attempt, client, result),
+      };
     } catch (error) {
       if (error instanceof errors.SessionPasswordNeededError) {
         await this.attempts.update(attempt.id, { codeVerified: true });
@@ -152,8 +168,13 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
     try {
       const current = await client.invoke(new Tl.account.GetPassword());
       const srp = await passwordLib.computeCheck(current, password);
-      const result = await client.invoke(new Tl.auth.CheckPassword({ password: srp }));
-      return { status: 'connected', account: await this.finish(attempt, client, result) };
+      const result = await client.invoke(
+        new Tl.auth.CheckPassword({ password: srp }),
+      );
+      return {
+        status: 'connected',
+        account: await this.finish(attempt, client, result),
+      };
     } catch (error) {
       throw loginError(error);
     }
@@ -161,8 +182,13 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
 
   // --- внутреннее -----------------------------------------------------------
 
-  private async loadAttempt(userId: string, attemptId: string): Promise<TelegramLoginAttemptEntity> {
-    const attempt = await this.attempts.findOne({ where: { id: attemptId, userId } });
+  private async loadAttempt(
+    userId: string,
+    attemptId: string,
+  ): Promise<TelegramLoginAttemptEntity> {
+    const attempt = await this.attempts.findOne({
+      where: { id: attemptId, userId },
+    });
     if (!attempt || attempt.expiresAt.getTime() < Date.now()) {
       if (attempt) await this.dropAttempt(attempt.id);
       throw new NotFoundException('Попытка входа устарела — начните заново');
@@ -170,7 +196,9 @@ export class TelegramAuthService implements OnModuleInit, OnModuleDestroy {
     return attempt;
   }
 
-  private async clientFor(attempt: TelegramLoginAttemptEntity): Promise<TelegramClient> {
+  private async clientFor(
+    attempt: TelegramLoginAttemptEntity,
+  ): Promise<TelegramClient> {
     const live = this.liveAttempts.get(attempt.id);
     if (live && live.client.connected) return live.client;
     if (live) await safeDestroy(live.client);

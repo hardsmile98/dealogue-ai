@@ -109,12 +109,38 @@ const STATIC_EXTENSIONS_LEN = STATIC_EXTENSIONS.reduce(
 );
 
 const CIPHER_SUITES = Buffer.from([
-  G, G,
-  0x13, 0x01, 0x13, 0x02, 0x13, 0x03,
-  0xc0, 0x2b, 0xc0, 0x2f, 0xc0, 0x2c, 0xc0, 0x30,
-  0xcc, 0xa9, 0xcc, 0xa8,
-  0xc0, 0x13, 0xc0, 0x14,
-  0x00, 0x9c, 0x00, 0x9d, 0x00, 0x2f, 0x00, 0x35,
+  G,
+  G,
+  0x13,
+  0x01,
+  0x13,
+  0x02,
+  0x13,
+  0x03,
+  0xc0,
+  0x2b,
+  0xc0,
+  0x2f,
+  0xc0,
+  0x2c,
+  0xc0,
+  0x30,
+  0xcc,
+  0xa9,
+  0xcc,
+  0xa8,
+  0xc0,
+  0x13,
+  0xc0,
+  0x14,
+  0x00,
+  0x9c,
+  0x00,
+  0x9d,
+  0x00,
+  0x2f,
+  0x00,
+  0x35,
 ]);
 
 /**
@@ -237,7 +263,9 @@ export class FakeTlsSocket {
       const hdr = Buffer.alloc(TLS_RECORD_HEADER_LEN);
       TLS_APP_DATA_PREFIX.copy(hdr, 0);
       hdr.writeUInt16BE(chunkLen, 3);
-      this.inner.write(Buffer.concat([hdr, data.subarray(off, off + chunkLen)]));
+      this.inner.write(
+        Buffer.concat([hdr, data.subarray(off, off + chunkLen)]),
+      );
     }
   }
 
@@ -318,7 +346,11 @@ export class FakeTlsSocket {
         serverRandomOffset + HELLO_RANDOM_LEN,
       ),
     );
-    serverResp.fill(0, serverRandomOffset, serverRandomOffset + HELLO_RANDOM_LEN);
+    serverResp.fill(
+      0,
+      serverRandomOffset,
+      serverRandomOffset + HELLO_RANDOM_LEN,
+    );
     const expected = createHmac('sha256', this.secret)
       .update(this.clientRandom)
       .update(serverResp)

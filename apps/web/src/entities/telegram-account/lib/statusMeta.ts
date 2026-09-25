@@ -1,10 +1,10 @@
-import type { AccountStatus } from '../model/types'
+import type { AccountStatus } from '../model/types';
 
 export interface StatusMeta {
-  label: string
+  label: string;
   /** Цвет MUI Chip — статус всегда сопровождается подписью, не только цветом. */
-  color: 'success' | 'warning' | 'default' | 'error'
-  description: string
+  color: 'success' | 'warning' | 'default' | 'error';
+  description: string;
 }
 
 export const ACCOUNT_STATUS_META: Record<AccountStatus, StatusMeta> = {
@@ -28,9 +28,11 @@ export const ACCOUNT_STATUS_META: Record<AccountStatus, StatusMeta> = {
     color: 'error',
     description: 'Синхронизация остановлена',
   },
-}
+};
 
 /** Статусы, при которых уместно предложить переподключение. */
 export function needsReconnect(status: AccountStatus): boolean {
-  return status === 'disconnected' || status === 'error' || status === 'pending'
+  return (
+    status === 'disconnected' || status === 'error' || status === 'pending'
+  );
 }

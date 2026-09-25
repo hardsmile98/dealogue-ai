@@ -1,4 +1,4 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const loginFormStyles = {
   rememberMe: {
@@ -6,4 +6,4 @@ export const loginFormStyles = {
     mt: -1,
     alignSelf: 'flex-start',
   },
-} satisfies SxStyles
+} satisfies SxStyles;

@@ -1,8 +1,20 @@
 import { parseJsonObject } from '../core/json.js';
-import type { IncomingMessage, Memory, Plan, Review, ReviewViolation } from '../core/types.js';
+import type {
+  IncomingMessage,
+  Memory,
+  Plan,
+  Review,
+  ReviewViolation,
+} from '../core/types.js';
 import type { LlmMessage } from '../llm/llm.types.js';
 import type { Persona } from '../library/persona.js';
-import { aboutBlock, blockPreview, memoryBlock, personaBlock, turnBlock } from './blocks.js';
+import {
+  aboutBlock,
+  blockPreview,
+  memoryBlock,
+  personaBlock,
+  turnBlock,
+} from './blocks.js';
 import type { LibrarySample } from './blocks.js';
 
 /** Нарушения, из-за которых ответчик переписывает черновик. */
@@ -105,9 +117,13 @@ function draftLines(input: ReviewerPromptInput): string[] {
   const lines = input.parts.map((part, index) => `[${index + 1}] ${part}`);
   if (input.plan.milestone) {
     const preview = input.block ? `: «${blockPreview(input.block)}»` : '';
-    lines.push(`[веха «${input.plan.milestone.title}» — текст из библиотеки, вставит система${preview}]`);
+    lines.push(
+      `[веха «${input.plan.milestone.title}» — текст из библиотеки, вставит система${preview}]`,
+    );
   }
-  input.after.forEach((part, index) => lines.push(`[${input.parts.length + index + 1}] ${part}`));
+  input.after.forEach((part, index) =>
+    lines.push(`[${input.parts.length + index + 1}] ${part}`),
+  );
   return lines;
 }
 
@@ -130,7 +146,9 @@ export function parseReview(raw: string): Review {
 }
 
 export function reviewNotes(review: Review): string[] {
-  return review.violations.map((violation) => `${violation.code}: ${violation.detail || 'исправь'}`);
+  return review.violations.map(
+    (violation) => `${violation.code}: ${violation.detail || 'исправь'}`,
+  );
 }
 
 export function hasHardViolations(review: Review): boolean {
@@ -139,5 +157,7 @@ export function hasHardViolations(review: Review): boolean {
 
 /** Остались нарушения, с которыми отправлять нельзя. */
 export function isBlocking(review: Review): boolean {
-  return review.violations.some((violation) => BLOCKING_CODES.has(violation.code));
+  return review.violations.some((violation) =>
+    BLOCKING_CODES.has(violation.code),
+  );
 }

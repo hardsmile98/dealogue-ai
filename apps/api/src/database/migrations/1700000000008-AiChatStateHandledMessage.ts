@@ -19,7 +19,11 @@ export class AiChatStateHandledMessage1700000000008 implements MigrationInterfac
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "ai_chat_state" DROP COLUMN IF EXISTS "last_manager_message_at"`);
-    await queryRunner.query(`ALTER TABLE "ai_chat_state" DROP COLUMN IF EXISTS "last_handled_message_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "ai_chat_state" DROP COLUMN IF EXISTS "last_manager_message_at"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "ai_chat_state" DROP COLUMN IF EXISTS "last_handled_message_id"`,
+    );
   }
 }

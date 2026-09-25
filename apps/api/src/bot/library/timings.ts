@@ -73,7 +73,9 @@ export const DEFAULT_TIMINGS: Timings = {
   maxTurnsWithoutNudge: 2,
 };
 
-type RangeKey = { [K in keyof Timings]: Timings[K] extends Range ? K : never }[keyof Timings];
+type RangeKey = {
+  [K in keyof Timings]: Timings[K] extends Range ? K : never;
+}[keyof Timings];
 type NumberKey = Exclude<keyof Timings, RangeKey>;
 
 const RANGE_KEYS = Object.keys(DEFAULT_TIMINGS).filter(
@@ -128,7 +130,8 @@ export function validateTimings(timings: Timings): string[] {
       errors.push(`${key}: ожидается целое неотрицательное число`);
     }
   }
-  if (timings.typingCharsPerSec === 0) errors.push('typingCharsPerSec: не может быть 0');
+  if (timings.typingCharsPerSec === 0)
+    errors.push('typingCharsPerSec: не может быть 0');
   if (timings.quietMaxSec < timings.quietWindowSec.max) {
     errors.push('quietMaxSec: не меньше quietWindowSec.max');
   }

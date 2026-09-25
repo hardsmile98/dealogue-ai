@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import teleproto from 'teleproto';
 import type { TelegramClient } from 'teleproto';
+import { errorMessage } from '../../common/errors.js';
 import { TelegramUnavailableError } from '../lib/telegram-errors.js';
 import { TelegramConfig } from '../telegram.config.js';
 import type { MtProxyConfig } from '../telegram.config.js';
@@ -108,7 +109,7 @@ export class TelegramClientFactory {
           ? `${this.config.proxies[proxyIndex].host}:${this.config.proxies[proxyIndex].port}`
           : 'напрямую';
         this.logger.warn(
-          `Не удалось подключиться к Telegram (${label}): ${error instanceof Error ? error.message : error}`,
+          `Не удалось подключиться к Telegram (${label}): ${errorMessage(error)}`,
         );
         await safeDestroy(client);
       }
@@ -131,7 +132,7 @@ export class TelegramClientFactory {
   ): InstanceType<typeof TeleprotoLogger> {
     const logger = new TeleprotoLogger(this.config.clientLogLevel as never);
     logger.handler = ({ level, message, error }) => {
-      const text = `[${label}] ${message}${error ? ` — ${error instanceof Error ? error.message : String(error)}` : ''}`;
+      const text = `[${label}] ${message}${error ? ` — ${errorMessage(error)}` : ''}`;
       switch (level) {
         case 'error':
           this.clientLogger.error(text);

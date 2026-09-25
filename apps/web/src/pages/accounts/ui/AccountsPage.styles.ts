@@ -1,4 +1,7 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
+
+/** Колонка, которую на телефоне прячем: ширины не хватает. */
+const WIDE_ONLY = { display: { xs: 'none', sm: 'table-cell' } } as const;
 
 export const accountsPageStyles = {
   summary: {
@@ -8,23 +11,22 @@ export const accountsPageStyles = {
     mb: 2,
   },
   tableCard: {
-    border: '1px solid',
-    borderColor: 'divider',
-    borderRadius: 3,
     overflow: 'hidden',
   },
+  // position: relative — чтобы скрытые подписи (position: absolute) внутри
+  // таблицы обрезались этим контейнером, а не растягивали страницу вбок.
+  tableScroll: {
+    position: 'relative',
+    overflowX: 'auto',
+  },
   table: {
-    '& .MuiTableCell-head': {
-      fontSize: 12,
-      fontWeight: 600,
-      lineHeight: 1.3,
-      color: 'text.secondary',
-      bgcolor: 'background.default',
-    },
-    '& .MuiTableCell-root': { borderColor: 'divider', px: 1.5 },
-    '& .MuiTableCell-root:first-of-type': { pl: 2.5 },
+    '& .MuiTableCell-head': { bgcolor: 'background.default' },
+    '& .MuiTableCell-root': { px: 1.5 },
+    '& .MuiTableCell-root:first-of-type': { pl: { xs: 2, sm: 2.5 } },
     '& .MuiTableCell-root:last-of-type': { pr: 2 },
-    '& .MuiTableRow-root:last-child .MuiTableCell-root': { borderBottom: 'none' },
+    '& .MuiTableRow-root:last-child .MuiTableCell-root': {
+      borderBottom: 'none',
+    },
   },
   row: {
     cursor: 'pointer',
@@ -35,10 +37,22 @@ export const accountsPageStyles = {
     gap: 1.5,
     minWidth: 180,
   },
+  accountText: {
+    minWidth: 0,
+    flexGrow: 1,
+  },
   accountName: {
     fontWeight: 600,
     fontSize: 14,
-    whiteSpace: 'nowrap',
+    color: 'text.primary',
+    textDecoration: 'none',
+    '&:hover': { color: 'primary.main' },
+    '&:focus-visible': {
+      outline: '2px solid',
+      outlineColor: 'primary.main',
+      outlineOffset: '2px',
+      borderRadius: '2px',
+    },
   },
   accountMeta: {
     fontSize: 12,
@@ -46,13 +60,7 @@ export const accountsPageStyles = {
   },
   statusCell: {
     minWidth: 150,
-    maxWidth: 200,
-  },
-  numberHead: {
-    width: 88,
-  },
-  syncCell: {
-    whiteSpace: 'nowrap',
+    maxWidth: 220,
   },
   statusMessage: {
     display: 'block',
@@ -63,9 +71,16 @@ export const accountsPageStyles = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
   },
+  numberHead: {
+    width: 88,
+  },
   number: {
     fontVariantNumeric: 'tabular-nums',
     fontWeight: 600,
+  },
+  syncCell: {
+    ...WIDE_ONLY,
+    whiteSpace: 'nowrap',
   },
   muted: {
     color: 'text.disabled',
@@ -77,4 +92,10 @@ export const accountsPageStyles = {
     gap: 0.5,
     whiteSpace: 'nowrap',
   },
-} satisfies SxStyles
+  skeletonText: {
+    flexGrow: 1,
+  },
+  skeletonRight: {
+    ml: 'auto',
+  },
+} satisfies SxStyles;

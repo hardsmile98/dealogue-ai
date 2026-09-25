@@ -1,0 +1,9 @@
+# Сборка, зависимости, отчёты
+dist
+node_modules
+coverage
+*.tsbuildinfo
+package-lock.json
+
+# Генерируется scripts/build-library-seed.mjs из docs/source/*.xlsx
+src/bot/library/seed/default-library.json

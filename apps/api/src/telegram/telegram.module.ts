@@ -77,7 +77,7 @@ import { TelegramConfig } from './telegram.config.js';
     TelegramEnabledGuard,
     AccountAccessGuard,
   ],
-  // Наружу — то, на чём строятся другие модули (realtime, будущий бот): события,
+  // Наружу — то, на чём строятся другие модули (realtime, агент): события,
   // отправка, доступ к аккаунтам/чатам с проверкой владельца, запись и чтение данных.
   exports: [
     TelegramConfig,

@@ -17,7 +17,11 @@ import { Account } from '../../telegram/decorators/account.decorator.js';
 import type { TelegramAccountEntity } from '../../telegram/entities/telegram-account.entity.js';
 import { AccountAccessGuard } from '../../telegram/guards/account-access.guard.js';
 import type { ExampleDto } from '../bot.types.js';
-import { CreateExampleDto, ListExamplesQueryDto, UpdateExampleDto } from '../dto/examples.dto.js';
+import {
+  CreateExampleDto,
+  ListExamplesQueryDto,
+  UpdateExampleDto,
+} from '../dto/examples.dto.js';
 import { BotExamplesService } from '../services/bot-examples.service.js';
 
 /** Примеры реальных диалогов по этапам. */

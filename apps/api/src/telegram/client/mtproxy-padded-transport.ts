@@ -64,7 +64,8 @@ export class PaddedIntermediatePacketCodec extends PacketCodec {
 
 /** MTProxy-соединение на padded intermediate вместо abridged. */
 export class ConnectionTCPMTProxyPadded extends TCPMTProxy {
-  override PacketCodecClass = PaddedIntermediatePacketCodec as unknown as typeof PacketCodec;
+  override PacketCodecClass =
+    PaddedIntermediatePacketCodec as unknown as typeof PacketCodec;
 
   /**
    * Fake-TLS (секреты `ee…`) поднимаем своим {@link FakeTlsSocket}: ClientHello

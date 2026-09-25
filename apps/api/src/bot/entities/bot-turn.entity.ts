@@ -3,7 +3,8 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 /** `restore` — память по уже идущей переписке (чат, скопированный в песочницу), без отправки. */
 export type BotTurnTrigger = 'client' | 'schedule' | 'restore';
 /** `done` — ход без отправки, который выполнил свою работу (восстановление памяти). */
-export type BotTurnStatus = 'running' | 'sent' | 'handoff' | 'skipped' | 'failed' | 'done';
+export type BotTurnStatus =
+  'running' | 'sent' | 'handoff' | 'skipped' | 'failed' | 'done';
 
 /**
  * Журнал ходов: отвечает на «почему агент так сказал». Вход, анализ, план,

@@ -1,22 +1,67 @@
 import { describe, expect, it } from 'vitest';
 import { parseAnalysis } from './analysis.js';
-import { formatHistory, isRead, lastIncoming, lastOutgoing, milestoneMessageId } from './history.js';
-import { applyAnalysis, knownCategory, knownGender, letterCount, mergeCard, readCard } from './memory.js';
+import {
+  formatHistory,
+  isRead,
+  lastIncoming,
+  lastOutgoing,
+  milestoneMessageId,
+} from './history.js';
+import {
+  applyAnalysis,
+  knownCategory,
+  knownGender,
+  letterCount,
+  mergeCard,
+  readCard,
+} from './memory.js';
 import type { Analysis, HistoryMessage, Memory, SaidEntry } from './types.js';
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 8, 25, 10, minutes));
 
 describe('история для промпта', () => {
   const history: HistoryMessage[] = [
-    { id: 1, direction: 'in', text: 'Здравствуйте, код 12', mediaKind: null, sentAt: at(0), readAt: null },
-    { id: 2, direction: 'out', text: 'Здравствуйте. Пришлите дату…', mediaKind: null, sentAt: at(1), readAt: at(2) },
-    { id: 3, direction: 'in', text: '', mediaKind: 'voice', sentAt: at(3), readAt: null },
-    { id: 4, direction: 'out', text: 'Я вернулся и закончил анализ… (5000 символов)', mediaKind: null, sentAt: at(60), readAt: null },
+    {
+      id: 1,
+      direction: 'in',
+      text: 'Здравствуйте, код 12',
+      mediaKind: null,
+      sentAt: at(0),
+      readAt: null,
+    },
+    {
+      id: 2,
+      direction: 'out',
+      text: 'Здравствуйте. Пришлите дату…',
+      mediaKind: null,
+      sentAt: at(1),
+      readAt: at(2),
+    },
+    {
+      id: 3,
+      direction: 'in',
+      text: '',
+      mediaKind: 'voice',
+      sentAt: at(3),
+      readAt: null,
+    },
+    {
+      id: 4,
+      direction: 'out',
+      text: 'Я вернулся и закончил анализ… (5000 символов)',
+      mediaKind: null,
+      sentAt: at(60),
+      readAt: null,
+    },
   ];
-  const said: SaidEntry[] = [{ kind: 'milestone', key: 'diagnostic', messageId: 4, at: at(60) }];
+  const said: SaidEntry[] = [
+    { kind: 'milestone', key: 'diagnostic', messageId: 4, at: at(60) },
+  ];
 
   it('сворачивает вехи в заглушки, медиа в подписи, режет по лимиту', () => {
-    const lines = formatHistory(history, said, { diagnostic: 'диагностика: расставание, женщинам' });
+    const lines = formatHistory(history, said, {
+      diagnostic: 'диагностика: расставание, женщинам',
+    });
     expect(lines.map((line) => `${line.role}: ${line.text}`)).toEqual([
       'client: Здравствуйте, код 12',
       'practitioner: Здравствуйте. Пришлите дату…',
@@ -57,8 +102,16 @@ describe('разбор анализа', () => {
       \`\`\``,
       42,
     );
-    expect(analysis.card.name).toEqual({ value: 'Анна', confidence: 1, sourceMessageId: 42 });
-    expect(analysis.card.gender).toEqual({ value: 'f', confidence: 0.9, sourceMessageId: 42 });
+    expect(analysis.card.name).toEqual({
+      value: 'Анна',
+      confidence: 1,
+      sourceMessageId: 42,
+    });
+    expect(analysis.card.gender).toEqual({
+      value: 'f',
+      confidence: 0.9,
+      sourceMessageId: 42,
+    });
     expect(analysis.card.category?.confidence).toBe(0.6);
     expect(analysis.card.birthDate?.value).toBe('04.01.1999');
     expect(analysis.language).toBe('ru');
@@ -74,14 +127,29 @@ describe('разбор анализа', () => {
     expect(analysis.interest).toBe(3);
     expect(analysis.mood).toBe('sad');
     expect(analysis.answerPoints).toEqual([
-      { id: 'p1', text: 'спросила, где живу', kind: 'question', topic: 'practitioner', skip: false },
-      { id: 'p2', text: 'рассказала о разводе', kind: 'other', topic: 'other', skip: false },
+      {
+        id: 'p1',
+        text: 'спросила, где живу',
+        kind: 'question',
+        topic: 'practitioner',
+        skip: false,
+      },
+      {
+        id: 'p2',
+        text: 'рассказала о разводе',
+        kind: 'other',
+        topic: 'other',
+        skip: false,
+      },
       { id: 'p3', text: 'ок', kind: 'other', topic: 'other', skip: true },
     ]);
   });
 
   it('значения вне закрытых списков отбрасываются, а не угадываются', () => {
-    const analysis = parseAnalysis('{"language": "de", "objection": "слишком дорого", "summary": ""}', null);
+    const analysis = parseAnalysis(
+      '{"language": "de", "objection": "слишком дорого", "summary": ""}',
+      null,
+    );
     expect(analysis.language).toBe('other');
     expect(analysis.objection).toBeNull();
     expect(analysis.summary).toBe('');
@@ -112,7 +180,11 @@ const emptyAnalysis: Analysis = {
 
 describe('память', () => {
   it('карточка: увереннее побеждает, пороги пола и категории', () => {
-    const current = readCard({ gender: { value: 'f', confidence: 0.9 }, category: { value: 'money.work', confidence: 0.5 }, name: { value: '' } });
+    const current = readCard({
+      gender: { value: 'f', confidence: 0.9 },
+      category: { value: 'money.work', confidence: 0.5 },
+      name: { value: '' },
+    });
     expect(current.name).toBeUndefined();
     const merged = mergeCard(current, {
       gender: { value: 'm', confidence: 0.5 },
@@ -129,8 +201,18 @@ describe('память', () => {
     const memory: Memory = {
       card: {},
       facts: [
-        { kind: 'situation', text: 'В отношениях', confidence: 1, sourceMessageId: 1 },
-        { kind: 'situation', text: 'Есть дочь 5 лет', confidence: 1, sourceMessageId: 1 },
+        {
+          kind: 'situation',
+          text: 'В отношениях',
+          confidence: 1,
+          sourceMessageId: 1,
+        },
+        {
+          kind: 'situation',
+          text: 'Есть дочь 5 лет',
+          confidence: 1,
+          sourceMessageId: 1,
+        },
       ],
       summary: 'старое',
       said: [],
@@ -138,8 +220,18 @@ describe('память', () => {
     const analysis: Analysis = {
       card: {},
       facts: [
-        { kind: 'situation', text: 'есть дочь 5 лет', confidence: 1, sourceMessageId: 2 },
-        { kind: 'situation', text: 'Расстались месяц назад', confidence: 0.9, sourceMessageId: 2 },
+        {
+          kind: 'situation',
+          text: 'есть дочь 5 лет',
+          confidence: 1,
+          sourceMessageId: 2,
+        },
+        {
+          kind: 'situation',
+          text: 'Расстались месяц назад',
+          confidence: 0.9,
+          sourceMessageId: 2,
+        },
       ],
       supersedes: ['в отношениях'],
       summary: 'новое',
@@ -152,20 +244,42 @@ describe('память', () => {
       answerPoints: [],
     };
     const { memory: next, factsUpdate } = applyAnalysis(memory, analysis);
-    expect(next.facts.map((fact) => fact.text)).toEqual(['Расстались месяц назад', 'Есть дочь 5 лет']);
-    expect(factsUpdate.added.map((fact) => fact.text)).toEqual(['Расстались месяц назад']);
+    expect(next.facts.map((fact) => fact.text)).toEqual([
+      'Расстались месяц назад',
+      'Есть дочь 5 лет',
+    ]);
+    expect(factsUpdate.added.map((fact) => fact.text)).toEqual([
+      'Расстались месяц назад',
+    ]);
     expect(factsUpdate.superseded).toEqual(['В отношениях']);
     expect(next.summary).toBe('новое');
   });
 
   it('язык «липкий»: короткая реплика не переключает, настоящий текст — переключает', () => {
-    const ru: Memory = { card: { language: { value: 'ru', confidence: 1 } }, facts: [], summary: '', said: [] };
-    const en = (text: string) => applyAnalysis(ru, { ...emptyAnalysis, language: 'en' }, text).memory.card.language?.value;
+    const ru: Memory = {
+      card: { language: { value: 'ru', confidence: 1 } },
+      facts: [],
+      summary: '',
+      said: [],
+    };
+    const en = (text: string) =>
+      applyAnalysis(ru, { ...emptyAnalysis, language: 'en' }, text).memory.card
+        .language?.value;
     expect(en('ok 👍')).toBe('ru');
     expect(en('Hello, I would like to know more about your work')).toBe('en');
-    expect(applyAnalysis(ru, { ...emptyAnalysis, language: null }, 'длинный текст без определённого языка').memory.card.language?.value).toBe('ru');
+    expect(
+      applyAnalysis(
+        ru,
+        { ...emptyAnalysis, language: null },
+        'длинный текст без определённого языка',
+      ).memory.card.language?.value,
+    ).toBe('ru');
     const fresh: Memory = { card: {}, facts: [], summary: 'старое', said: [] };
-    const first = applyAnalysis(fresh, { ...emptyAnalysis, language: 'en' }, 'Hi').memory;
+    const first = applyAnalysis(
+      fresh,
+      { ...emptyAnalysis, language: 'en' },
+      'Hi',
+    ).memory;
     expect(first.card.language?.value).toBe('en');
     expect(first.summary).toBe('старое');
     expect(letterCount('ok 👍 12!')).toBe(2);

@@ -1,1 +1,1 @@
-export type { SxStyles } from './styles'
+export type { SxStyles } from './styles';

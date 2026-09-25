@@ -1,4 +1,4 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const sectionCardStyles = {
   fullHeight: {
@@ -6,13 +6,14 @@ export const sectionCardStyles = {
   },
   header: {
     alignItems: 'flex-start',
-    mb: 1.5,
+    mb: 2,
   },
   heading: {
     flexGrow: 1,
     minWidth: 0,
   },
-  title: {
-    fontWeight: 700,
+  subtitle: {
+    color: 'text.secondary',
+    mt: 0.25,
   },
-} satisfies SxStyles
+} satisfies SxStyles;

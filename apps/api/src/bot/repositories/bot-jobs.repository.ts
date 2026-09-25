@@ -5,6 +5,13 @@ import { execute, hydrate } from '../../database/sql.js';
 import type { JobKind } from '../core/types.js';
 import { BotJobEntity } from '../entities/bot-job.entity.js';
 
+/** Новое задание чата. */
+export interface NewJob {
+  kind: JobKind;
+  runAt: Date;
+  payload?: Record<string, unknown>;
+}
+
 /**
  * Отложенные ходы: ступени лестницы молчания и повторы после сбоя.
  * Поллер забирает созревшие через `FOR UPDATE SKIP LOCKED` — два
@@ -18,12 +25,14 @@ export class BotJobsRepository {
     private readonly jobs: Repository<BotJobEntity>,
   ) {}
 
-  async createMany(chatId: string, jobs: readonly { kind: JobKind; runAt: Date; payload?: Record<string, unknown> }[]): Promise<void> {
-    if (jobs.length === 0) return;
-    // save, а не insert: тип insert не принимает jsonb с unknown внутри.
-    await this.jobs.save(
-      this.jobs.create(jobs.map((job) => ({ chatId, kind: job.kind, runAt: job.runAt, status: 'pending' as const, payload: job.payload ?? {} }))),
-    );
+  /** Задания одного чата — одним INSERT. */
+  createMany(chatId: string, jobs: readonly NewJob[]): Promise<void> {
+    return this.insert(jobs.map((job) => ({ ...job, chatId })));
+  }
+
+  /** Одно и то же задание нескольким чатам — одним INSERT. */
+  createForChats(chatIds: readonly string[], job: NewJob): Promise<void> {
+    return this.insert(chatIds.map((chatId) => ({ ...job, chatId })));
   }
 
   /**
@@ -46,7 +55,9 @@ export class BotJobsRepository {
        RETURNING *`,
       [now, limit],
     );
-    return rows.map((row) => hydrate(this.jobs, row as Record<string, unknown>));
+    return rows.map((row) =>
+      hydrate(this.jobs, row as Record<string, unknown>),
+    );
   }
 
   /**
@@ -55,21 +66,47 @@ export class BotJobsRepository {
    * одновременно. Если ступень та же и на то же время — ничего не меняется.
    * Повторы после сбоя (`payload.retry`) не трогаются: у них свой счёт попыток.
    */
-  async replaceLadder(chatId: string, kinds: readonly JobKind[], step: { kind: JobKind; runAt: Date; payload: Record<string, unknown> } | null): Promise<void> {
+  async replaceLadder(
+    chatId: string,
+    kinds: readonly JobKind[],
+    step: {
+      kind: JobKind;
+      runAt: Date;
+      payload: Record<string, unknown>;
+    } | null,
+  ): Promise<void> {
     await this.jobs.manager.transaction(async (manager) => {
-      await execute(manager, `SELECT pg_advisory_xact_lock(hashtext($1::text))`, [chatId]);
-      const { rows } = await execute<{ id: string; kind: string; run_at: Date }>(
+      await execute(
+        manager,
+        `SELECT pg_advisory_xact_lock(hashtext($1::text))`,
+        [chatId],
+      );
+      const { rows } = await execute<{
+        id: string;
+        kind: string;
+        run_at: Date;
+      }>(
         manager,
         `SELECT id, kind, run_at FROM bot_jobs
          WHERE chat_id = $1::uuid AND status = 'pending' AND kind = ANY($2::varchar[]) AND NOT (payload ? 'retry')`,
         [chatId, kinds],
       );
       const current = rows[0];
-      if (step && rows.length === 1 && current && current.kind === step.kind && new Date(current.run_at).getTime() === step.runAt.getTime()) {
+      if (
+        step &&
+        rows.length === 1 &&
+        current &&
+        current.kind === step.kind &&
+        new Date(current.run_at).getTime() === step.runAt.getTime()
+      ) {
         return;
       }
       if (rows.length > 0) {
-        await execute(manager, `UPDATE bot_jobs SET status = 'cancelled', updated_at = now() WHERE id = ANY($1::uuid[])`, [rows.map((row) => row.id)]);
+        await execute(
+          manager,
+          `UPDATE bot_jobs SET status = 'cancelled', updated_at = now() WHERE id = ANY($1::uuid[])`,
+          [rows.map((row) => row.id)],
+        );
       }
       if (step) {
         await execute(
@@ -104,16 +141,21 @@ export class BotJobsRepository {
   }
 
   async cancel(jobId: string): Promise<void> {
-    await execute(this.jobs.manager, `UPDATE bot_jobs SET status = 'cancelled', updated_at = now() WHERE id = $1::uuid AND status IN ('pending', 'running')`, [
-      jobId,
-    ]);
+    await execute(
+      this.jobs.manager,
+      `UPDATE bot_jobs SET status = 'cancelled', updated_at = now() WHERE id = $1::uuid AND status IN ('pending', 'running')`,
+      [jobId],
+    );
   }
 
   /** Виды заданий чата, которые созреют не позже `until`. */
   async dueKinds(chatId: string, until: Date): Promise<JobKind[]> {
     const rows = await this.jobs
       .createQueryBuilder('job')
-      .where('job.chat_id = :chatId AND job.status = :status AND job.run_at <= :until', { chatId, status: 'pending', until })
+      .where(
+        'job.chat_id = :chatId AND job.status = :status AND job.run_at <= :until',
+        { chatId, status: 'pending', until },
+      )
       .orderBy('job.run_at', 'ASC')
       .getMany();
     return rows.map((row) => row.kind as JobKind);
@@ -121,7 +163,10 @@ export class BotJobsRepository {
 
   /** Ожидающие задания чата по времени срабатывания. */
   pending(chatId: string): Promise<BotJobEntity[]> {
-    return this.jobs.find({ where: { chatId, status: 'pending' }, order: { runAt: 'ASC' } });
+    return this.jobs.find({
+      where: { chatId, status: 'pending' },
+      order: { runAt: 'ASC' },
+    });
   }
 
   /** Задания чата: ожидающие по времени срабатывания, затем последние отработанные. */
@@ -130,7 +175,10 @@ export class BotJobsRepository {
       this.pending(chatId),
       this.jobs
         .createQueryBuilder('job')
-        .where('job.chat_id = :chatId AND job.status <> :status', { chatId, status: 'pending' })
+        .where('job.chat_id = :chatId AND job.status <> :status', {
+          chatId,
+          status: 'pending',
+        })
         .orderBy('job.updated_at', 'DESC')
         .take(recent)
         .getMany(),
@@ -138,7 +186,10 @@ export class BotJobsRepository {
     return [...pending, ...finished];
   }
 
-  async cancelPending(chatId: string, kinds?: readonly JobKind[]): Promise<number> {
+  async cancelPending(
+    chatId: string,
+    kinds?: readonly JobKind[],
+  ): Promise<number> {
     const { affected } = await execute(
       this.jobs.manager,
       `UPDATE bot_jobs SET status = 'cancelled', updated_at = now()
@@ -149,7 +200,11 @@ export class BotJobsRepository {
   }
 
   async markDone(jobId: string): Promise<void> {
-    await execute(this.jobs.manager, `UPDATE bot_jobs SET status = 'done', updated_at = now() WHERE id = $1::uuid`, [jobId]);
+    await execute(
+      this.jobs.manager,
+      `UPDATE bot_jobs SET status = 'done', updated_at = now() WHERE id = $1::uuid`,
+      [jobId],
+    );
   }
 
   async markFailed(jobId: string, error: string): Promise<void> {
@@ -157,6 +212,25 @@ export class BotJobsRepository {
       this.jobs.manager,
       `UPDATE bot_jobs SET status = 'failed', attempts = attempts + 1, last_error = $2::text, updated_at = now() WHERE id = $1::uuid`,
       [jobId, error],
+    );
+  }
+
+  private async insert(
+    jobs: readonly (NewJob & { chatId: string })[],
+  ): Promise<void> {
+    if (jobs.length === 0) return;
+    await execute(
+      this.jobs.manager,
+      `INSERT INTO bot_jobs (chat_id, kind, run_at, status, payload)
+       SELECT j.chat_id, j.kind, j.run_at, 'pending', j.payload
+       FROM unnest($1::uuid[], $2::varchar[], $3::timestamptz[], $4::jsonb[])
+         AS j(chat_id, kind, run_at, payload)`,
+      [
+        jobs.map((job) => job.chatId),
+        jobs.map((job) => job.kind),
+        jobs.map((job) => job.runAt),
+        jobs.map((job) => JSON.stringify(job.payload ?? {})),
+      ],
     );
   }
 }

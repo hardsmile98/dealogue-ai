@@ -22,7 +22,9 @@ export class BotSettingsController {
 
   /** Список «у менеджера»: ждущие ответа сверху, дольше всех ждущие первыми. */
   @Get('handoffs')
-  handoffs(@Account() account: TelegramAccountEntity): Promise<HandoffChatDto[]> {
+  handoffs(
+    @Account() account: TelegramAccountEntity,
+  ): Promise<HandoffChatDto[]> {
     return this.states.handoffs(account);
   }
 

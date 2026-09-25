@@ -1,3 +1,4 @@
+import { TELEGRAM_ACCOUNT_TAG } from '@/shared/api';
 import type {
   SendCodeRequest,
   SendCodeResponse,
@@ -5,11 +6,19 @@ import type {
   SignInResponse,
   SubmitPasswordRequest,
   SubmitPasswordResponse,
-} from '@/shared/api'
-import { TELEGRAM_ACCOUNT_TAG } from '@/shared/api'
-import { accountsApi } from '@/entities/telegram-account'
+  TelegramAccountDto,
+} from '@/shared/api';
+import { ACCOUNTS_LIST_TAG, accountsApi } from '@/entities/telegram-account';
 
-const LIST_TAG = { type: TELEGRAM_ACCOUNT_TAG, id: 'LIST' } as const
+/**
+ * Подключили аккаунт — устарел список, а при переподключении и карточка
+ * самого аккаунта: иначе страница аккаунта ещё полминуты показывала бы
+ * «Отключён».
+ */
+function connectedTags(account: TelegramAccountDto | null | undefined) {
+  if (!account) return [];
+  return [ACCOUNTS_LIST_TAG, { type: TELEGRAM_ACCOUNT_TAG, id: account.id }];
+}
 
 /**
  * Трёхшаговый вход в Telegram-аккаунт (MTProto): номер → код → облачный
@@ -32,18 +41,25 @@ export const connectApi = accountsApi.injectEndpoints({
         method: 'POST',
         body: { attemptId, code },
       }),
-      invalidatesTags: (result) => (result?.status === 'connected' ? [LIST_TAG] : []),
+      invalidatesTags: (result) => connectedTags(result?.account),
     }),
 
-    submitPassword: build.mutation<SubmitPasswordResponse, SubmitPasswordRequest>({
+    submitPassword: build.mutation<
+      SubmitPasswordResponse,
+      SubmitPasswordRequest
+    >({
       query: ({ attemptId, password }) => ({
         url: '/telegram/accounts/password',
         method: 'POST',
         body: { attemptId, password },
       }),
-      invalidatesTags: [LIST_TAG],
+      invalidatesTags: (result) => connectedTags(result?.account),
     }),
   }),
-})
+});
 
-export const { useSendCodeMutation, useSignInMutation, useSubmitPasswordMutation } = connectApi
+export const {
+  useSendCodeMutation,
+  useSignInMutation,
+  useSubmitPasswordMutation,
+} = connectApi;

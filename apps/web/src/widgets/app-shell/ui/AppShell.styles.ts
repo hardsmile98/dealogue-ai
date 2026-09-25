@@ -1,8 +1,28 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
-export const SIDEBAR_WIDTH = 256
+export const SIDEBAR_WIDTH = 256;
 
 export const appShellStyles = {
+  root: {
+    display: 'flex',
+    minHeight: '100dvh',
+    bgcolor: 'background.default',
+  },
+  // Ссылка для клавиатуры: видна только в фокусе, ведёт мимо меню к странице.
+  skipLink: {
+    position: 'absolute',
+    left: 8,
+    top: -48,
+    zIndex: 'tooltip',
+    px: 2,
+    py: 1,
+    borderRadius: '8px',
+    bgcolor: 'primary.main',
+    color: 'primary.contrastText',
+    fontWeight: 600,
+    textDecoration: 'none',
+    '&:focus': { top: 8 },
+  },
   mobileDrawer: {
     display: { xs: 'block', md: 'none' },
   },
@@ -10,25 +30,6 @@ export const appShellStyles = {
     display: { xs: 'none', md: 'block' },
     width: SIDEBAR_WIDTH,
     flexShrink: 0,
-  },
-  mobileBrand: {
-    alignItems: 'center',
-    ml: 1,
-  },
-  mobileBrandMark: {
-    width: 28,
-    height: 28,
-  },
-  navLabel: {
-    fontWeight: 500,
-  },
-  pageLoader: {
-    borderRadius: 1,
-  },
-  root: {
-    display: 'flex',
-    minHeight: '100dvh',
-    bgcolor: 'background.default',
   },
   drawerPaper: {
     width: SIDEBAR_WIDTH,
@@ -66,18 +67,20 @@ export const appShellStyles = {
     textTransform: 'uppercase',
     color: 'text.secondary',
   },
+  // Фон выбранного пункта даёт тема MUI; здесь — только цвет текста и иконки.
   navItem: {
-    borderRadius: 2,
+    borderRadius: '8px',
     mb: 0.5,
     '&.Mui-selected': {
-      bgcolor: 'rgba(79, 70, 229, 0.08)',
       color: 'primary.main',
       '& .MuiListItemIcon-root': { color: 'primary.main' },
-      '&:hover': { bgcolor: 'rgba(79, 70, 229, 0.12)' },
     },
   },
   navIcon: {
     minWidth: 36,
+  },
+  navLabel: {
+    fontWeight: 500,
   },
   user: {
     alignItems: 'center',
@@ -114,12 +117,28 @@ export const appShellStyles = {
     borderBottom: '1px solid',
     borderColor: 'divider',
   },
+  mobileBrand: {
+    alignItems: 'center',
+    ml: 1,
+  },
+  mobileBrandMark: {
+    width: 28,
+    height: 28,
+  },
+  // Колонка на всю оставшуюся высоту: страницы с панелями (чаты, песочница)
+  // растягиваются по ней, а не считают высоту экрана через calc.
   content: {
     flexGrow: 1,
+    display: 'flex',
+    flexDirection: 'column',
     width: '100%',
     maxWidth: 1280,
     mx: 'auto',
     px: { xs: 2, sm: 3, lg: 4 },
     py: { xs: 2.5, md: 4 },
+    '&:focus': { outline: 'none' },
   },
-} satisfies SxStyles
+  pageLoader: {
+    borderRadius: '999px',
+  },
+} satisfies SxStyles;

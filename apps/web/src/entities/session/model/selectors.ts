@@ -1,16 +1,16 @@
-import type { WithSessionState } from './types'
+import type { WithSessionState } from './types';
 
-export const selectSession = (state: WithSessionState) => state.session.current
+export const selectSession = (state: WithSessionState) => state.session.current;
 
 export const selectCurrentUser = (state: WithSessionState) =>
-  state.session.current?.user ?? null
+  state.session.current?.user ?? null;
 
 export const selectAccessToken = (state: WithSessionState) =>
-  state.session.current?.accessToken ?? null
+  state.session.current?.accessToken ?? null;
 
 export const selectIsAuthenticated = (state: WithSessionState) =>
-  state.session.current !== null
+  state.session.current !== null;
 
 /** Сессию оборвал истёкший токен — есть что объяснить на странице входа. */
 export const selectSessionExpired = (state: WithSessionState) =>
-  state.session.expired
+  state.session.expired;

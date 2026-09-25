@@ -1,44 +1,49 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import type { FindOptionsWhere } from 'typeorm';
 import type { TelegramAccountEntity } from '../../telegram/entities/telegram-account.entity.js';
 import { toExampleDto } from '../bot.types.js';
 import type { ExampleDto } from '../bot.types.js';
-import type { CreateExampleDto, ListExamplesQueryDto, UpdateExampleDto } from '../dto/examples.dto.js';
-import { BotExampleEntity } from '../entities/bot-example.entity.js';
+import type {
+  CreateExampleDto,
+  ListExamplesQueryDto,
+  UpdateExampleDto,
+} from '../dto/examples.dto.js';
+import type { BotExampleEntity } from '../entities/bot-example.entity.js';
+import { BotExamplesRepository } from '../repositories/bot-examples.repository.js';
 
 /** Примеры реальных диалогов для промпта ответчика. */
 @Injectable()
 export class BotExamplesService {
-  constructor(
-    @InjectRepository(BotExampleEntity)
-    private readonly examples: Repository<BotExampleEntity>,
-  ) {}
+  constructor(private readonly examples: BotExamplesRepository) {}
 
-  async list(account: TelegramAccountEntity, query: ListExamplesQueryDto): Promise<ExampleDto[]> {
-    const where: FindOptionsWhere<BotExampleEntity> = { accountId: account.id };
-    if (query.stage) where.stage = query.stage;
-    const rows = await this.examples.find({ where, order: { stage: 'ASC', sort: 'ASC', createdAt: 'ASC' } });
+  async list(
+    account: TelegramAccountEntity,
+    query: ListExamplesQueryDto,
+  ): Promise<ExampleDto[]> {
+    const rows = await this.examples.list(account.id, query.stage);
     return rows.map(toExampleDto);
   }
 
-  async create(account: TelegramAccountEntity, dto: CreateExampleDto): Promise<ExampleDto> {
-    const row = await this.examples.save(
-      this.examples.create({
-        accountId: account.id,
-        stage: dto.stage,
-        situation: dto.situation,
-        client: dto.client,
-        practitioner: dto.practitioner,
-        enabled: dto.enabled ?? true,
-        sort: dto.sort ?? 0,
-      }),
-    );
+  async create(
+    account: TelegramAccountEntity,
+    dto: CreateExampleDto,
+  ): Promise<ExampleDto> {
+    const row = await this.examples.create({
+      accountId: account.id,
+      stage: dto.stage,
+      situation: dto.situation,
+      client: dto.client,
+      practitioner: dto.practitioner,
+      enabled: dto.enabled ?? true,
+      sort: dto.sort ?? 0,
+    });
     return toExampleDto(row);
   }
 
-  async update(account: TelegramAccountEntity, exampleId: string, dto: UpdateExampleDto): Promise<ExampleDto> {
+  async update(
+    account: TelegramAccountEntity,
+    exampleId: string,
+    dto: UpdateExampleDto,
+  ): Promise<ExampleDto> {
     const row = await this.require(account, exampleId);
     if (dto.stage !== undefined) row.stage = dto.stage;
     if (dto.situation !== undefined) row.situation = dto.situation;
@@ -50,13 +55,19 @@ export class BotExamplesService {
     return toExampleDto(row);
   }
 
-  async remove(account: TelegramAccountEntity, exampleId: string): Promise<void> {
+  async remove(
+    account: TelegramAccountEntity,
+    exampleId: string,
+  ): Promise<void> {
     const row = await this.require(account, exampleId);
-    await this.examples.delete({ id: row.id });
+    await this.examples.delete(row.id);
   }
 
-  private async require(account: TelegramAccountEntity, exampleId: string): Promise<BotExampleEntity> {
-    const row = await this.examples.findOne({ where: { id: exampleId, accountId: account.id } });
+  private async require(
+    account: TelegramAccountEntity,
+    exampleId: string,
+  ): Promise<BotExampleEntity> {
+    const row = await this.examples.findOwned(account.id, exampleId);
     if (!row) throw new NotFoundException('Пример не найден');
     return row;
   }

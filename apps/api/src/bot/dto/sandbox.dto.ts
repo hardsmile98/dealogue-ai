@@ -1,4 +1,15 @@
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Trim } from '../../common/decorators/trim.decorator.js';
 
 const MESSAGE_MAX = 4000;
@@ -13,7 +24,10 @@ export class CreateSandboxDto {
 
 /** Сообщения за клиента: одна отправка — одно или несколько сообщений подряд. */
 export class SandboxMessagesDto {
-  @MaxLength(MESSAGE_MAX, { each: true, message: `Сообщение длиннее ${MESSAGE_MAX} символов` })
+  @MaxLength(MESSAGE_MAX, {
+    each: true,
+    message: `Сообщение длиннее ${MESSAGE_MAX} символов`,
+  })
   @IsNotEmpty({ each: true, message: 'Пустое сообщение' })
   @IsString({ each: true })
   @ArrayMaxSize(20, { message: 'Не больше 20 сообщений за раз' })

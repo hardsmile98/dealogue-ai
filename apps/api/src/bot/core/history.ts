@@ -39,22 +39,33 @@ export function formatHistory(
     }
   }
   return history.slice(-limit).map((message) => {
-    const milestone = message.direction === 'out' ? milestoneByMessage.get(message.id) : undefined;
+    const milestone =
+      message.direction === 'out'
+        ? milestoneByMessage.get(message.id)
+        : undefined;
     let text: string;
     if (milestone) {
       text = `[отправлена ${milestoneTitles[milestone] ?? milestone}]`;
     } else if (message.mediaKind) {
-      text = MEDIA_LABELS[message.mediaKind] ?? MEDIA_LABELS.other ?? '[вложение]';
-      if (message.text && !message.text.startsWith('[')) text += ` ${message.text}`;
+      text =
+        MEDIA_LABELS[message.mediaKind] ?? MEDIA_LABELS.other ?? '[вложение]';
+      if (message.text && !message.text.startsWith('['))
+        text += ` ${message.text}`;
     } else {
       text = message.text;
     }
-    return { role: message.direction === 'in' ? 'client' : 'practitioner', text, sentAt: message.sentAt };
+    return {
+      role: message.direction === 'in' ? 'client' : 'practitioner',
+      text,
+      sentAt: message.sentAt,
+    };
   });
 }
 
 /** Последнее наше сообщение или null. */
-export function lastOutgoing(history: readonly HistoryMessage[]): HistoryMessage | null {
+export function lastOutgoing(
+  history: readonly HistoryMessage[],
+): HistoryMessage | null {
   for (let i = history.length - 1; i >= 0; i--) {
     const message = history[i] as HistoryMessage;
     if (message.direction === 'out') return message;
@@ -63,7 +74,9 @@ export function lastOutgoing(history: readonly HistoryMessage[]): HistoryMessage
 }
 
 /** Последнее сообщение клиента или null. */
-export function lastIncoming(history: readonly HistoryMessage[]): HistoryMessage | null {
+export function lastIncoming(
+  history: readonly HistoryMessage[],
+): HistoryMessage | null {
   for (let i = history.length - 1; i >= 0; i--) {
     const message = history[i] as HistoryMessage;
     if (message.direction === 'in') return message;
@@ -79,13 +92,22 @@ export function lastIncoming(history: readonly HistoryMessage[]): HistoryMessage
  * чата, скопированного в песочницу. Веха старше окна истории — считаются
  * все ответы в окне (для порогов плана этого достаточно).
  */
-export function repliesSince(history: readonly HistoryMessage[], messageId: number | null): number {
+export function repliesSince(
+  history: readonly HistoryMessage[],
+  messageId: number | null,
+): number {
   let index = 0;
   if (messageId !== null) {
-    const found = history.findIndex((message) => message.direction === 'out' && message.id === messageId);
+    const found = history.findIndex(
+      (message) => message.direction === 'out' && message.id === messageId,
+    );
     if (found >= 0) {
       index = found + 1;
-      while (index < history.length && (history[index] as HistoryMessage).direction === 'out') index += 1;
+      while (
+        index < history.length &&
+        (history[index] as HistoryMessage).direction === 'out'
+      )
+        index += 1;
     }
   }
   let count = 0;
@@ -103,29 +125,52 @@ export function repliesSince(history: readonly HistoryMessage[], messageId: numb
  * последнего обработанного. По ним поллер понимает, что вместо ступени
  * нужен ответ клиенту, а повтор после сбоя — на что отвечать.
  */
-export function unansweredIncoming(history: readonly HistoryMessage[], lastHandledMessageId: number): IncomingMessage[] {
+export function unansweredIncoming(
+  history: readonly HistoryMessage[],
+  lastHandledMessageId: number,
+): IncomingMessage[] {
   return history
-    .filter((message) => message.direction === 'in' && message.id > lastHandledMessageId)
-    .map((message) => ({ id: message.id, text: message.text, mediaKind: message.mediaKind, sentAt: message.sentAt }));
+    .filter(
+      (message) =>
+        message.direction === 'in' && message.id > lastHandledMessageId,
+    )
+    .map((message) => ({
+      id: message.id,
+      text: message.text,
+      mediaKind: message.mediaKind,
+      sentAt: message.sentAt,
+    }));
 }
 
 /** Прочитал ли клиент сообщение с таким id (по `readAt`). */
-export function isRead(history: readonly HistoryMessage[], messageId: number | null): boolean {
+export function isRead(
+  history: readonly HistoryMessage[],
+  messageId: number | null,
+): boolean {
   if (messageId === null) return false;
-  const message = history.find((item) => item.direction === 'out' && item.id === messageId);
+  const message = history.find(
+    (item) => item.direction === 'out' && item.id === messageId,
+  );
   return message?.readAt !== null && message?.readAt !== undefined;
 }
 
 /** Сообщение, которым доставлена веха, — из реестра сказанного. */
-export function milestoneMessageId(said: readonly SaidEntry[], milestone: string): number | null {
+export function milestoneMessageId(
+  said: readonly SaidEntry[],
+  milestone: string,
+): number | null {
   for (let i = said.length - 1; i >= 0; i--) {
     const entry = said[i] as SaidEntry;
-    if (entry.kind === 'milestone' && entry.key === milestone) return entry.messageId;
+    if (entry.kind === 'milestone' && entry.key === milestone)
+      return entry.messageId;
   }
   return null;
 }
 
-export function milestoneAt(said: readonly SaidEntry[], milestone: string): Date | null {
+export function milestoneAt(
+  said: readonly SaidEntry[],
+  milestone: string,
+): Date | null {
   for (let i = said.length - 1; i >= 0; i--) {
     const entry = said[i] as SaidEntry;
     if (entry.kind === 'milestone' && entry.key === milestone) return entry.at;

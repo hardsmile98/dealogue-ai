@@ -1,4 +1,4 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const notFoundPageStyles = {
   root: {
@@ -16,4 +16,4 @@ export const notFoundPageStyles = {
     fontWeight: 700,
     color: 'text.secondary',
   },
-} satisfies SxStyles
+} satisfies SxStyles;

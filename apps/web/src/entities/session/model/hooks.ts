@@ -1,15 +1,15 @@
-import { useSelector } from 'react-redux'
+import { useSelector } from 'react-redux';
 import {
   selectCurrentUser,
   selectIsAuthenticated,
   selectSession,
   selectSessionExpired,
-} from './selectors'
+} from './selectors';
 
-export const useSession = () => useSelector(selectSession)
+export const useSession = () => useSelector(selectSession);
 
-export const useCurrentUser = () => useSelector(selectCurrentUser)
+export const useCurrentUser = () => useSelector(selectCurrentUser);
 
-export const useIsAuthenticated = () => useSelector(selectIsAuthenticated)
+export const useIsAuthenticated = () => useSelector(selectIsAuthenticated);
 
-export const useSessionExpired = () => useSelector(selectSessionExpired)
+export const useSessionExpired = () => useSelector(selectSessionExpired);

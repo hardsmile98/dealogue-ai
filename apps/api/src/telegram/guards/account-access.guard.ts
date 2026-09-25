@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import type { RequestWithUser } from '../../auth/auth.types.js';
 import type { TelegramAccountEntity } from '../entities/telegram-account.entity.js';
@@ -27,13 +31,17 @@ export class AccountAccessGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestWithAccount>();
     if (!request.user) {
-      throw new InternalServerErrorException('AccountAccessGuard использован без JwtAuthGuard');
+      throw new InternalServerErrorException(
+        'AccountAccessGuard использован без JwtAuthGuard',
+      );
     }
     const params = (request.params ?? {}) as Record<string, string | undefined>;
     const { account, chat } = await this.accounts.requireAccess(
       request.user.id,
       requireUuid(params.id, 'id'),
-      params.chatId === undefined ? undefined : requireUuid(params.chatId, 'chatId'),
+      params.chatId === undefined
+        ? undefined
+        : requireUuid(params.chatId, 'chatId'),
     );
     request.account = account;
     if (chat) request.chat = chat;
@@ -44,7 +52,9 @@ export class AccountAccessGuard implements CanActivate {
 /** Сообщение то же, что у ParseUUIDPipe, — контракт для веба не меняется. */
 function requireUuid(value: string | undefined, name: string): string {
   if (!value || !UUID.test(value)) {
-    throw new BadRequestException(`Validation failed (uuid is expected for ${name})`);
+    throw new BadRequestException(
+      `Validation failed (uuid is expected for ${name})`,
+    );
   }
   return value;
 }

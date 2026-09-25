@@ -1,40 +1,41 @@
-import type { SxStyles } from '@/shared/types'
+import type { SxStyles } from '@/shared/types';
 
 export const accountPageStyles = {
+  // Колонка на всю высоту контента: вкладки с панелями (чаты, песочница)
+  // растягиваются до низа экрана.
+  root: {
+    flex: '1 1 auto',
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 0,
+  },
   backLink: {
     display: 'inline-flex',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     gap: 0.5,
     fontSize: 13,
     fontWeight: 500,
     color: 'text.secondary',
     textDecoration: 'none',
+    borderRadius: '4px',
     mb: 1.5,
     '&:hover': { color: 'primary.main' },
+    '&:focus-visible': {
+      outline: '2px solid',
+      outlineColor: 'primary.main',
+      outlineOffset: '2px',
+    },
     '& svg': { fontSize: 16 },
-  },
-  titleRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 1.5,
-    flexWrap: 'wrap',
-  },
-  meta: {
-    color: 'text.secondary',
-    mt: 0.5,
   },
   statusAlert: {
     mb: 3,
-    borderRadius: 2,
   },
   tabs: {
     mb: 3,
     borderBottom: '1px solid',
     borderColor: 'divider',
-    '& .MuiTab-root': {
-      minHeight: 44,
-      fontWeight: 600,
-    },
+    flexShrink: 0,
   },
   tabLabel: {
     display: 'inline-flex',
@@ -48,4 +49,8 @@ export const accountPageStyles = {
   headerSkeletonText: {
     flexGrow: 1,
   },
-} satisfies SxStyles
+  dangerItem: {
+    color: 'error.main',
+    '& .MuiListItemIcon-root': { color: 'inherit' },
+  },
+} satisfies SxStyles;

@@ -1,43 +1,49 @@
-import { BOT_SETTINGS_TAG } from '@/shared/api'
+import { BOT_LIBRARY_TAG, BOT_SETTINGS_TAG } from '@/shared/api';
 import type {
   BotSettingsDto,
   LibraryImportMode,
   LibraryImportResultDto,
   UpdateBotSettingsBody,
-} from '@/shared/api'
-import { botApi } from '@/entities/bot'
+} from '@/shared/api';
+import { botApi } from '@/entities/bot';
+
+type AccountArgs = { accountId: string };
+
+const settingsTag = (_result: unknown, _error: unknown, arg: AccountArgs) => [
+  { type: BOT_SETTINGS_TAG, id: arg.accountId },
+];
 
 /** Правки настроек агента на аккаунте; каждая инвалидирует настройки целиком. */
 export const botSettingsApi = botApi.injectEndpoints({
   endpoints: (build) => ({
     updateBotSettings: build.mutation<
       BotSettingsDto,
-      { accountId: string; body: UpdateBotSettingsBody }
+      AccountArgs & { body: UpdateBotSettingsBody }
     >({
       query: ({ accountId, body }) => ({
         url: `/telegram/accounts/${accountId}/bot`,
         method: 'PUT',
         body,
       }),
-      invalidatesTags: (_result, _error, { accountId }) => [
-        { type: BOT_SETTINGS_TAG, id: accountId },
-      ],
+      invalidatesTags: settingsTag,
     }),
 
-    setBotEnabled: build.mutation<BotSettingsDto, { accountId: string; enabled: boolean }>({
+    setBotEnabled: build.mutation<
+      BotSettingsDto,
+      AccountArgs & { enabled: boolean }
+    >({
       query: ({ accountId, enabled }) => ({
         url: `/telegram/accounts/${accountId}/bot/enabled`,
         method: 'PUT',
         body: { enabled },
       }),
-      invalidatesTags: (_result, _error, { accountId }) => [
-        { type: BOT_SETTINGS_TAG, id: accountId },
-      ],
+      invalidatesTags: settingsTag,
     }),
 
+    /** Импорт меняет и счётчики в настройках, и сам список библиотеки. */
     importLibrary: build.mutation<
       LibraryImportResultDto,
-      { accountId: string; mode: LibraryImportMode }
+      AccountArgs & { mode: LibraryImportMode }
     >({
       query: ({ accountId, mode }) => ({
         url: `/telegram/accounts/${accountId}/bot/library/import`,
@@ -46,10 +52,14 @@ export const botSettingsApi = botApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { accountId }) => [
         { type: BOT_SETTINGS_TAG, id: accountId },
+        { type: BOT_LIBRARY_TAG, id: accountId },
       ],
     }),
   }),
-})
+});
 
-export const { useUpdateBotSettingsMutation, useSetBotEnabledMutation, useImportLibraryMutation } =
-  botSettingsApi
+export const {
+  useUpdateBotSettingsMutation,
+  useSetBotEnabledMutation,
+  useImportLibraryMutation,
+} = botSettingsApi;

@@ -74,7 +74,9 @@ export function peerFieldsOf(user: Api.User): PeerFields {
 }
 
 /** Вид вложения по медиа сообщения; null — текст без вложений. */
-export function mediaKindOf(media: Api.TypeMessageMedia | undefined): MediaKind | null {
+export function mediaKindOf(
+  media: Api.TypeMessageMedia | undefined,
+): MediaKind | null {
   if (!media) return null;
   switch (media.className) {
     case 'MessageMediaPhoto':
@@ -86,12 +88,17 @@ export function mediaKindOf(media: Api.TypeMessageMedia | undefined): MediaKind 
           ? (document as Api.Document).attributes
           : [];
       for (const attribute of attributes) {
-        if (attribute.className === 'DocumentAttributeSticker') return 'sticker';
+        if (attribute.className === 'DocumentAttributeSticker')
+          return 'sticker';
         if (attribute.className === 'DocumentAttributeAudio') {
-          return (attribute as Api.DocumentAttributeAudio).voice ? 'voice' : 'audio';
+          return (attribute as Api.DocumentAttributeAudio).voice
+            ? 'voice'
+            : 'audio';
         }
         if (attribute.className === 'DocumentAttributeVideo') {
-          return (attribute as Api.DocumentAttributeVideo).roundMessage ? 'video_note' : 'video';
+          return (attribute as Api.DocumentAttributeVideo).roundMessage
+            ? 'video_note'
+            : 'video';
         }
       }
       return 'document';
@@ -153,7 +160,9 @@ export function messageSentAt(message: Api.Message): Date {
 }
 
 /** Только обычные сообщения: сервисные («создал чат», «звонок») отбрасываем. */
-export function onlyMessages(items: Iterable<Api.TypeMessage | undefined>): Api.Message[] {
+export function onlyMessages(
+  items: Iterable<Api.TypeMessage | undefined>,
+): Api.Message[] {
   const result: Api.Message[] = [];
   for (const item of items) {
     if (item && item.className === 'Message') result.push(item as Api.Message);
