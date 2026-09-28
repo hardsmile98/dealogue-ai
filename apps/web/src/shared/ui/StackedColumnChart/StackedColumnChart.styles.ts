@@ -42,10 +42,41 @@ export const stackedColumnChartStyles = {
     boxShadow: (theme: Theme) =>
       `0 8px 24px ${alpha(theme.palette.text.primary, 0.12)}`,
   },
+  tooltipPinned: {
+    pointerEvents: 'auto',
+    userSelect: 'text',
+    cursor: 'auto',
+    '&:focus': { outline: 'none' },
+  },
+  tooltipHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 1,
+    mb: 0.75,
+  },
   tooltipTitle: {
     fontSize: 12,
     color: 'text.secondary',
-    mb: 0.75,
+  },
+  // Кнопка крупнее строки заголовка: отрицательные поля не дают подсказке
+  // подпрыгнуть при закреплении, а иконка встаёт по правому краю цифр.
+  tooltipCopy: {
+    my: '-5px',
+    mr: '-5px',
+  },
+  tooltipHint: {
+    // Нулевая ширина: подпись переносится по ширине строк, а не растягивает
+    // подсказку под себя.
+    width: 0,
+    minWidth: '100%',
+    mt: 1,
+    pt: 1,
+    borderTop: '1px solid',
+    borderColor: 'divider',
+    fontSize: 12,
+    lineHeight: 1.4,
+    color: 'text.secondary',
   },
   tooltipTotal: {
     fontSize: 14,

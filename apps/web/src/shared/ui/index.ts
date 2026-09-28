@@ -2,6 +2,7 @@ export { BrandMark } from './BrandMark/BrandMark';
 export { ChatBubble } from './ChatBubble/ChatBubble';
 export { ReadReceipt } from './ChatBubble/ReadReceipt';
 export { ConfirmAction } from './ConfirmAction/ConfirmAction';
+export { CopyButton } from './CopyButton/CopyButton';
 export { EmptyState } from './EmptyState/EmptyState';
 export { FormDialog } from './FormDialog/FormDialog';
 export { NotificationsProvider } from './Notifications/NotificationsProvider';
