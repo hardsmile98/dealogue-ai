@@ -28,11 +28,16 @@ export const stackedColumnChartStyles = {
     color: 'text.secondary',
     fontSize: 14,
   },
-  tooltip: {
-    position: 'absolute',
-    top: 8,
-    zIndex: 2,
+  // Слой Popper: пока подсказка идёт за мышью, она прозрачна для неё,
+  // иначе перекрывала бы соседние столбцы.
+  tooltipLayer: {
+    zIndex: (theme: Theme) => theme.zIndex.tooltip,
     pointerEvents: 'none',
+  },
+  tooltipLayerPinned: {
+    pointerEvents: 'auto',
+  },
+  tooltip: {
     minWidth: 180,
     p: 1.5,
     borderRadius: 1,
@@ -43,7 +48,6 @@ export const stackedColumnChartStyles = {
       `0 8px 24px ${alpha(theme.palette.text.primary, 0.12)}`,
   },
   tooltipPinned: {
-    pointerEvents: 'auto',
     userSelect: 'text',
     cursor: 'auto',
     '&:focus': { outline: 'none' },

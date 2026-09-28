@@ -187,6 +187,7 @@ export function StackedColumnChart({
               total={layout.totals[active] ?? 0}
               anchorX={MARGIN.left + layout.band * active + layout.band / 2}
               chartWidth={width}
+              chartRef={svgRef}
               pinned={pinned}
               onClose={closeFromTooltip}
             />
