@@ -46,8 +46,6 @@ export interface Timings {
   unreadReminderHours: number;
   /** Напоминаний на чат, не больше. */
   maxReminders: number;
-  /** Сколько ходов подряд можно пропускать подталкивание. */
-  maxTurnsWithoutNudge: number;
 }
 
 export const DEFAULT_TIMINGS: Timings = {
@@ -70,7 +68,6 @@ export const DEFAULT_TIMINGS: Timings = {
   stepHours: { min: 12, max: 16 },
   unreadReminderHours: 24,
   maxReminders: 3,
-  maxTurnsWithoutNudge: 2,
 };
 
 type RangeKey = {

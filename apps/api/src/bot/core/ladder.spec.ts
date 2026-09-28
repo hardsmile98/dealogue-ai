@@ -37,18 +37,13 @@ const said = (
   messageId: number,
   minute: number,
 ): SaidEntry => ({ kind, key, messageId, at: at(minute) });
-const withBirth = {
-  birthDate: { value: '04.01.1999', confidence: 1 },
-  birthPlace: { value: 'Москва', confidence: 1 },
-};
-
 function input(stage: Stage, patch: Partial<LadderInput> = {}): LadderInput {
   return {
     chatId: 'chat-1',
     stage,
-    card: {},
     said: [],
     history: [incoming(1, 0), outgoing(2, 1, 5)],
+    lastHandledMessageId: 1,
     remindersSent: 0,
     timings: DEFAULT_TIMINGS,
     ...patch,
@@ -59,7 +54,7 @@ const within = (value: number, range: { min: number; max: number }) =>
   value >= range.min && value <= range.max;
 
 describe('лестница молчания', () => {
-  it('знакомство: напоминание о данных после прочтения просьбы, один раз', () => {
+  it('знакомство: клиент молчит — одно напоминание о данных, потом общая диагностика', () => {
     const asked = [said('nudge', 'ask_birth_data', 2, 1)];
     const step = nextLadderStep(input('intake', { said: asked }));
     expect(step?.kind).toBe('birth_data_reminder');
@@ -69,21 +64,25 @@ describe('лестница молчания', () => {
         DEFAULT_TIMINGS.birthDataReminderMin,
       ),
     ).toBe(true);
-    // Данные пришли, напоминание уже было, данных не просили — ступени нет.
+    // Напоминание прочитано, клиент молчит — общая диагностика.
+    const general = nextLadderStep(
+      input('intake', {
+        said: [...asked, said('nudge', 'birth_data_reminder', 3, 80)],
+        history: [incoming(1, 0), outgoing(2, 1, 5), outgoing(3, 80, 90)],
+      }),
+    );
+    expect(general?.kind).toBe('diagnostic');
     expect(
-      nextLadderStep(input('intake', { said: asked, card: withBirth })),
-    ).toBeNull();
-    expect(
-      nextLadderStep(
-        input('intake', {
-          said: [...asked, said('nudge', 'birth_data_reminder', 2, 1)],
-        }),
+      within(
+        minutesAfter(general!.runAt, at(90)),
+        DEFAULT_TIMINGS.diagnosticDelayMin,
       ),
-    ).toBeNull();
+    ).toBe(true);
+    // Ничего не просили — ступени нет.
     expect(nextLadderStep(input('intake'))).toBeNull();
   });
 
-  it('ссылки: диагностика по таймеру даже без прочтения; после напоминания — от напоминания', () => {
+  it('ссылки: диагностика по таймеру даже без прочтения', () => {
     const links = [said('milestone', 'links', 2, 1)];
     const unread = [incoming(1, 0), outgoing(2, 1, null)];
     const step = nextLadderStep(
@@ -96,21 +95,9 @@ describe('лестница молчания', () => {
         DEFAULT_TIMINGS.diagnosticDelayMin,
       ),
     ).toBe(true);
-    const reminded = nextLadderStep(
-      input('links', {
-        said: [...links, said('nudge', 'birth_data_reminder', 3, 80)],
-        history: [...unread, outgoing(3, 80, null)],
-      }),
-    );
-    expect(
-      within(
-        minutesAfter(reminded!.runAt, at(80)),
-        DEFAULT_TIMINGS.diagnosticDelayMin,
-      ),
-    ).toBe(true);
   });
 
-  it('диагностика: вопрос-отклик, потом предложение через 12–16 ч; при лимите — сразу веха', () => {
+  it('после диагностики — только напоминания: первое быстро, следующие через 12–16 ч; вариантов по таймеру нет', () => {
     const base = [
       said('milestone', 'links', 2, 1),
       said('milestone', 'diagnostic', 2, 1),
@@ -123,28 +110,36 @@ describe('лестница молчания', () => {
         DEFAULT_TIMINGS.returnQuestionMin,
       ),
     ).toBe(true);
-    const asked = nextLadderStep(
+    const second = nextLadderStep(
       input('diagnostic', {
         said: [...base, said('nudge', 'ask_feedback', 2, 1)],
+        remindersSent: 1,
       }),
     );
-    expect(asked?.kind).toBe('offer');
+    expect(second?.kind).toBe('return_question');
     expect(
-      within(minutesAfter(asked!.runAt, at(5)) / 60, DEFAULT_TIMINGS.stepHours),
+      within(
+        minutesAfter(second!.runAt, at(5)) / 60,
+        DEFAULT_TIMINGS.stepHours,
+      ),
     ).toBe(true);
+    // Лимит кончился — агент ждёт клиента.
     expect(
-      nextLadderStep(input('diagnostic', { said: base, remindersSent: 3 }))
-        ?.kind,
-    ).toBe('offer');
+      nextLadderStep(input('diagnostic', { said: base, remindersSent: 3 })),
+    ).toBeNull();
   });
 
-  it('предложение: вопрос, потом цены; после цен ступеней нет', () => {
+  it('после вариантов — только напоминания, цены по таймеру не уходят', () => {
     expect(nextLadderStep(input('offer'))?.kind).toBe('offer_nudge');
     expect(
       nextLadderStep(
-        input('offer', { said: [said('nudge', 'ask_offer_questions', 2, 1)] }),
+        input('offer', {
+          said: [said('nudge', 'ask_offer_questions', 2, 1)],
+          remindersSent: 2,
+        }),
       )?.kind,
-    ).toBe('prices');
+    ).toBe('offer_nudge');
+    expect(nextLadderStep(input('offer', { remindersSent: 3 }))).toBeNull();
     expect(nextLadderStep(input('prices'))).toBeNull();
   });
 
@@ -172,8 +167,31 @@ describe('лестница молчания', () => {
       ),
     ).toBeNull();
     expect(
-      nextLadderStep(input('intake', { history: [incoming(1, 0)] })),
+      nextLadderStep(
+        input('intake', { history: [incoming(1, 0)], lastHandledMessageId: 0 }),
+      ),
     ).toBeNull();
+  });
+
+  it('агент промолчал на «ок» — лестница идёт дальше, молчание считается с ответа клиента', () => {
+    const links = [said('milestone', 'links', 2, 1)];
+    const history = [incoming(1, 0), outgoing(2, 1, 5), incoming(3, 6)];
+    // Ссылки: диагностика по-прежнему по таймеру от ссылок.
+    expect(
+      nextLadderStep(
+        input('links', { said: links, history, lastHandledMessageId: 3 }),
+      )?.kind,
+    ).toBe('diagnostic');
+    // Предложение прочитано до «ок»: вопрос после него — от «ок».
+    const offer = nextLadderStep(
+      input('offer', { history, lastHandledMessageId: 3 }),
+    );
+    expect(offer?.kind).toBe('offer_nudge');
+    expect(
+      within(minutesAfter(offer!.runAt, at(6)) / 60, DEFAULT_TIMINGS.stepHours),
+    ).toBe(true);
+    // Пока «ок» не обработан — ждём ответа агента.
+    expect(nextLadderStep(input('links', { said: links, history }))).toBeNull();
   });
 
   it('пересчёт с тем же состоянием даёт то же время; разные чаты — разное', () => {

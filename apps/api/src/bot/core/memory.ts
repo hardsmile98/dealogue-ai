@@ -1,3 +1,4 @@
+import { SPHERE_CATEGORY, isSphere } from '../library/kinds.js';
 import type { Gender } from '../library/kinds.js';
 import type {
   Analysis,
@@ -29,6 +30,7 @@ export function readCard(raw: unknown): ClientCard {
     'gender',
     'birthDate',
     'birthPlace',
+    'sphere',
     'category',
     'language',
   ] as const) {
@@ -75,6 +77,24 @@ export function knownGender(card: ClientCard): Gender | null {
 export function knownCategory(card: ClientCard): string | null {
   const field = card.category;
   return field && field.confidence >= CATEGORY_CONFIDENCE ? field.value : null;
+}
+
+/** Клиент назвал, с чем пришёл: сферу («финансы», «всё сразу») или ясную подкатегорию. */
+export function requestKnown(card: ClientCard): boolean {
+  return knownCategory(card) !== null || Boolean(card.sphere?.value);
+}
+
+/**
+ * Категория для выбора диагностики: ясная подкатегория, а если её нет —
+ * основная категория названной сферы («финансы» → финансовая диагностика).
+ * null — запрос неизвестен, будет универсальная.
+ */
+export function diagnosticCategory(card: ClientCard): string | null {
+  const sphere = card.sphere?.value;
+  return (
+    knownCategory(card) ??
+    (sphere && isSphere(sphere) ? SPHERE_CATEGORY[sphere] : null)
+  );
 }
 
 export function hasBirthData(card: ClientCard): boolean {

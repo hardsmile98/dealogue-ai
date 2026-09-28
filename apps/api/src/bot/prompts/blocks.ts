@@ -1,6 +1,10 @@
 import type { HistoryLine } from '../core/history.js';
 import type { IncomingMessage, Memory } from '../core/types.js';
-import { REQUEST_CATEGORIES } from '../library/kinds.js';
+import {
+  REQUEST_CATEGORIES,
+  SPHERE_TITLES,
+  isSphere,
+} from '../library/kinds.js';
 import type { Persona } from '../library/persona.js';
 
 /** Общие куски промптов. Всё по-русски: модель отвечает на языке клиента по указанию, а инструкции — на русском. */
@@ -64,6 +68,12 @@ export function memoryBlock(memory: Memory): string {
     memory.card.birthPlace?.value,
     memory.card.birthPlace?.confidence,
   );
+  const sphere = memory.card.sphere?.value;
+  field(
+    'Сфера',
+    sphere && isSphere(sphere) ? SPHERE_TITLES[sphere] : undefined,
+    memory.card.sphere?.confidence,
+  );
   const category = REQUEST_CATEGORIES.find(
     (item) => item.key === memory.card.category?.value,
   );
@@ -105,19 +115,19 @@ export function turnBlock(messages: readonly IncomingMessage[]): string {
 /** Сколько символов тела вехи видят ответчик и проверяющий — чтобы не повторять его смысл. */
 export const BLOCK_PREVIEW_LENGTH = 400;
 
-/** Начало тела вехи для промпта: смысл понятен, целиком текст не нужен. */
-export function blockPreview(block: string): string {
+/**
+ * Кусок тела вехи для промпта: смысл понятен, целиком текст не нужен.
+ * Начало — когда текст ответчика идёт перед вехой, конец — когда после неё.
+ */
+export function blockPreview(
+  block: string,
+  part: 'start' | 'end' = 'start',
+): string {
   const text = block.replace(/\s+/g, ' ').trim();
-  return text.length > BLOCK_PREVIEW_LENGTH
+  if (text.length <= BLOCK_PREVIEW_LENGTH) return text;
+  return part === 'start'
     ? `${text.slice(0, BLOCK_PREVIEW_LENGTH)}…`
-    : text;
-}
-
-export function libraryBlock(samples: readonly LibrarySample[]): string {
-  if (samples.length === 0) return '';
-  return samples
-    .map((sample) => `— ${sample.title}:\n${sample.text}`)
-    .join('\n\n');
+    : `…${text.slice(-BLOCK_PREVIEW_LENGTH)}`;
 }
 
 export function aboutBlock(samples: readonly LibrarySample[]): string {

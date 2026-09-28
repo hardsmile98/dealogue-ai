@@ -87,6 +87,7 @@ export interface DeliverInput {
  * Доставка по плану задержек; возвращает, что реально ушло. Устаревший ход
  * останавливается между частями. Каждая ушедшая часть сразу отдаётся в
  * `onSent`, поэтому прерванную доставку можно продолжить с того же места.
+ * Без частей (агент молчит в ответ на «ок») — только пауза и «прочитано».
  */
 export async function deliver(
   input: DeliverInput,
@@ -96,7 +97,8 @@ export async function deliver(
   const { signal } = input;
   const sent: SentPart[] = [...(input.sent ?? [])];
   const first = sent.length;
-  if (first >= input.parts.length) return { sent, aborted: false };
+  if (input.parts.length > 0 && first >= input.parts.length)
+    return { sent, aborted: false };
 
   // Пауза перед первой частью ответа; при досылке с середины её уже выждали.
   if (first === 0) await clock.sleep(input.delays.initialMs, signal);

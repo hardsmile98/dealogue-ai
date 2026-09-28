@@ -2,6 +2,7 @@ import type { ClientFactKind } from '../entities/bot-client-fact.entity.js';
 import type {
   Gender,
   HandoffReason,
+  LibraryKind,
   Milestone,
   Stage,
 } from '../library/kinds.js';
@@ -42,6 +43,8 @@ export interface ClientCard {
   gender?: CardField<Gender>;
   birthDate?: CardField<string>;
   birthPlace?: CardField<string>;
+  /** Сфера, которую назвал клиент (`SPHERES`), — запрос известен, даже если подкатегория не ясна. */
+  sphere?: CardField<string>;
   category?: CardField<string>;
   language?: CardField<string>;
 }
@@ -87,6 +90,7 @@ export const INTENTS = [
   'asks_diagnostic_status',
   'shares_story',
   'ready',
+  'chooses_option',
   'doubts',
   'objects',
   'smalltalk',
@@ -118,11 +122,30 @@ export const ANSWER_TOPICS = [
 ] as const;
 export type AnswerTopic = (typeof ANSWER_TOPICS)[number];
 
+/**
+ * Что это за пункт. По виду код решает, нужен ли на него отдельный ответ
+ * или его закрывает сам шаг воронки (core/plan.ts): присланные данные,
+ * приветствие, «ок» отдельного ответа не требуют.
+ */
+export const ANSWER_KINDS = [
+  'question',
+  'request',
+  'objection',
+  'story',
+  'emotion',
+  'data',
+  'answer',
+  'greeting',
+  'ack',
+  'other',
+] as const;
+export type AnswerKind = (typeof ANSWER_KINDS)[number];
+
 export interface AnswerPoint {
   id: string;
-  /** Что именно требует ответа, словами анализатора. */
+  /** Что именно сказал или спросил клиент, словами анализатора. */
   text: string;
-  kind: 'question' | 'fact' | 'request' | 'emotion' | 'other';
+  kind: AnswerKind;
   topic: AnswerTopic;
   /** Можно оставить без ответа («ок», стикер). */
   skip: boolean;
@@ -147,11 +170,18 @@ export interface Analysis {
   answerPoints: AnswerPoint[];
 }
 
-/** Подталкивания — то, что готовит следующую веху (раздел 2.3). */
+/**
+ * Шаги воронки между вехами (раздел 2.3). У шага есть фраза из таблиц —
+ * основа, по которой ответчик пишет сообщение. `start_analysis` и
+ * `general_analysis` идут в одном ходе с вехой перед ней,
+ * `ask_want_options` — после диагностики без своего вопроса в конце.
+ */
 export const NUDGES = [
   'ask_birth_data',
   'birth_data_reminder',
-  'ask_request',
+  'start_analysis',
+  'general_analysis',
+  'ask_want_options',
   'ask_feedback',
   'ask_offer_questions',
   'unread_reminder',
@@ -162,7 +192,9 @@ export type Nudge = (typeof NUDGES)[number];
  * Виды заданий планировщика: ступени лестницы молчания (раздел 2.4),
  * `reply` — повтор ответа клиенту после сбоя (раздел 10) и `resume` —
  * досылка хода, текст которого уже собран и проверен (после перезапуска
- * API или сбоя отправки; `payload.turnId`).
+ * API или сбоя отправки; `payload.turnId`). `offer` и `prices` лестница
+ * больше не ставит (с 28.09 они уходят только по реакции клиента): виды
+ * остались ради старых заданий, план закрывает их без текста.
  */
 export const JOB_KINDS = [
   'diagnostic',
@@ -187,25 +219,38 @@ export interface PlanMilestone {
   /** id элемента библиотеки с телом вехи (диагностика выбирается по карточке). */
   itemId: string;
   title: string;
+  /** Вид элемента: у «ссылок» без страниц в образе телом уходит `wait`. */
+  kind: LibraryKind;
+  /** Текст заканчивается вопросом клиенту («Рассказать подробнее?»). */
+  asks: boolean;
 }
 
 /** План хода — собирает код, LLM пишет текст под него (раздел 3.4). */
 export interface Plan {
   handoff: { reason: HandoffReason; detail: string } | null;
+  /** Пункты, на которые нужен отдельный ответ; остальное закрывают шаг и веха. */
   answer: PlannedAnswer[];
   milestone: PlanMilestone | null;
-  nudge: Nudge | 'skip' | null;
-  /** Подход из плейбука: категория и номер (0 — первый). */
-  objection: { category: string; approach: number } | null;
+  /** Шаг воронки этого хода. */
+  nudge: Nudge | null;
+  /** Фразы шага из таблиц — основа его сообщения (варианты); пусто — шаг пишется по задаче. */
+  phrases: string[];
+  /** Текст ответчика идёт после тела вехи (вопрос после диагностики), а не перед ним. */
+  afterBlock: boolean;
+  /** Подход из плейбука: категория, номер (0 — первый) и его фраза из таблиц. */
+  objection: {
+    category: string;
+    approach: number;
+    phrase: string | null;
+  } | null;
   constraints: {
     doNotRepeat: string[];
     doNotMention: string[];
     language: string;
+    /** Сколько сообщений может написать ответчик (тело вехи не считается). */
     maxParts: number;
-    /** Закончить вопросом или приглашением. */
-    hook: boolean;
   };
-  /** Задание, из которого пришёл ход по расписанию, — чтобы закрыть его. */
+  /** План словами — для ответчика, проверяющего и журнала. */
   goal: string;
   /** Сколько напоминаний это добавляет к счётчику. */
   reminders: number;
@@ -217,17 +262,14 @@ export interface Plan {
 }
 
 export interface WriterMeta {
-  nudge: string | null;
+  /** Подходы плейбука, которые ответчик назвал использованными. */
   arguments: string[];
-  unansweredAbout: string[];
   notes: string;
 }
 
 export interface Draft {
-  /** Сообщения по порядку; при вехе — вступление к ней. */
+  /** Сообщения по порядку; тело вехи, если оно есть, код ставит после них. */
   parts: string[];
-  /** Короткое продолжение после тела вехи; без вехи идёт следом за parts. */
-  after: string[];
   meta: WriterMeta;
 }
 

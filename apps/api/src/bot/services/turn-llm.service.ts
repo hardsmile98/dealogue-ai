@@ -32,7 +32,7 @@ export interface LlmCallContext {
 }
 
 /**
- * Три обращения хода к модели — анализатор (t=0), ответчик (t=0.7),
+ * Три обращения хода к модели — анализатор (t=0), ответчик (t=0.5),
  * проверяющий (t=0), все в JSON-режиме (docs/agent-architecture.md, 3.3–3.6).
  *
  * Каждое пишет в журнал снимок промпта и ответа. Временная ошибка модели
@@ -65,22 +65,19 @@ export class TurnLlmService {
       {
         model: call.model,
         messages: buildWriterPrompt(input),
-        temperature: 0.7,
+        temperature: 0.5,
         json: true,
       },
       parseWriterOutput,
     );
   }
 
-  /** Пустой черновик без вехи — грубое нарушение без обращения к модели. */
+  /** Пустой черновик — грубое нарушение без обращения к модели: ответчика зовут, только когда есть что написать. */
   async review(
     call: LlmCallContext,
     input: ReviewerPromptInput,
   ): Promise<Review> {
-    if (
-      input.parts.length + input.after.length === 0 &&
-      !input.plan.milestone
-    ) {
+    if (input.parts.length === 0) {
       return {
         violations: [
           {

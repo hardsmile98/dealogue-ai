@@ -228,9 +228,10 @@ export class TurnDeliveryService {
       milestoneDelivered && plan.milestone
         ? plan.milestone.key
         : delivery.stage;
+    // Ничего не ушло: ход прервали или агент сознательно промолчал.
     const status: TurnResult['status'] = failure
       ? 'failed'
-      : aborted && sent.length === 0
+      : sent.length === 0
         ? 'skipped'
         : 'sent';
     const handoff: HandoffReason | null = failure
@@ -248,10 +249,7 @@ export class TurnDeliveryService {
         {
           nudged:
             milestoneDelivered ||
-            (plan.nudge !== null &&
-              plan.nudge !== 'skip' &&
-              !aborted &&
-              !delivery.fallback),
+            (plan.nudge !== null && !aborted && !delivery.fallback),
           reminders: aborted ? 0 : plan.reminders,
           lastHandledMessageId: turn.lastMessageId,
         },

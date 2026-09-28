@@ -26,10 +26,10 @@ const RANGES: { key: RangeKey; label: string; unit: string }[] = [
   { key: 'diagnosticDelayMin', label: 'Диагностика после ссылок', unit: 'мин' },
   {
     key: 'returnQuestionMin',
-    label: 'Вопрос после прочтения диагностики',
+    label: 'Первое напоминание после диагностики',
     unit: 'мин',
   },
-  { key: 'stepHours', label: 'Ступени при молчании', unit: 'ч' },
+  { key: 'stepHours', label: 'Следующие напоминания', unit: 'ч' },
 ];
 
 const NUMBERS: { key: NumberKey; label: string; unit: string }[] = [
@@ -39,11 +39,6 @@ const NUMBERS: { key: NumberKey; label: string; unit: string }[] = [
     unit: 'ч',
   },
   { key: 'maxReminders', label: 'Напоминаний на чат, не больше', unit: '' },
-  {
-    key: 'maxTurnsWithoutNudge',
-    label: 'Ходов подряд без шага воронки',
-    unit: '',
-  },
 ];
 
 /** Пустое поле — 0, отрицательные числа не принимаем. */

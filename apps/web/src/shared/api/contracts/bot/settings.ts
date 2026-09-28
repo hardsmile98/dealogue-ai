@@ -40,7 +40,6 @@ export interface Timings {
   stepHours: Range;
   unreadReminderHours: number;
   maxReminders: number;
-  maxTurnsWithoutNudge: number;
 }
 
 export interface BotSettingsDto {

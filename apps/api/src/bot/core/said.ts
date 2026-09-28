@@ -45,7 +45,7 @@ export function saidEntries(input: SaidInput): Omit<SaidEntry, 'at'>[] {
   }
   if (fallback) return entries;
 
-  if (plan.nudge && plan.nudge !== 'skip') {
+  if (plan.nudge) {
     entries.push({
       kind: 'nudge',
       key: plan.nudge,

@@ -4,12 +4,20 @@ import {
   LANGUAGES,
   OBJECTION_CATEGORIES,
   isRequestCategory,
+  isSphere,
 } from '../library/kinds.js';
 import type { Gender } from '../library/kinds.js';
 import { parseJsonObject, stringList } from './json.js';
-import { ANSWER_TOPICS, INTENTS, MOODS, RISK_FLAGS } from './types.js';
+import {
+  ANSWER_KINDS,
+  ANSWER_TOPICS,
+  INTENTS,
+  MOODS,
+  RISK_FLAGS,
+} from './types.js';
 import type {
   Analysis,
+  AnswerKind,
   AnswerPoint,
   AnswerTopic,
   CardField,
@@ -94,6 +102,9 @@ function parseCard(raw: unknown, sourceMessageId: number | null): ClientCard {
   card.gender = field(source.gender, sourceMessageId, (v) =>
     (GENDERS as readonly string[]).includes(String(v)) ? (v as Gender) : null,
   );
+  card.sphere = field(source.sphere, sourceMessageId, (v) =>
+    typeof v === 'string' && isSphere(v) ? v : null,
+  );
   card.category = field(source.category, sourceMessageId, (v) =>
     typeof v === 'string' && isRequestCategory(v) ? v : null,
   );
@@ -169,10 +180,10 @@ function parseAnswerPoints(raw: unknown): AnswerPoint[] {
     const object = item as Record<string, unknown>;
     const text = typeof object.text === 'string' ? object.text.trim() : '';
     if (!text) return;
-    const kind = ['question', 'fact', 'request', 'emotion'].includes(
+    const kind = (ANSWER_KINDS as readonly string[]).includes(
       String(object.kind),
     )
-      ? (object.kind as AnswerPoint['kind'])
+      ? (object.kind as AnswerKind)
       : 'other';
     const topic = (ANSWER_TOPICS as readonly string[]).includes(
       String(object.topic),

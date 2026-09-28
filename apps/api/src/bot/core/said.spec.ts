@@ -35,7 +35,13 @@ describe('saidEntries', () => {
       saidEntries(
         input({
           plan: {
-            milestone: { key: 'offer', itemId: 'x', title: 'Предложение' },
+            milestone: {
+              key: 'offer',
+              itemId: 'x',
+              title: 'Предложение',
+              kind: 'offer',
+              asks: false,
+            },
             nudge: 'ask_feedback',
             objection: null,
           },
@@ -46,12 +52,18 @@ describe('saidEntries', () => {
   });
 
   it('веха — по сообщению с её телом; ссылки записываются вместе с вехой links', () => {
-    const parts = [text('вступление'), block('тело'), text('после')];
+    const parts = [text('займусь анализом'), block('тело')];
     expect(
       saidEntries(
         input({
           plan: {
-            milestone: { key: 'links', itemId: 'x', title: 'Ссылки' },
+            milestone: {
+              key: 'links',
+              itemId: 'x',
+              title: 'Ссылки',
+              kind: 'links',
+              asks: false,
+            },
             nudge: null,
             objection: null,
           },
@@ -71,7 +83,13 @@ describe('saidEntries', () => {
       saidEntries(
         input({
           plan: {
-            milestone: { key: 'offer', itemId: 'x', title: 'Предложение' },
+            milestone: {
+              key: 'offer',
+              itemId: 'x',
+              title: 'Предложение',
+              kind: 'offer',
+              asks: false,
+            },
             nudge: null,
             objection: null,
           },
@@ -90,7 +108,7 @@ describe('saidEntries', () => {
           plan: {
             milestone: null,
             nudge: 'ask_offer_questions',
-            objection: { category: 'expensive', approach: 1 },
+            objection: { category: 'expensive', approach: 1, phrase: null },
           },
           writerArguments: ['expensive:1', 'x'.repeat(80)],
           parts,
@@ -104,12 +122,8 @@ describe('saidEntries', () => {
     ]);
   });
 
-  it('«пропустить» подталкивание — не подталкивание', () => {
-    expect(
-      saidEntries(
-        input({ plan: { milestone: null, nudge: 'skip', objection: null } }),
-      ),
-    ).toEqual([]);
+  it('агент промолчал — ничего не сказано', () => {
+    expect(saidEntries(input({ parts: [], sent: [] }))).toEqual([]);
   });
 
   it('запасная фраза: веха записывается, шаг воронки — нет', () => {
@@ -118,9 +132,15 @@ describe('saidEntries', () => {
       saidEntries(
         input({
           plan: {
-            milestone: { key: 'diagnostic', itemId: 'x', title: 'Диагностика' },
+            milestone: {
+              key: 'diagnostic',
+              itemId: 'x',
+              title: 'Диагностика',
+              kind: 'diagnostic',
+              asks: false,
+            },
             nudge: 'ask_feedback',
-            objection: { category: 'later', approach: 0 },
+            objection: { category: 'later', approach: 0, phrase: null },
           },
           writerArguments: ['later:0'],
           parts,

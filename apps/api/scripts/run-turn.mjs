@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../dist/app.module.js';
 import { TurnRunnerService } from '../dist/bot/services/turn-runner.service.js';
+import { BotRecoveryService } from '../dist/bot/services/bot-recovery.service.js';
 import { BotChatStateRepository } from '../dist/bot/repositories/bot-chat-state.repository.js';
 import { BotJobsRepository } from '../dist/bot/repositories/bot-jobs.repository.js';
 
@@ -18,6 +19,9 @@ const CHAT = randomUUID();
 const app = await NestFactory.createApplicationContext(AppModule, {
   logger: ['error', 'warn'],
 });
+// Без HTTP-сервера восстановление ждало бы `listen` вечно, а ходам скрипта
+// оно не нужно: его `running` принадлежат живому API.
+app.get(BotRecoveryService).ready = async () => {};
 const runner = app.get(TurnRunnerService);
 const states = app.get(BotChatStateRepository);
 const jobs = app.get(BotJobsRepository);

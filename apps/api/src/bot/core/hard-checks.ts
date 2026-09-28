@@ -4,12 +4,12 @@ import type { FinalPart } from './types.js';
 export const MESSAGE_MAX_LENGTH = 4096;
 
 export interface HardCheckInput {
-  /** Сообщения ответчика до вехи (или все, если вехи нет). */
+  /** Сообщения ответчика; тело вехи встаёт после них (или перед ними — `afterBlock`). */
   parts: readonly string[];
-  /** Продолжение после вехи. */
-  after: readonly string[];
   /** Тело вехи, если она в плане: уходит побайтно, как в библиотеке. */
   block: string | null;
+  /** Текст ответчика идёт после тела вехи (вопрос после диагностики). */
+  afterBlock?: boolean;
   /** Адреса из образа и библиотеки. */
   allowedUrls: ReadonlySet<string>;
   language: string;
@@ -39,6 +39,14 @@ const MARKUP = ['{{', '}}', '"messages"', '"after_block"'];
 /** Есть ли в тексте сумма с валютой. Ответчик не называет сумм никогда — цены уходят только телом вехи. */
 export function containsMoney(text: string): boolean {
   return MONEY_RE.test(text);
+}
+
+/** Хвост после последней буквы или цифры, в котором есть «?»: «…подробнее? 🙏🏻». */
+const QUESTION_END_RE = /\?[^\p{L}\p{N}]*$/u;
+
+/** Текст заканчивается вопросом клиенту — после него агенту не нужен свой вопрос. */
+export function endsWithQuestion(text: string): boolean {
+  return QUESTION_END_RE.test(text.trim());
 }
 
 export function extractUrls(text: string): string[] {
@@ -118,65 +126,59 @@ export function splitLong(text: string, limit = MESSAGE_MAX_LENGTH): string[] {
 
 /**
  * Жёсткие проверки кодом, последняя линия перед отправкой (раздел 3.7):
- * тело вехи только из библиотеки и на своём месте, сумм в тексте нет,
- * адреса только разрешённые, нет служебной разметки, письменность та,
- * частей не больше лимита, каждая влезает в сообщение.
+ * тело вехи только из библиотеки и на своём месте, сумм в тексте
+ * нет, адреса только разрешённые, нет служебной разметки, письменность та,
+ * сообщений не больше лимита, каждое влезает в Telegram.
  */
 export function hardChecks(input: HardCheckInput): HardCheckResult {
   const removed: HardCheckResult['removed'] = [];
-  const text = (parts: readonly string[]) =>
-    parts.flatMap((part) => textParts(part.trim(), input, removed));
-
-  const before = text(input.parts);
-  const after = text(input.after);
+  const text = input.parts
+    .map((part) => part.trim())
+    .filter((part) => checkedText(part, input, removed));
   const block: FinalPart[] = input.block
     ? splitLong(input.block).map((chunk) => ({ text: chunk, block: true }))
     : [];
-
-  // Лимит на части относится к тексту ответчика; тело вехи не считается.
-  // Одно место держим под продолжение после вехи — это вопрос-отклик, он
-  // важнее третьего сообщения вступления; остальное режется с конца.
-  const reserved = block.length > 0 && after.length > 0 ? 1 : 0;
-  const limit = (parts: FinalPart[], budget: number) =>
-    parts.filter((part, index) => {
-      if (index < budget) return true;
-      removed.push({
-        part: part.text,
-        reason: `больше ${input.maxParts} частей`,
-      });
-      return false;
-    });
-  const keptBefore = limit(before, input.maxParts - reserved);
-  const keptAfter = limit(after, input.maxParts - keptBefore.length);
-  const parts = [...keptBefore, ...block, ...keptAfter];
+  // Лимит на сообщения относится к тексту ответчика; тело вехи не считается.
+  // Лишние сообщения не выбрасываются, а дописываются в последнее: в конце
+  // обычно шаг воронки с его вопросом, терять его нельзя.
+  const limit = Math.max(1, input.maxParts);
+  const merged =
+    text.length > limit
+      ? [...text.slice(0, limit - 1), text.slice(limit - 1).join('\n\n')]
+      : text;
+  const own: FinalPart[] = merged.flatMap((part) =>
+    splitLong(part).map((chunk) => ({ text: chunk, block: false })),
+  );
+  const parts = input.afterBlock ? [...block, ...own] : [...own, ...block];
   return { parts, removed, blocked: parts.length === 0 };
 }
 
-function textParts(
+/** Часть ответчика проходит проверки; не прошедшая записывается в `removed`. */
+function checkedText(
   text: string,
   input: HardCheckInput,
   removed: HardCheckResult['removed'],
-): FinalPart[] {
-  if (!text) return [];
+): boolean {
+  if (!text) return false;
   if (MARKUP.some((token) => text.includes(token))) {
     removed.push({ part: text, reason: 'служебная разметка в тексте' });
-    return [];
+    return false;
   }
   if (containsMoney(text)) {
     removed.push({ part: text, reason: 'сумма в тексте ответчика' });
-    return [];
+    return false;
   }
   const badUrl = extractUrls(text).find((url) => !input.allowedUrls.has(url));
   if (badUrl) {
     removed.push({ part: text, reason: `адрес не из библиотеки: ${badUrl}` });
-    return [];
+    return false;
   }
   if (wrongScript(text, input.language)) {
     removed.push({
       part: text,
       reason: `не та письменность (ожидался ${input.language})`,
     });
-    return [];
+    return false;
   }
-  return splitLong(text).map((chunk) => ({ text: chunk, block: false }));
+  return true;
 }

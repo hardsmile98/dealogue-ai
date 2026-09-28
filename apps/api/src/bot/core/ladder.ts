@@ -1,18 +1,17 @@
 import type { Stage } from '../library/kinds.js';
 import type { Range, Timings } from '../library/timings.js';
-import { milestoneAt } from './history.js';
-import { hasBirthData, nudgesSaid } from './memory.js';
-import type {
-  ClientCard,
-  HistoryMessage,
-  JobKind,
-  SaidEntry,
-} from './types.js';
+import { lastOutgoing, milestoneAt } from './history.js';
+import { nudgesSaid } from './memory.js';
+import type { HistoryMessage, JobKind, SaidEntry } from './types.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-/** Задания, которые ставит лестница. `reply` (повтор ответа после сбоя) ей не принадлежит. */
+/**
+ * Задания лестницы — пересчёт заменяет все ожидающие этих видов. `offer` и
+ * `prices` она больше не ставит, но держит в списке, чтобы снять старые.
+ * `reply` (повтор ответа после сбоя) ей не принадлежит.
+ */
 export const LADDER_KINDS: readonly JobKind[] = [
   'birth_data_reminder',
   'diagnostic',
@@ -27,10 +26,11 @@ export interface LadderInput {
   /** Зерно случайного интервала: один чат и одна точка отсчёта — одно время. */
   chatId: string;
   stage: Stage;
-  card: ClientCard;
   said: readonly SaidEntry[];
   /** История по возрастанию времени, с отметками прочтения. */
   history: readonly HistoryMessage[];
+  /** Последнее сообщение клиента, которое агент уже обработал (ответил или сознательно промолчал). */
+  lastHandledMessageId: number;
   remindersSent: number;
   timings: Timings;
 }
@@ -62,39 +62,35 @@ function pick(seed: string, range: Range): number {
   );
 }
 
-function lastSaidAt(
-  said: readonly SaidEntry[],
-  kind: SaidEntry['kind'],
-  key: string,
-): Date | null {
-  for (let index = said.length - 1; index >= 0; index -= 1) {
-    const entry = said[index] as SaidEntry;
-    if (entry.kind === kind && entry.key === key) return entry.at;
-  }
-  return null;
-}
-
 /**
  * Следующая ступень лестницы молчания (docs/agent-architecture.md, 2.4) —
  * одна, из текущего состояния чата. Чистая функция: её результат заменяет
  * все ожидающие ступени после каждого хода и каждого «прочитано», поэтому
  * отмена и перепостановка — это просто пересчёт.
  *
- * - `links`: обещанная диагностика уходит по таймеру, прочитано или нет;
- *   после напоминания о данных таймер отсчитывается от напоминания.
+ * - `intake`: спросили дату, место и сферу, клиент молчит — одно
+ *   напоминание, дальше — общая диагностика.
+ * - `links`: обещанная диагностика уходит по таймеру, прочитано или нет.
+ * - После диагностики и после вариантов — только напоминания: варианты и
+ *   цены уходят по реакции клиента, а не по времени.
  * - Последнее сообщение агента не прочитано — одно напоминание через
  *   `unreadReminderHours`, дальше ступени не ставятся.
- * - Прочитано — следующая ступень этапа от момента прочтения. Напоминаний
- *   не больше `maxReminders`; вехи в лимит не входят, поэтому при лимите
- *   ступень-напоминание пропускается и сразу идёт веха.
+ * - Напоминаний любого вида не больше `maxReminders` на чат; лимит
+ *   кончился — агент ждёт клиента.
  * - Последнее сообщение клиента без ответа, этап цен, агент ещё не писал —
- *   ступеней нет.
+ *   ступеней нет. Если агент на сообщения клиента сознательно промолчал
+ *   («ок» во время ожидания), они обработаны: лестница идёт дальше, а
+ *   молчание отсчитывается от последнего сообщения клиента.
  */
 export function nextLadderStep(input: LadderInput): LadderStep | null {
   const { stage, said, history, timings } = input;
   if (stage === 'prices') return null;
-  const last = history[history.length - 1];
-  if (!last || last.direction !== 'out') return null;
+  const latest = history[history.length - 1];
+  if (!latest) return null;
+  const clientLast = latest.direction === 'in';
+  if (clientLast && latest.id > input.lastHandledMessageId) return null;
+  const last = lastOutgoing(history);
+  if (!last) return null;
 
   const step = (
     kind: JobKind,
@@ -115,25 +111,18 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
   if (stage === 'links') {
     const linksAt = milestoneAt(said, 'links');
     if (!linksAt) return null;
-    const reminderAt = lastSaidAt(said, 'nudge', 'birth_data_reminder');
-    return reminderAt && reminderAt > linksAt
-      ? step(
-          'diagnostic',
-          reminderAt,
-          timings.diagnosticDelayMin,
-          MINUTE,
-          'после напоминания о данных',
-        )
-      : step(
-          'diagnostic',
-          linksAt,
-          timings.diagnosticDelayMin,
-          MINUTE,
-          'после ссылок',
-        );
+    return step(
+      'diagnostic',
+      linksAt,
+      timings.diagnosticDelayMin,
+      MINUTE,
+      'после ссылок',
+    );
   }
 
-  if (!last.readAt) {
+  // Клиент ответил после нашего сообщения — значит, прочитал; молчание — с его ответа.
+  const readAt = clientLast ? latest.sentAt : last.readAt;
+  if (!readAt) {
     const alreadyReminded = said.some(
       (entry) =>
         entry.kind === 'nudge' &&
@@ -150,53 +139,53 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
     };
   }
 
-  const readAt = last.readAt;
   switch (stage) {
     case 'intake': {
-      const asked = nudgesSaid(said, 'ask_birth_data') > 0;
-      const reminded = nudgesSaid(said, 'birth_data_reminder') > 0;
-      if (hasBirthData(input.card) || !asked || reminded) return null;
+      if (nudgesSaid(said, 'ask_birth_data') === 0) return null;
+      if (remindersLeft && nudgesSaid(said, 'birth_data_reminder') === 0) {
+        return step(
+          'birth_data_reminder',
+          readAt,
+          timings.birthDataReminderMin,
+          MINUTE,
+          'просьба о данных прочитана, клиент молчит',
+        );
+      }
       return step(
-        'birth_data_reminder',
+        'diagnostic',
         readAt,
-        timings.birthDataReminderMin,
+        timings.diagnosticDelayMin,
         MINUTE,
-        'просьба о данных прочитана',
+        'клиент молчит и после напоминания — общая диагностика',
       );
     }
-    case 'diagnostic':
-      if (remindersLeft && nudgesSaid(said, 'ask_feedback') === 0) {
-        return step(
-          'return_question',
-          readAt,
-          timings.returnQuestionMin,
-          MINUTE,
-          'диагностика прочитана',
-        );
-      }
-      return step(
-        'offer',
-        readAt,
-        timings.stepHours,
-        HOUR,
-        'клиент молчит после диагностики',
-      );
+    case 'diagnostic': {
+      if (!remindersLeft) return null;
+      // Первое напоминание после диагностики — быстрее, следующие — через ступень.
+      return nudgesSaid(said, 'ask_feedback') === 0
+        ? step(
+            'return_question',
+            readAt,
+            timings.returnQuestionMin,
+            MINUTE,
+            'диагностика прочитана, клиент молчит',
+          )
+        : step(
+            'return_question',
+            readAt,
+            timings.stepHours,
+            HOUR,
+            'клиент молчит и после напоминания',
+          );
+    }
     case 'offer':
-      if (remindersLeft && nudgesSaid(said, 'ask_offer_questions') === 0) {
-        return step(
-          'offer_nudge',
-          readAt,
-          timings.stepHours,
-          HOUR,
-          'описание практик прочитано',
-        );
-      }
+      if (!remindersLeft) return null;
       return step(
-        'prices',
+        'offer_nudge',
         readAt,
         timings.stepHours,
         HOUR,
-        'клиент молчит после предложения',
+        'варианты прочитаны, клиент молчит',
       );
     default:
       return null;

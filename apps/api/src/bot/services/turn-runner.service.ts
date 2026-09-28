@@ -7,8 +7,9 @@ import { TelegramAccountsRepository } from '../../telegram/repositories/telegram
 import { BotConfig } from '../bot.config.js';
 import { TurnInterrupted } from '../core/channel.js';
 import type { Channel, Clock } from '../core/channel.js';
+import { clientTextForPrompt } from '../core/client-text.js';
 import { planDelays } from '../core/delivery.js';
-import { hardChecks } from '../core/hard-checks.js';
+import { hardChecks, wrongScript } from '../core/hard-checks.js';
 import {
   HISTORY_LIMIT,
   formatHistory,
@@ -19,7 +20,7 @@ import {
 import type { HistoryLine } from '../core/history.js';
 import { applyAnalysis } from '../core/memory.js';
 import type { FactsUpdate } from '../core/memory.js';
-import { buildPlan } from '../core/plan.js';
+import { buildPlan, needsWriter } from '../core/plan.js';
 import { nextRetry } from '../core/retry.js';
 import type {
   Analysis,
@@ -284,7 +285,7 @@ export class TurnRunnerService implements OnModuleDestroy {
         .filter((message) => message.direction === 'in')
         .map((message) => ({
           id: message.id,
-          text: message.text,
+          text: clientTextForPrompt(message.text),
           mediaKind: message.mediaKind,
           sentAt: message.sentAt,
         }));
@@ -467,14 +468,22 @@ export class TurnRunnerService implements OnModuleDestroy {
     context: TurnContext,
   ): Promise<TurnResult> {
     const { turnId, stage } = context;
+    // Промпты видят текст клиента без рекламной метки; в журнале — исходный.
+    const prompted: TurnRequest = {
+      ...request,
+      messages: request.messages.map((message) => ({
+        ...message,
+        text: clientTextForPrompt(message.text),
+      })),
+    };
 
     // 1. Анализ — только в ходе клиента.
-    const analyzed = await this.analyze(request, env, context);
+    const analyzed = await this.analyze(prompted, env, context);
     const memory = analyzed?.memory ?? context.memory;
 
     // 2. План.
     const plan = await this.plan(
-      request,
+      prompted,
       context,
       analyzed?.analysis ?? null,
       memory,
@@ -502,10 +511,17 @@ export class TurnRunnerService implements OnModuleDestroy {
       };
     }
 
-    // Устаревшее задание закрывается без обращения к модели.
+    // Устаревшее задание закрывается без обращения к модели; лестница не
+    // ставит его заново на то же время.
     if (plan.idle) {
       if (request.job) await this.jobs.markDone(request.job.id);
-      await this.ladder.reschedule(request.chatId, env.channel);
+      await this.ladder.reschedule(
+        request.chatId,
+        env.channel,
+        request.job
+          ? { kind: request.job.kind, now: env.clock.now() }
+          : undefined,
+      );
       await this.turns.update(turnId, {
         status: 'skipped',
         error: plan.idle,
@@ -522,7 +538,7 @@ export class TurnRunnerService implements OnModuleDestroy {
     }
 
     // 3–5. Текст, проверка, жёсткие проверки.
-    const composed = await this.compose(request, env, context, memory, plan);
+    const composed = await this.compose(prompted, env, context, memory, plan);
 
     // 6. Точка фиксации: текст собран и проверен — дальше ход только
     // доставляется. Прерванный после неё (остановка API, сбой отправки)
@@ -632,7 +648,6 @@ export class TurnRunnerService implements OnModuleDestroy {
       now,
       timings: context.timings,
       state: {
-        turnsWithoutNudge: context.state.turnsWithoutNudge,
         remindersSent: context.state.remindersSent,
         // По истории, а не по времени журнала: в песочнице часы виртуальные.
         turnsInStage: repliesSince(
@@ -650,9 +665,11 @@ export class TurnRunnerService implements OnModuleDestroy {
   }
 
   /**
-   * Текст под план и его проверка. Переписываем только по грубым нарушениям
-   * (стиль — в журнал); повторная проверка — только если первая нашла то, с
-   * чем отправлять нельзя. Потом жёсткие проверки и запасная фраза.
+   * Текст под план и его проверка. Ответчик нужен, только если есть шаг
+   * воронки или на что ответить: иначе уходит веха сама по себе, а без неё
+   * агент молчит. Переписываем только по грубым нарушениям (стиль — в
+   * журнал); повторная проверка — только если первая нашла то, с чем
+   * отправлять нельзя. Потом жёсткие проверки и запасные фразы.
    */
   private async compose(
     request: TurnRequest,
@@ -669,16 +686,25 @@ export class TurnRunnerService implements OnModuleDestroy {
         `Тело вехи ${plan.milestone.key} (${plan.milestone.itemId}) не найдено`,
       );
     }
+    const allowedUrls = library.allowedUrls();
+    if (!needsWriter(plan)) {
+      const { parts } = hardChecks({
+        parts: [],
+        block,
+        allowedUrls,
+        language,
+        maxParts: plan.constraints.maxParts,
+      });
+      await this.turns.update(turnId, {
+        final: { parts, removed: [], fallback: false, blockedByReview: false },
+      });
+      return { parts, fallback: false, writerArguments: [] };
+    }
+
     const writerInput: WriterPromptInput = {
       persona: context.persona,
       stage,
       examples: library.stageExamples(stage),
-      samples: [
-        ...library.samples(stage, language),
-        ...(plan.objection
-          ? library.objectionApproaches(plan.objection.category, language)
-          : []),
-      ],
       about: library.about(language),
       history: context.historyLines,
       memory,
@@ -686,7 +712,7 @@ export class TurnRunnerService implements OnModuleDestroy {
       messages: request.messages,
       block,
     };
-    const reviewerInput: Omit<ReviewerPromptInput, 'parts' | 'after'> = {
+    const reviewerInput: Omit<ReviewerPromptInput, 'parts'> = {
       persona: context.persona,
       about: writerInput.about,
       memory,
@@ -699,7 +725,6 @@ export class TurnRunnerService implements OnModuleDestroy {
     const review = await this.model.review(context.llm, {
       ...reviewerInput,
       parts: draft.parts,
-      after: draft.after,
     });
     let finalReview: Review | null = null;
     const rewritten = hasHardViolations(review);
@@ -712,17 +737,14 @@ export class TurnRunnerService implements OnModuleDestroy {
         finalReview = await this.model.review(context.llm, {
           ...reviewerInput,
           parts: draft.parts,
-          after: draft.after,
           final: true,
         });
       }
     }
     await this.turns.update(turnId, {
-      draft: [
-        ...draft.parts,
-        ...(plan.milestone ? ['[веха]'] : []),
-        ...draft.after,
-      ].join('\n---\n'),
+      draft: [...draft.parts, ...(plan.milestone ? ['[веха]'] : [])].join(
+        '\n---\n',
+      ),
       review: {
         violations: review.violations,
         rewritten,
@@ -732,19 +754,26 @@ export class TurnRunnerService implements OnModuleDestroy {
     this.assertFresh(env, 'после текста');
 
     const blockedByReview = finalReview !== null && isBlocking(finalReview);
-    const checked = hardChecks({
-      parts: blockedByReview ? [] : draft.parts,
-      after: blockedByReview ? [] : draft.after,
-      block,
-      allowedUrls: library.allowedUrls(),
-      language,
-      maxParts: plan.constraints.maxParts,
-    });
+    const check = (text: readonly string[]) =>
+      hardChecks({
+        parts: text,
+        block,
+        afterBlock: plan.afterBlock,
+        allowedUrls,
+        language,
+        maxParts: plan.constraints.maxParts,
+      });
+    const checked = check(blockedByReview ? [] : draft.parts);
     let parts: FinalPart[] = checked.parts;
-    // Текст ответчика не прошёл: веха (если есть) уходит сама — она полное
-    // сообщение; без вехи — запасная фраза из библиотеки.
-    const fallback = blockedByReview || !parts.some((part) => !part.block);
-    if (checked.blocked) {
+    let fallback = blockedByReview || !parts.some((part) => !part.block);
+    // Текст ответчика не прошёл: шаг воронки уходит фразой из таблиц как
+    // есть (если она на языке клиента), веха — сама, она полное сообщение;
+    // если нет ни того, ни другого — запасная фраза из библиотеки.
+    const stepPhrase = plan.phrases[0];
+    if (fallback && stepPhrase && !wrongScript(stepPhrase, language)) {
+      parts = check([stepPhrase]).parts;
+      fallback = false;
+    } else if (checked.blocked) {
       parts = [{ text: library.fallbackPhrase(language, stage), block: false }];
     }
     await this.turns.update(turnId, {

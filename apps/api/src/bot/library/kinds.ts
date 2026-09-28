@@ -176,6 +176,47 @@ export function isRequestCategory(value: string): boolean {
   return REQUEST_CATEGORY_KEYS.includes(value);
 }
 
+/**
+ * Сфера запроса — то, что клиент назвал в ответ на «в какой сфере вопрос»
+ * («финансы», «всё сразу»). Её анализатор называет уверенно, даже когда
+ * подкатегория (`category`) не ясна: названная сфера — это известный запрос.
+ */
+export const SPHERES = [
+  'relationships',
+  'money',
+  'health',
+  'family',
+  'self_realization',
+  'future',
+  'all',
+] as const;
+export type Sphere = (typeof SPHERES)[number];
+
+export const SPHERE_TITLES: Readonly<Record<Sphere, string>> = {
+  relationships: 'отношения',
+  money: 'финансы',
+  health: 'здоровье',
+  family: 'семья',
+  self_realization: 'самореализация',
+  future: 'будущее',
+  all: 'всё сразу',
+};
+
+/** Диагностика по сфере, когда подкатегория не ясна: основная категория сферы. */
+export const SPHERE_CATEGORY: Readonly<Record<Sphere, string>> = {
+  relationships: 'relationships.couple',
+  money: 'money.instability',
+  health: 'health.own',
+  family: 'family.child',
+  self_realization: UNIVERSAL_CATEGORY,
+  future: 'future.general',
+  all: UNIVERSAL_CATEGORY,
+};
+
+export function isSphere(value: string): value is Sphere {
+  return (SPHERES as readonly string[]).includes(value);
+}
+
 /** Режим чата: агент ведёт сам, чат у менеджера, агент выключен в этом чате. */
 export const CHAT_MODES = ['auto', 'manager', 'off'] as const;
 export type ChatMode = (typeof CHAT_MODES)[number];

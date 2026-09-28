@@ -1,3 +1,4 @@
+import { clientTextForPrompt } from './client-text.js';
 import type { HistoryMessage, IncomingMessage, SaidEntry } from './types.js';
 
 /** Сколько сообщений истории идёт в промпт (раздел 7). */
@@ -21,10 +22,28 @@ export interface HistoryLine {
   sentAt: Date;
 }
 
+/** Сколько символов концовки вехи видят промпты. */
+const MILESTONE_ENDING_LENGTH = 200;
+
+/** Последний абзац текста — чем веха закончилась («Рассказать подробнее?»). */
+function ending(text: string): string {
+  const paragraphs = text.trim().split(/\n\s*\n/);
+  const last = (paragraphs[paragraphs.length - 1] ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return last.length > MILESTONE_ENDING_LENGTH
+    ? `…${last.slice(-MILESTONE_ENDING_LENGTH)}`
+    : last;
+}
+
 /**
  * История для промпта: тела вех заменяются заглушкой по реестру сказанного
- * (`[отправлена диагностика: …]`), медиа — подписью. Старшие сообщения
- * сверх лимита отбрасываются — их держит резюме.
+ * с концовкой вехи (`[отправлена диагностика: … — заканчивается: «Рассказать
+ * подробнее?»]`: на что клиент отвечает своим «да»), медиа — подписью, у
+ * сообщений клиента убирается рекламная метка. Если следом идёт наше же
+ * сообщение (продолжение длинной вехи или вопрос после неё), концовку
+ * показывает оно. Старшие сообщения сверх лимита отбрасываются — их держит
+ * резюме.
  */
 export function formatHistory(
   history: readonly HistoryMessage[],
@@ -38,21 +57,30 @@ export function formatHistory(
       milestoneByMessage.set(entry.messageId, entry.key);
     }
   }
-  return history.slice(-limit).map((message) => {
+  const window = history.slice(-limit);
+  return window.map((message, index) => {
     const milestone =
       message.direction === 'out'
         ? milestoneByMessage.get(message.id)
         : undefined;
+    const own =
+      message.direction === 'in'
+        ? clientTextForPrompt(message.text)
+        : message.text;
     let text: string;
     if (milestone) {
-      text = `[отправлена ${milestoneTitles[milestone] ?? milestone}]`;
+      const title = milestoneTitles[milestone] ?? milestone;
+      const next = window[index + 1];
+      text =
+        next?.direction === 'out'
+          ? `[отправлена ${title}]`
+          : `[отправлена ${title} — заканчивается: «${ending(message.text)}»]`;
     } else if (message.mediaKind) {
       text =
         MEDIA_LABELS[message.mediaKind] ?? MEDIA_LABELS.other ?? '[вложение]';
-      if (message.text && !message.text.startsWith('['))
-        text += ` ${message.text}`;
+      if (own && !own.startsWith('[')) text += ` ${own}`;
     } else {
-      text = message.text;
+      text = own;
     }
     return {
       role: message.direction === 'in' ? 'client' : 'practitioner',
@@ -142,16 +170,23 @@ export function unansweredIncoming(
     }));
 }
 
-/** Прочитал ли клиент сообщение с таким id (по `readAt`). */
-export function isRead(
+/**
+ * Видел ли клиент наше сообщение с таким id: стоит отметка «прочитано» или
+ * он написал после него. Ответить, не прочитав, нельзя, а отметка может
+ * прийти позже ответа (в песочнице её ставят руками). Одно правило для
+ * плана и лестницы — иначе лестница ставит ступень, которую план отклонит.
+ */
+export function seenByClient(
   history: readonly HistoryMessage[],
   messageId: number | null,
 ): boolean {
   if (messageId === null) return false;
-  const message = history.find(
+  const index = history.findIndex(
     (item) => item.direction === 'out' && item.id === messageId,
   );
-  return message?.readAt !== null && message?.readAt !== undefined;
+  if (index < 0) return false;
+  if ((history[index] as HistoryMessage).readAt) return true;
+  return history.slice(index + 1).some((item) => item.direction === 'in');
 }
 
 /** Сообщение, которым доставлена веха, — из реестра сказанного. */

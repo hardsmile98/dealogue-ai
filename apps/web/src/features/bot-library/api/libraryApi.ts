@@ -10,7 +10,7 @@ const libraryTags = (_result: unknown, _error: unknown, arg: AccountArgs) => [
   { type: BOT_SETTINGS_TAG, id: arg.accountId },
 ];
 
-/** Библиотека агента: тексты вех, образцы фраз, возражения, «о себе». */
+/** Библиотека агента: тексты вех, фразы шагов воронки, возражения, «о себе». */
 export const libraryApi = botApi.injectEndpoints({
   endpoints: (build) => ({
     listLibrary: build.query<LibraryItemDto[], string>({

@@ -64,7 +64,7 @@ export const LIBRARY_KIND_LABELS: Record<LibraryKind, string> = {
   return_question: 'Вопрос после диагностики',
   offer: 'Описание услуг',
   prices: 'Цены',
-  nudge: 'Подталкивания',
+  nudge: 'Связки и вопросы воронки',
   price_deflect: 'Цена раньше времени',
   objection: 'Возражения',
   about: 'О себе и о работе',
@@ -143,6 +143,7 @@ export const CARD_LABELS: Record<string, string> = {
   gender: 'Пол',
   birthDate: 'Дата рождения',
   birthPlace: 'Место рождения',
+  sphere: 'Сфера',
   category: 'Запрос',
   language: 'Язык',
 };

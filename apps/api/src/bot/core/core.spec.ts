@@ -2,18 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { parseAnalysis } from './analysis.js';
 import {
   formatHistory,
-  isRead,
   lastIncoming,
   lastOutgoing,
   milestoneMessageId,
+  seenByClient,
 } from './history.js';
 import {
   applyAnalysis,
+  diagnosticCategory,
   knownCategory,
   knownGender,
   letterCount,
   mergeCard,
   readCard,
+  requestKnown,
 } from './memory.js';
 import type { Analysis, HistoryMessage, Memory, SaidEntry } from './types.js';
 
@@ -48,7 +50,7 @@ describe('история для промпта', () => {
     {
       id: 4,
       direction: 'out',
-      text: 'Я вернулся и закончил анализ… (5000 символов)',
+      text: 'Я вернулся и закончил анализ…\n\nРассказать подробнее, как это проработать?',
       mediaKind: null,
       sentAt: at(60),
       readAt: null,
@@ -58,24 +60,59 @@ describe('история для промпта', () => {
     { kind: 'milestone', key: 'diagnostic', messageId: 4, at: at(60) },
   ];
 
-  it('сворачивает вехи в заглушки, медиа в подписи, режет по лимиту', () => {
+  it('сворачивает вехи в заглушки с концовкой, медиа в подписи, убирает рекламную метку, режет по лимиту', () => {
     const lines = formatHistory(history, said, {
       diagnostic: 'диагностика: расставание, женщинам',
     });
     expect(lines.map((line) => `${line.role}: ${line.text}`)).toEqual([
-      'client: Здравствуйте, код 12',
+      'client: Здравствуйте',
       'practitioner: Здравствуйте. Пришлите дату…',
       'client: [голосовое]',
-      'practitioner: [отправлена диагностика: расставание, женщинам]',
+      'practitioner: [отправлена диагностика: расставание, женщинам — заканчивается: «Рассказать подробнее, как это проработать?»]',
     ]);
     expect(formatHistory(history, said, {}, 2)).toHaveLength(2);
+    // Следом наше сообщение (продолжение или вопрос) — концовку показывает оно.
+    const followed = formatHistory(
+      [
+        ...history,
+        {
+          id: 5,
+          direction: 'out',
+          text: 'Рассказать вам, как это можно проработать?',
+          mediaKind: null,
+          sentAt: at(61),
+          readAt: null,
+        },
+      ],
+      said,
+      { diagnostic: 'диагностика' },
+    );
+    expect(followed.map((line) => line.text).slice(-2)).toEqual([
+      '[отправлена диагностика]',
+      'Рассказать вам, как это можно проработать?',
+    ]);
   });
 
-  it('находит последние сообщения и прочтение', () => {
+  it('находит последние сообщения; «видел» — прочитал или написал после', () => {
     expect(lastOutgoing(history)?.id).toBe(4);
     expect(lastIncoming(history)?.id).toBe(3);
-    expect(isRead(history, 2)).toBe(true);
-    expect(isRead(history, 4)).toBe(false);
+    expect(seenByClient(history, 2)).toBe(true);
+    expect(seenByClient(history, 4)).toBe(false);
+    // Отметки о прочтении нет, но клиент ответил — значит, видел.
+    const replied = [
+      ...history,
+      {
+        id: 5,
+        direction: 'in' as const,
+        text: 'Да, расскажите',
+        mediaKind: null,
+        sentAt: at(62),
+        readAt: null,
+      },
+    ];
+    expect(seenByClient(replied, 4)).toBe(true);
+    expect(seenByClient(replied, 99)).toBe(false);
+    expect(seenByClient(replied, null)).toBe(false);
     expect(milestoneMessageId(said, 'diagnostic')).toBe(4);
     expect(milestoneMessageId(said, 'offer')).toBeNull();
   });
@@ -86,7 +123,7 @@ describe('разбор анализа', () => {
     const analysis = parseAnalysis(
       `\`\`\`json
       {
-        "card": { "name": "Анна", "gender": { "value": "f", "confidence": 0.9 }, "category": { "value": "relationships.breakup", "confidence": 0.6 },
+        "card": { "name": "Анна", "gender": { "value": "f", "confidence": 0.9 }, "category": { "value": "relationships.breakup", "confidence": 0.6 }, "sphere": { "value": "relationships", "confidence": 0.95 },
                   "birthDate": "04.01.1999", "junk": 1 },
         "facts": [ { "kind": "situation", "text": "Муж ушёл три месяца назад", "confidence": 0.95 }, { "kind": "weird", "text": "Есть дочь 5 лет" }, { "text": "" } ],
         "supersedes": ["в отношениях"],
@@ -113,6 +150,10 @@ describe('разбор анализа', () => {
       sourceMessageId: 42,
     });
     expect(analysis.card.category?.confidence).toBe(0.6);
+    expect(analysis.card.sphere?.value).toBe('relationships');
+    expect(
+      parseAnalysis('{"card": {"sphere": "career"}}', null).card.sphere,
+    ).toBeUndefined();
     expect(analysis.card.birthDate?.value).toBe('04.01.1999');
     expect(analysis.language).toBe('ru');
     expect(analysis.objection).toBe('expensive');
@@ -195,6 +236,28 @@ describe('память', () => {
     expect(knownGender(merged)).toBe('f');
     expect(knownGender({ gender: { value: 'm', confidence: 0.7 } })).toBeNull();
     expect(knownCategory(current)).toBeNull();
+  });
+
+  it('сфера: запрос известен и по одной сфере, диагностика — основная категория сферы', () => {
+    // «Финансы» одним словом: подкатегория не ясна, сфера — да.
+    const money = readCard({
+      sphere: { value: 'money', confidence: 0.95 },
+      category: { value: 'money.more', confidence: 0.4 },
+    });
+    expect(requestKnown(money)).toBe(true);
+    expect(diagnosticCategory(money)).toBe('money.instability');
+    // Ясная подкатегория важнее сферы.
+    expect(
+      diagnosticCategory({
+        ...money,
+        category: { value: 'money.work', confidence: 0.9 },
+      }),
+    ).toBe('money.work');
+    expect(diagnosticCategory(readCard({ sphere: { value: 'all' } }))).toBe(
+      'universal.general',
+    );
+    expect(requestKnown({})).toBe(false);
+    expect(diagnosticCategory({})).toBeNull();
   });
 
   it('факты: дубликаты не добавляются, противоречия помечаются', () => {

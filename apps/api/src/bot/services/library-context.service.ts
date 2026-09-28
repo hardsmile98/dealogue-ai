@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import type { MilestoneBody } from '../core/copied-chat.js';
-import { extractUrls, normalizeUrl } from '../core/hard-checks.js';
-import type { LibraryAvailability } from '../core/plan.js';
+import {
+  endsWithQuestion,
+  extractUrls,
+  normalizeUrl,
+} from '../core/hard-checks.js';
+import type { LibraryAvailability, PhraseQuery } from '../core/plan.js';
 import type { PlanMilestone } from '../core/types.js';
 import type { BotExampleEntity } from '../entities/bot-example.entity.js';
 import type { BotLibraryItemEntity } from '../entities/bot-library-item.entity.js';
@@ -13,27 +17,12 @@ import type { ExampleSample, LibrarySample } from '../prompts/blocks.js';
 import { BotExamplesRepository } from '../repositories/bot-examples.repository.js';
 import { BotLibraryRepository } from '../repositories/bot-library.repository.js';
 
-/** Какие виды библиотеки идут ответчику как образцы тона на этапе. */
-const SAMPLE_KINDS: Record<Stage, LibraryKind[]> = {
-  intake: [
-    'greeting',
-    'ask_birth_data',
-    'no_birth_data',
-    'ask_request',
-    'empathy',
-  ],
-  links: ['wait', 'price_deflect', 'empathy'],
-  diagnostic: ['return_question', 'nudge', 'price_deflect', 'empathy'],
-  offer: ['nudge', 'objection', 'empathy'],
-  prices: [],
-};
-
-/** Образцы длиннее этого в промпт не идут — это тела, а не тон. */
-const SAMPLE_MAX_LENGTH = 700;
+/** Сколько вариантов фразы шага видит ответчик. */
+const PHRASE_VARIANTS = 3;
 
 /**
- * Библиотека одного аккаунта, загруженная на ход: выбор вех, образцы для
- * промптов, разрешённые суммы и адреса для жёстких проверок.
+ * Библиотека одного аккаунта, загруженная на ход: выбор вех, фразы шагов
+ * воронки, разрешённые суммы и адреса для жёстких проверок.
  */
 export class LibraryContext implements LibraryAvailability {
   constructor(
@@ -52,7 +41,7 @@ export class LibraryContext implements LibraryAvailability {
   ): PlanMilestone | null {
     if (key === 'diagnostic') {
       const item = selectDiagnostic(this.enabled('diagnostic'), query);
-      return item ? { key, itemId: item.id, title: item.title } : null;
+      return item ? this.planMilestone(key, item) : null;
     }
     // Ссылки без страниц в образе — бессмыслица: вместо них уходит сообщение об ожидании.
     const kind: LibraryKind =
@@ -61,9 +50,11 @@ export class LibraryContext implements LibraryAvailability {
       (item) => item.language === query.language,
     );
     if (candidates.length === 0) return null;
-    // Ссылки и ожидание: при отсутствии запроса есть свой вариант («сделал общий анализ»).
+    // У ожидания без запроса свой вариант. Ссылки «без запроса» («сделал
+    // общий анализ, результаты ниже») идут только рядом с самой
+    // диагностикой, поэтому вехой «ссылки» уходит общий вариант.
     const preferredCategory =
-      key === 'links' && query.category === null ? 'no_request' : null;
+      kind === 'wait' && query.category === null ? 'no_request' : null;
     const exact = candidates.filter(
       (item) =>
         item.category === preferredCategory &&
@@ -76,8 +67,36 @@ export class LibraryContext implements LibraryAvailability {
     );
     const pool =
       exact.length > 0 ? exact : general.length > 0 ? general : candidates;
-    const item = pool[0] as BotLibraryItemEntity;
-    return { key, itemId: item.id, title: item.title };
+    return this.planMilestone(key, pool[0] as BotLibraryItemEntity);
+  }
+
+  /** Веха для плана: что за элемент и спрашивает ли его текст клиента в конце. */
+  private planMilestone(
+    key: Milestone,
+    item: BotLibraryItemEntity,
+  ): PlanMilestone {
+    return {
+      key,
+      itemId: item.id,
+      title: item.title,
+      kind: item.kind,
+      asks: endsWithQuestion(renderPersona(item.text, this.persona)),
+    };
+  }
+
+  phrases(kind: LibraryKind, query: PhraseQuery): string[] {
+    const pool = this.enabled(kind).filter(
+      (item) =>
+        item.category === query.category &&
+        (item.gender === null || item.gender === query.gender),
+    );
+    const own = pool.filter((item) => item.language === query.language);
+    // На языке клиента фразы нет — русская, ответчик переведёт.
+    const chosen =
+      own.length > 0 ? own : pool.filter((item) => item.language === 'ru');
+    return chosen
+      .slice(0, PHRASE_VARIANTS)
+      .map((item) => renderPersona(item.text, this.persona));
   }
 
   supportsLanguage(language: string): boolean {
@@ -92,24 +111,6 @@ export class LibraryContext implements LibraryAvailability {
     return item ? renderPersona(item.text, this.persona) : null;
   }
 
-  samples(stage: Stage, language: string): LibrarySample[] {
-    const kinds = SAMPLE_KINDS[stage];
-    return this.items
-      .filter(
-        (item) =>
-          item.enabled &&
-          kinds.includes(item.kind) &&
-          item.language === language &&
-          item.text.length <= SAMPLE_MAX_LENGTH,
-      )
-      .slice(0, 12)
-      .map((item) => ({
-        kind: item.kind,
-        title: item.title,
-        text: renderPersona(item.text, this.persona),
-      }));
-  }
-
   about(language: string): LibrarySample[] {
     return this.items
       .filter(
@@ -121,19 +122,6 @@ export class LibraryContext implements LibraryAvailability {
         title: item.title,
         text: renderPersona(item.text, this.persona),
       }));
-  }
-
-  /** Подходы к возражению по категории, по порядку. */
-  objectionApproaches(category: string, language: string): LibrarySample[] {
-    return this.items
-      .filter(
-        (item) =>
-          item.enabled &&
-          item.kind === 'objection' &&
-          item.category === category &&
-          item.language === language,
-      )
-      .map((item) => ({ kind: item.kind, title: item.title, text: item.text }));
   }
 
   stageExamples(stage: Stage): ExampleSample[] {

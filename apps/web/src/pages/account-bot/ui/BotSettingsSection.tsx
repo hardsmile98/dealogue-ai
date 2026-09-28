@@ -35,7 +35,7 @@ export function BotSettingsSection({ accountId }: { accountId: string }) {
             <Grid size={{ xs: 12, md: 7 }}>
               <SectionCard
                 title="Стандартная библиотека"
-                subtitle="Тексты из таблиц владельца: диагностики, описание услуг, цены, образцы фраз."
+                subtitle="Тексты из таблиц владельца: диагностики, описание услуг, цены, фразы шагов воронки."
                 fullHeight
               >
                 <LibraryImportCard settings={settings} />

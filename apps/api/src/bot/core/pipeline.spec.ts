@@ -4,6 +4,7 @@ import type { Channel, Clock } from './channel.js';
 import { deliver, planDelays } from './delivery.js';
 import {
   containsMoney,
+  endsWithQuestion,
   extractUrls,
   hardChecks,
   splitLong,
@@ -13,21 +14,17 @@ import { TurnCollector } from './turn-collector.js';
 import { WriterParseError, parseWriterOutput } from './writer-output.js';
 
 describe('разбор ответа писателя', () => {
-  it('сообщения, продолжение после вехи и мета — из JSON', () => {
+  it('сообщения и мета — из JSON, пустое и не-строки отбрасываются', () => {
     const draft = parseWriterOutput(`{
       "messages": ["Понимаю вас 🙏", "Смотрите, чистка как раз с этим работает.\\n\\nСкажите, что бы вы хотели изменить?", "  ", 5],
-      "after_block": ["Откликается?"],
-      "nudge": "ask_goal", "arguments": ["expensive:0"], "unanswered_about": ["сколько лет практикует"], "notes": "ответил"
+      "arguments": ["expensive:0"], "notes": "ответил"
     }`);
     expect(draft.parts).toEqual([
       'Понимаю вас 🙏',
       'Смотрите, чистка как раз с этим работает.\n\nСкажите, что бы вы хотели изменить?',
     ]);
-    expect(draft.after).toEqual(['Откликается?']);
     expect(draft.meta).toEqual({
-      nudge: 'ask_goal',
       arguments: ['expensive:0'],
-      unansweredAbout: ['сколько лет практикует'],
       notes: 'ответил',
     });
   });
@@ -38,8 +35,7 @@ describe('разбор ответа писателя', () => {
     ).toEqual(['Текст']);
     expect(parseWriterOutput('{}')).toEqual({
       parts: [],
-      after: [],
-      meta: { nudge: null, arguments: [], unansweredAbout: [], notes: '' },
+      meta: { arguments: [], notes: '' },
     });
     expect(() => parseWriterOutput('Просто текст')).toThrow(WriterParseError);
     expect(() => parseWriterOutput('["a"]')).toThrow(WriterParseError);
@@ -49,7 +45,6 @@ describe('разбор ответа писателя', () => {
 describe('жёсткие проверки', () => {
   const allowedUrls = new Set(['instagram.com/soul', 't.me/soul']);
   const base = {
-    after: [],
     block: null,
     allowedUrls,
     language: 'ru',
@@ -114,28 +109,45 @@ describe('жёсткие проверки', () => {
     expect(hardChecks({ ...base, parts: [] }).blocked).toBe(true);
   });
 
-  it('веха встаёт между вступлением и продолжением побайтно; без текста уходит сама', () => {
-    const block = 'Я вернулся и закончил анализ 🙏\n\nВижу, что…';
-    const framed = hardChecks({
+  it('веха встаёт после текста ответчика побайтно; без текста уходит сама', () => {
+    const block =
+      'Пока я буду смотреть, загляните на мои страницы 🙏\n\nt.me/soul';
+    const withStep = hardChecks({
       ...base,
       block,
-      parts: ['Как и обещал, вот что увидел:'],
-      after: ['Откликается?'],
+      parts: ['Понял вас) Сделаю анализ и вернусь.'],
     });
-    expect(framed.parts).toEqual([
-      { text: 'Как и обещал, вот что увидел:', block: false },
+    expect(withStep.parts).toEqual([
+      { text: 'Понял вас) Сделаю анализ и вернусь.', block: false },
       { text: block, block: true },
-      { text: 'Откликается?', block: false },
     ]);
     const alone = hardChecks({ ...base, block, parts: ['Стоит 300€'] });
     expect(alone.parts).toEqual([{ text: block, block: true }]);
     expect(alone.blocked).toBe(false);
-    // Без вехи продолжение просто идёт следом.
+    // Вопрос после диагностики — после тела вехи.
     expect(
-      hardChecks({ ...base, parts: ['раз'], after: ['два'] }).parts.map(
-        (part) => part.text,
-      ),
-    ).toEqual(['раз', 'два']);
+      hardChecks({
+        ...base,
+        block: 'Диагностика…',
+        afterBlock: true,
+        parts: ['Рассказать, как это можно проработать?'],
+      }).parts.map((part) => part.text),
+    ).toEqual(['Диагностика…', 'Рассказать, как это можно проработать?']);
+  });
+
+  it('текст заканчивается вопросом — по хвосту после последней буквы', () => {
+    for (const text of [
+      'Рассказать подробнее?',
+      'Рассказать вам подробнее? 🙏🏻',
+      'Какое направление больше нравится? Или подходят все?\n',
+    ])
+      expect(endsWithQuestion(text), text).toBe(true);
+    for (const text of [
+      'решение за вами, но рекомендую не затягивать.',
+      'Чтобы следующие 7 лет прошли успешно 🧡',
+      'Что делать? Работать с блоками.',
+    ])
+      expect(endsWithQuestion(text), text).toBe(false);
   });
 
   it('письменность: только явный промах на длинном тексте, адреса не считаются', () => {
@@ -166,39 +178,22 @@ describe('жёсткие проверки', () => {
     ).toBe(false);
   });
 
-  it('лимит частей: место под вопрос после вехи сохраняется', () => {
+  it('лимит сообщений: лишние дописываются в последнее, шаг воронки в конце не теряется', () => {
     const result = hardChecks({
       ...base,
-      parts: ['раз', 'два', 'три', 'четыре'],
+      maxParts: 2,
+      block: 'веха',
+      parts: ['Отвечаю на вопрос.', 'Ещё фраза.', 'Пришлите дату рождения?'],
     });
-    expect(result.parts).toHaveLength(3);
-    expect(result.removed[0]?.reason).toContain('больше 3 частей');
-    const block = 'веха';
-    const framed = hardChecks({
-      ...base,
-      block,
-      parts: ['раз', 'два', 'три'],
-      after: ['откликается?', 'лишнее'],
-    });
-    expect(framed.parts.map((part) => part.text)).toEqual([
-      'раз',
-      'два',
-      'веха',
-      'откликается?',
+    expect(result.parts).toEqual([
+      { text: 'Отвечаю на вопрос.', block: false },
+      { text: 'Ещё фраза.\n\nПришлите дату рождения?', block: false },
+      { text: 'веха', block: true },
     ]);
-    expect(framed.removed.map((item) => item.part)).toEqual(['три', 'лишнее']);
-    const short = hardChecks({
-      ...base,
-      block,
-      parts: ['раз'],
-      after: ['после', 'ещё'],
-    });
-    expect(short.parts.map((part) => part.text)).toEqual([
-      'раз',
-      'веха',
-      'после',
-      'ещё',
-    ]);
+    expect(result.removed).toEqual([]);
+    expect(
+      hardChecks({ ...base, maxParts: 1, parts: ['раз', 'два'] }).parts,
+    ).toEqual([{ text: 'раз\n\nдва', block: false }]);
   });
 
   it('длинная веха режется по абзацам под лимит Telegram', () => {
@@ -358,6 +353,39 @@ describe('задержки доставки', () => {
       'send один',
       'sleep 5',
     ]);
+  });
+
+  it('доставка без частей (агент молчит): только пауза и «прочитано»', async () => {
+    const log: string[] = [];
+    const clock: Clock = {
+      now: () => new Date(0),
+      sleep: async (ms) => {
+        log.push(`sleep ${ms}`);
+      },
+    };
+    const channel: Channel = {
+      send: async () => {
+        throw new Error('отправлять нечего');
+      },
+      setTyping: async () => undefined,
+      markRead: async () => {
+        log.push('read');
+      },
+      history: async () => [],
+    };
+    const result = await deliver(
+      {
+        chatId: 'c',
+        parts: [],
+        delays: { initialMs: 100, parts: [] },
+        markRead: true,
+        isStale: () => false,
+      },
+      channel,
+      clock,
+    );
+    expect(result).toEqual({ sent: [], aborted: false });
+    expect(log).toEqual(['sleep 100', 'read']);
   });
 });
 

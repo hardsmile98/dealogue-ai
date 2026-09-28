@@ -96,7 +96,6 @@ export class TimingsDto {
   @ValidateNested() @Type(RANGE) @IsOptional() stepHours?: RangeDto;
   @Min(0) @IsInt() @IsOptional() unreadReminderHours?: number;
   @Min(0) @IsInt() @IsOptional() maxReminders?: number;
-  @Min(0) @IsInt() @IsOptional() maxTurnsWithoutNudge?: number;
 }
 
 export class UpdateBotSettingsDto {
