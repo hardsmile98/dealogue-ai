@@ -16,22 +16,35 @@ interface CodesTableProps {
   model: StatsSeriesModel;
 }
 
-/** Разбивка по кодам за период: доля от всех новых диалогов. */
+/**
+ * Разбивка по кодам за период: доля от всех новых диалогов. Коды,
+ * свёрнутые на графике в «Остальные», и здесь идут одной строкой.
+ */
 export function CodesTable({ stats, model }: CodesTableProps) {
   const total = stats.totals.total;
-  const max = Math.max(
-    stats.totals.withoutCode,
-    ...stats.codes.map((c) => c.count),
-    1,
-  );
+  const other = new Set(model.otherCodes);
+  const shownCodes = stats.codes.filter((entry) => !other.has(entry.code));
+  const otherCount = stats.codes
+    .filter((entry) => other.has(entry.code))
+    .reduce((sum, entry) => sum + entry.count, 0);
 
   const rows = [
-    ...stats.codes.map((entry) => ({
+    ...shownCodes.map((entry) => ({
       key: entry.code,
       label: `Код ${entry.code}`,
       count: entry.count,
-      color: model.colorByKey[entry.code] ?? model.colorByKey[OTHER_CODES_KEY],
+      color: model.colorByKey[entry.code],
     })),
+    ...(other.size > 0
+      ? [
+          {
+            key: OTHER_CODES_KEY,
+            label: 'Остальные коды',
+            count: otherCount,
+            color: model.colorByKey[OTHER_CODES_KEY],
+          },
+        ]
+      : []),
     {
       key: NO_CODE_KEY,
       label: 'Без кода',
@@ -39,6 +52,7 @@ export function CodesTable({ stats, model }: CodesTableProps) {
       color: model.colorByKey[NO_CODE_KEY],
     },
   ];
+  const max = Math.max(...rows.map((row) => row.count), 1);
 
   if (total === 0) {
     return (

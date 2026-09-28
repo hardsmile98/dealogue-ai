@@ -7,7 +7,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { QueryBoundary, SectionCard, StackedColumnChart } from '@/shared/ui';
 import { useGetAccountStatsQuery } from '@/entities/telegram-account';
 import type { AccountStats } from '@/entities/telegram-account';
-import { buildStatsSeries } from '../lib/buildSeries';
+import { buildStatsSeries, otherCodesNote } from '../lib/buildSeries';
 import { useStatsPeriod } from '../model/useStatsPeriod';
 import { accountStatsStyles as styles } from './AccountStats.styles';
 import { CodesTable } from './CodesTable';
@@ -84,8 +84,7 @@ function StatsContent({ stats }: { stats: AccountStats }) {
             в нём по шаблонам «#1», «# 1», «Код 6», «код - 6», «код: 6» —
             регистр и знаки препинания не важны. Если совпадения нет, диалог
             попадает в «Без кода».
-            {model.otherCodes.length > 0 &&
-              ` В «Другие коды» свёрнуты: ${model.otherCodes.map((code) => `код ${code}`).join(', ')}.`}
+            {model.otherCodes.length > 0 && ` ${otherCodesNote(model)}`}
           </span>
         </Box>
       </SectionCard>
