@@ -107,7 +107,9 @@ export function describeGoal(plan: Plan, context: GoalContext): string {
     );
   }
   if (context.firstReply) {
-    lines.push('Это первый ответ клиенту: начни с приветствия.');
+    lines.push(
+      'Это первый ответ клиенту: начни с приветствия — просто поздоровайся («Здравствуйте!») и сразу переходи к делу, без любезностей («рад, что написали», «рад, что вы заглянули», «спасибо за обращение»).',
+    );
   }
   if (plan.milestone && plan.afterBlock) {
     lines.push(

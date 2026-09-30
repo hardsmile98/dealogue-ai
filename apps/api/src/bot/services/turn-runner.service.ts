@@ -842,6 +842,7 @@ export class TurnRunnerService implements OnModuleDestroy {
       draft = await this.model.write(context.llm, {
         ...writerInput,
         reviewNotes: reviewNotes(review),
+        previousDraft: draft.parts,
       });
       if (isBlocking(review)) {
         finalReview = await this.model.review(context.llm, {

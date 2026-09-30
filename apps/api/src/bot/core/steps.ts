@@ -84,7 +84,7 @@ export const STEPS: Record<Nudge, StepSpec> = {
   },
   start_analysis: {
     kind: 'wait',
-    task: 'скажи, что понял и займёшься анализом, а потом вернёшься с результатами',
+    task: 'скажи, что займёшься анализом и вернёшься с результатами',
     title: 'обещание сделать анализ',
     statement: true,
   },
