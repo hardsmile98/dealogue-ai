@@ -49,9 +49,9 @@ export interface Timings {
 }
 
 export const DEFAULT_TIMINGS: Timings = {
-  quietWindowSec: { min: 25, max: 45 },
+  quietWindowSec: { min: 120, max: 180 },
   typingExtendSec: 15,
-  quietMaxSec: 180,
+  quietMaxSec: 480,
   newLeadReplySec: { min: 60, max: 240 },
   inChatReplySec: { min: 10, max: 40 },
   inChatWindowMin: 5,

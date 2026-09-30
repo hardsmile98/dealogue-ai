@@ -38,6 +38,7 @@ import { CreateBotSandbox1700000000018 } from './migrations/1700000000018-Create
 import { BotForeignKeyIndexes1700000000019 } from './migrations/1700000000019-BotForeignKeyIndexes.js';
 import { BotResumableTurns1700000000020 } from './migrations/1700000000020-BotResumableTurns.js';
 import { BotSandboxClientName1700000000021 } from './migrations/1700000000021-BotSandboxClientName.js';
+import { BotLongerQuietWindow1700000000022 } from './migrations/1700000000022-BotLongerQuietWindow.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -159,6 +160,7 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       BotForeignKeyIndexes1700000000019,
       BotResumableTurns1700000000020,
       BotSandboxClientName1700000000021,
+      BotLongerQuietWindow1700000000022,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

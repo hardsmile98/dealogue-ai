@@ -22,6 +22,7 @@ type NumberKey = Exclude<keyof Timings, RangeKey>;
 
 /** Какие тайминги показываем: остальные редкие и живут со значениями по умолчанию. */
 const RANGES: { key: RangeKey; label: string; unit: string }[] = [
+  { key: 'quietWindowSec', label: 'Ждать, пока клиент допишет', unit: 'с' },
   { key: 'newLeadReplySec', label: 'Первый ответ новому лиду', unit: 'с' },
   { key: 'diagnosticDelayMin', label: 'Диагностика после ссылок', unit: 'мин' },
   {
