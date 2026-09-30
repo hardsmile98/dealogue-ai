@@ -5,6 +5,7 @@ import type {
   HandoffReason,
   LibraryKind,
   ObjectionCategory,
+  Sphere,
   Stage,
 } from '@/shared/api';
 
@@ -54,7 +55,7 @@ export const HANDOFF_REASON_LABELS: Record<HandoffReason, string> = {
 
 export const LIBRARY_KIND_LABELS: Record<LibraryKind, string> = {
   greeting: 'Приветствие',
-  ask_birth_data: 'Просьба о дате и месте',
+  ask_birth_data: 'Просьба о дате рождения',
   no_birth_data: 'Нет данных рождения',
   ask_request: 'Вопрос о запросе',
   empathy: 'Эмпатия',
@@ -80,6 +81,16 @@ export const OBJECTION_LABELS: Record<ObjectionCategory, string> = {
   later: 'Потом',
 };
 
+export const SPHERE_LABELS: Record<Sphere, string> = {
+  relationships: 'Отношения',
+  money: 'Финансы',
+  health: 'Здоровье',
+  family: 'Семья',
+  self_realization: 'Самореализация',
+  future: 'Будущее',
+  all: 'Всё сразу',
+};
+
 /** Для кого текст библиотеки: пол клиента. */
 export const CLIENT_GENDER_LABELS: Record<Gender, string> = {
   f: 'женщинам',
@@ -89,7 +100,7 @@ export const CLIENT_GENDER_LABELS: Record<Gender, string> = {
 /** Задания планировщика. */
 export const JOB_KIND_LABELS: Record<string, string> = {
   diagnostic: 'Отправить диагностику',
-  birth_data_reminder: 'Напомнить о дате рождения',
+  birth_data_reminder: 'Напомнить о вопросе знакомства',
   return_question: 'Вопрос после диагностики',
   offer: 'Отправить предложение',
   offer_nudge: 'Вопрос после предложения',
@@ -142,10 +153,16 @@ export const CARD_LABELS: Record<string, string> = {
   name: 'Имя',
   gender: 'Пол',
   birthDate: 'Дата рождения',
+  birthDateDeclined: 'Даты рождения не будет',
   birthPlace: 'Место рождения',
   sphere: 'Сфера',
   category: 'Запрос',
   language: 'Язык',
+};
+
+/** Значения полей карточки из закрытых списков; незнакомое — как есть. */
+export const CARD_VALUE_LABELS: Record<string, Record<string, string>> = {
+  birthDateDeclined: { unknown: 'не знает', refused: 'не хочет называть' },
 };
 
 /** Подпись вида задания; незнакомый код — как есть. */

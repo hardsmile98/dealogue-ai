@@ -1,5 +1,9 @@
 import type { HistoryLine } from '../core/history.js';
-import type { IncomingMessage, Memory } from '../core/types.js';
+import type {
+  BirthDateDecline,
+  IncomingMessage,
+  Memory,
+} from '../core/types.js';
 import {
   REQUEST_CATEGORIES,
   SPHERE_TITLES,
@@ -8,6 +12,11 @@ import {
 import type { Persona } from '../library/persona.js';
 
 /** Общие куски промптов. Всё по-русски: модель отвечает на языке клиента по указанию, а инструкции — на русском. */
+
+const BIRTH_DATE_DECLINE_TITLES: Record<BirthDateDecline, string> = {
+  unknown: 'клиент её не знает',
+  refused: 'клиент не хочет её называть',
+};
 
 export interface LibrarySample {
   kind: string;
@@ -60,8 +69,12 @@ export function memoryBlock(memory: Memory): string {
   );
   field(
     'Дата рождения',
-    memory.card.birthDate?.value,
-    memory.card.birthDate?.confidence,
+    memory.card.birthDate?.value ??
+      (memory.card.birthDateDeclined
+        ? BIRTH_DATE_DECLINE_TITLES[memory.card.birthDateDeclined.value]
+        : undefined),
+    memory.card.birthDate?.confidence ??
+      memory.card.birthDateDeclined?.confidence,
   );
   field(
     'Место рождения',
@@ -149,7 +162,9 @@ export function examplesBlock(examples: readonly ExampleSample[]): string {
 }
 
 export function categoriesBlock(): string {
-  return REQUEST_CATEGORIES.map(
-    (category) => `${category.key} — ${category.title}`,
+  return REQUEST_CATEGORIES.map((category) =>
+    category.hint
+      ? `${category.key} — ${category.title} (${category.hint})`
+      : `${category.key} — ${category.title}`,
   ).join('\n');
 }

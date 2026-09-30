@@ -168,7 +168,7 @@ export function SandboxSession({
   );
 }
 
-/** Название, этап, режим, причина передачи и виртуальные часы. */
+/** Название, этап, режим, имя в Telegram, причина передачи и виртуальные часы. */
 function SessionHeaderText({ session }: { session: SandboxSessionDto }) {
   return (
     <Box sx={styles.headerText}>
@@ -178,6 +178,9 @@ function SessionHeaderText({ session }: { session: SandboxSessionDto }) {
       <Box sx={styles.chips}>
         <StageChip stage={session.stage} />
         <ChatModeChip mode={session.mode} />
+        <span title="Имя клиента в профиле Telegram — по нему агент определяет пол">
+          Имя в Telegram: {session.clientName ?? 'нет'}
+        </span>
         {session.handoffReason && (
           <span>{HANDOFF_REASON_LABELS[session.handoffReason]}</span>
         )}

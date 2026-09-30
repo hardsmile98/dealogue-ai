@@ -9,8 +9,11 @@ import {
 } from './history.js';
 import {
   applyAnalysis,
+  birthDateSettled,
+  dataRequestsSent,
   diagnosticCategory,
   knownCategory,
+  lastIntakeQuestion,
   knownGender,
   letterCount,
   mergeCard,
@@ -198,6 +201,24 @@ describe('разбор анализа', () => {
     expect(parseAnalysis('{"language": "en-US"}', null).language).toBe('en');
   });
 
+  it('«даты не будет» — только значение из закрытого списка', () => {
+    const declined = (value: string) =>
+      parseAnalysis(
+        `{"card": {"birthDateDeclined": {"value": "${value}", "confidence": 0.9}}}`,
+        7,
+      ).card.birthDateDeclined;
+    expect(declined('unknown')).toEqual({
+      value: 'unknown',
+      confidence: 0.9,
+      sourceMessageId: 7,
+    });
+    expect(declined('refused')?.value).toBe('refused');
+    expect(declined('не помню')).toBeUndefined();
+    expect(readCard({ birthDateDeclined: { value: 'refused' } })).toEqual({
+      birthDateDeclined: { value: 'refused', confidence: 1 },
+    });
+  });
+
   it('падает только на не-объекте', () => {
     expect(() => parseAnalysis('nope', null)).toThrow('не JSON');
     expect(() => parseAnalysis('[1]', null)).toThrow('не JSON');
@@ -260,6 +281,63 @@ describe('память', () => {
     expect(diagnosticCategory({})).toBeNull();
   });
 
+  it('дата рождения: нужна только дата, место необязательно; «не знаю» — тоже ответ', () => {
+    expect(birthDateSettled({})).toBe(false);
+    expect(
+      birthDateSettled({ birthPlace: { value: 'Москва', confidence: 1 } }),
+    ).toBe(false);
+    expect(
+      birthDateSettled({ birthDate: { value: '04.04.1999', confidence: 1 } }),
+    ).toBe(true);
+    expect(
+      birthDateSettled({
+        birthDateDeclined: { value: 'unknown', confidence: 0.9 },
+      }),
+    ).toBe(true);
+  });
+
+  it('просьбы о данных считаются по сообщениям: шаги одного сообщения — одна просьба', () => {
+    const entry = (key: string, messageId: number | null): SaidEntry => ({
+      kind: 'nudge',
+      key,
+      messageId,
+      at: at(0),
+    });
+    expect(dataRequestsSent([])).toBe(0);
+    expect(
+      dataRequestsSent([
+        entry('ask_birth_data', 2),
+        entry('clarify_request', 2),
+        entry('birth_data_reminder', 3),
+        entry('ask_birth_date', 5),
+        entry('clarify_request', 5),
+        entry('ask_sphere', 7),
+      ]),
+    ).toBe(3);
+  });
+
+  it('последний вопрос знакомства: повторная просьба о дате вместе с уточнением — это просьба о дате', () => {
+    const entry = (key: string, messageId: number): SaidEntry => ({
+      kind: 'nudge',
+      key,
+      messageId,
+      at: at(messageId),
+    });
+    expect(
+      lastIntakeQuestion([
+        entry('ask_birth_data', 2),
+        entry('ask_birth_date', 4),
+        entry('clarify_request', 4),
+      ]),
+    ).toEqual({ nudge: 'ask_birth_date', reminded: false });
+    expect(
+      lastIntakeQuestion([
+        entry('ask_birth_date', 4),
+        entry('birth_data_reminder', 6),
+      ]),
+    ).toEqual({ nudge: 'ask_birth_date', reminded: true });
+  });
+
   it('факты: дубликаты не добавляются, противоречия помечаются', () => {
     const memory: Memory = {
       card: {},
@@ -316,6 +394,28 @@ describe('память', () => {
     ]);
     expect(factsUpdate.superseded).toEqual(['В отношениях']);
     expect(next.summary).toBe('новое');
+  });
+
+  it('имя из профиля в карточку не попадает, названное клиентом — попадает', () => {
+    const fresh: Memory = { card: {}, facts: [], summary: '', said: [] };
+    const named = (text: string) =>
+      applyAnalysis(
+        fresh,
+        {
+          ...emptyAnalysis,
+          card: {
+            name: { value: 'Анна', confidence: 0.9 },
+            gender: { value: 'f', confidence: 0.9 },
+          },
+        },
+        text,
+        'Анна Смирнова',
+      ).memory.card;
+    // Пол по профилю остаётся, имя — только из слов клиента.
+    expect(named('Здравствуйте, код 12')).toEqual({
+      gender: { value: 'f', confidence: 0.9 },
+    });
+    expect(named('Здравствуйте, меня зовут Анна').name?.value).toBe('Анна');
   });
 
   it('язык «липкий»: короткая реплика не переключает, настоящий текст — переключает', () => {

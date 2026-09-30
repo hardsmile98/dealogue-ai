@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -12,12 +13,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import type { SandboxSummaryDto } from '@/shared/api';
 import { accountLinks } from '@/shared/config';
-import {
-  formatDateTime,
-  getApiErrorMessage,
-  joinParts,
-  pluralize,
-} from '@/shared/lib';
+import { formatDateTime, joinParts, pluralize } from '@/shared/lib';
 import { ConfirmAction, QueryBoundary, useNotify } from '@/shared/ui';
 import { MODE_LABELS, STAGE_LABELS } from '@/entities/bot';
 import {
@@ -25,6 +21,7 @@ import {
   useDeleteSandboxMutation,
   useListSandboxesQuery,
 } from '../api/sandboxApi';
+import { NewSandboxDialog } from './NewSandboxDialog';
 import { sandboxSessionListStyles as styles } from './SandboxSessionList.styles';
 
 interface SandboxSessionListProps {
@@ -42,24 +39,34 @@ function describe(session: SandboxSummaryDto): string {
   ]);
 }
 
-/** Сессии песочницы аккаунта: новая пустая, открыть, удалить. */
+/** Сессии песочницы аккаунта: новая пустая (с именем клиента в Telegram), открыть, удалить. */
 export function SandboxSessionList({
   accountId,
   selectedId,
 }: SandboxSessionListProps) {
   const navigate = useNavigate();
-  const notify = useNotify();
   const query = useListSandboxesQuery(accountId);
   const [create, createState] = useCreateSandboxMutation();
   const [remove] = useDeleteSandboxMutation();
+  const notify = useNotify();
+  const [creating, setCreating] = useState(false);
 
-  const createSession = async () => {
+  const createSession = async (clientName: string) => {
     try {
-      const session = await create({ accountId }).unwrap();
+      const session = await create({
+        accountId,
+        clientName: clientName || undefined,
+      }).unwrap();
+      setCreating(false);
       navigate(accountLinks.sandbox(accountId, session.id));
-    } catch (error) {
-      notify.error(getApiErrorMessage(error, 'Не удалось создать диалог'));
+    } catch {
+      // Ошибку показывает диалог по результату мутации.
     }
+  };
+
+  const openDialog = () => {
+    createState.reset();
+    setCreating(true);
   };
 
   const removeSession = async (sessionId: string) => {
@@ -74,12 +81,18 @@ export function SandboxSessionList({
         <Button
           variant="contained"
           startIcon={<AddIcon />}
-          onClick={() => void createSession()}
-          loading={createState.isLoading}
-          loadingPosition="start"
+          onClick={openDialog}
         >
           Новый диалог
         </Button>
+        {creating && (
+          <NewSandboxDialog
+            onClose={() => setCreating(false)}
+            onSubmit={(clientName) => void createSession(clientName)}
+            submitting={createState.isLoading}
+            error={createState.error}
+          />
+        )}
         <Typography sx={styles.hint}>
           Пишите за клиента — агент отвечает как в Telegram, но ничего никуда не
           уходит. Диалог из реального чата — кнопкой «В песочницу» в переписке.

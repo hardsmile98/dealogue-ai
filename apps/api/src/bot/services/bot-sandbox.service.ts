@@ -99,16 +99,23 @@ export class BotSandboxService {
     );
   }
 
+  /**
+   * Новая пустая сессия. `clientName` — имя клиента в профиле Telegram: по
+   * нему, как в живом чате, анализатор определяет пол; оно же — название
+   * сессии, если своего нет.
+   */
   async create(
     account: TelegramAccountEntity,
     title: string | undefined,
+    clientName: string | undefined,
   ): Promise<SandboxSessionDto> {
-    const session = await this.open(
-      account.id,
-      title || 'Новый диалог',
-      null,
-      new Date(),
-    );
+    const session = await this.open({
+      accountId: account.id,
+      title: title || clientName || 'Новый диалог',
+      sourceChatId: null,
+      clientName: clientName || null,
+      virtualNow: new Date(),
+    });
     return this.view(session);
   }
 
@@ -133,12 +140,13 @@ export class BotSandboxService {
     if (!last) throw new BadRequestException('В чате нет сообщений');
 
     const [session, settings] = await Promise.all([
-      this.open(
-        account.id,
-        `Из чата: ${chat.peerName}`.slice(0, 200),
-        chat.id,
-        last.sentAt,
-      ),
+      this.open({
+        accountId: account.id,
+        title: `Из чата: ${chat.peerName}`.slice(0, 200),
+        sourceChatId: chat.id,
+        clientName: chat.peerName.trim().slice(0, 200) || null,
+        virtualNow: last.sentAt,
+      }),
       this.settings.ensure(account.id),
     ]);
     const [ids, library] = await Promise.all([
@@ -334,20 +342,14 @@ export class BotSandboxService {
 
   /** Новая сессия — виртуальный чат с `sandbox = true` и своими часами. */
   private async open(
-    accountId: string,
-    title: string,
-    sourceChatId: string | null,
-    virtualNow: Date,
+    fields: Pick<
+      BotSandboxSessionEntity,
+      'accountId' | 'title' | 'sourceChatId' | 'clientName' | 'virtualNow'
+    >,
   ): Promise<BotSandboxSessionEntity> {
     const chatId = randomUUID();
-    await this.states.createSandbox(chatId, accountId);
-    return this.sandbox.create({
-      accountId,
-      chatId,
-      title,
-      sourceChatId,
-      virtualNow,
-    });
+    await this.states.createSandbox(chatId, fields.accountId);
+    return this.sandbox.create({ ...fields, chatId });
   }
 
   private async find(
@@ -457,6 +459,8 @@ export class BotSandboxService {
           readAt: row.readAt,
         }));
       },
+      // Имя из профиля: у копии чата — собеседника, у новой сессии — введённое владельцем.
+      clientName: async () => session.clientName?.trim() || null,
     };
   }
 

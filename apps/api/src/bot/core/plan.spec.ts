@@ -17,6 +17,10 @@ const minutesAgo = (minutes: number) =>
 /** Фразы из таблиц по «вид:категория». */
 const PHRASES: Record<string, string[]> = {
   'greeting:-': ['Здравствуйте. Пришлите дату и место рождения.'],
+  'ask_birth_data:-': ['Пришлите, пожалуйста, дату рождения.'],
+  'ask_request:sphere': ['На какую сферу сделать упор?'],
+  'ask_request:relationships': ['Вы сейчас состоите в отношениях?'],
+  'ask_request:family': ['У вас уже есть дети?'],
   'no_birth_data:-': ['Вам актуален бесплатный анализ?'],
   'wait:-': ['Понял вас) Сделаю анализ и вернусь, хорошо?'],
   'wait:no_request': ['Понял вас) Сделаю общий анализ и вернусь!'],
@@ -160,6 +164,8 @@ const money = {
   sphere: { value: 'money', confidence: 0.95 },
   category: { value: 'money.more', confidence: 0.4 },
 };
+/** «Отношения» одним словом: у сферы есть уточняющий вопрос. */
+const relationships = { sphere: { value: 'relationships', confidence: 0.95 } };
 const asked = [said('nudge', 'ask_birth_data', 2, 30)];
 
 describe('план: передача менеджеру', () => {
@@ -255,6 +261,18 @@ describe('план: знакомство', () => {
     expect(plan.goal).toContain('«хорошо?»');
   });
 
+  it('в первом сообщении дата без места и сферы — приветствие и вопрос о сфере: место необязательно', () => {
+    const plan = buildPlan(
+      input({
+        memory: memory({ card: { birthDate: withBirth.birthDate } }),
+      }),
+    );
+    expect(plan.nudge).toBe('ask_sphere');
+    expect(plan.phrases).toEqual(PHRASES['ask_request:sphere']);
+    expect(plan.goal).toContain('начни с приветствия');
+    expect(plan.goal).not.toContain('место рождения');
+  });
+
   it('«01.02.1999, Финансы» без места — не переспрашиваем: сразу «займусь анализом» и ссылки', () => {
     const plan = buildPlan(
       input({
@@ -276,7 +294,7 @@ describe('план: знакомство', () => {
     expect(plan.answer).toEqual([]);
   });
 
-  it('прислал только дату — тоже дальше, без запроса будет общий анализ', () => {
+  it('прислал дату без сферы — вопрос о сфере, место не переспрашиваем', () => {
     const plan = buildPlan(
       input({
         analysis: analysis({
@@ -289,11 +307,315 @@ describe('план: знакомство', () => {
         state: { remindersSent: 0, turnsInStage: 1 },
       }),
     );
-    expect(plan.milestone?.key).toBe('links');
-    expect(plan.phrases).toEqual(PHRASES['wait:no_request']);
+    expect(plan.milestone).toBeNull();
+    expect(plan.nudge).toBe('ask_sphere');
+    expect(plan.phrases).toEqual(PHRASES['ask_request:sphere']);
+    expect(plan.answer).toEqual([]);
+    // Вопрос о сфере — часть просьбы о данных, это не повтор.
+    expect(plan.constraints.doNotRepeat).toEqual([]);
+    expect(plan.goal).not.toContain('место рождения');
   });
 
-  it('данные просили, а клиент только спрашивает — ответ, без повторной просьбы', () => {
+  it('на вопрос о сфере не ответил — третья просьба; не ответил и тогда — «займусь анализом», будет общий анализ', () => {
+    const sphereAsked = [...asked, said('nudge', 'ask_sphere', 4, 10)];
+    const plan = buildPlan(
+      input({
+        analysis: analysis({ intents: ['asks_about_practitioner'] }),
+        memory: memory({ card: withBirth, said: sphereAsked }),
+        state: { remindersSent: 0, turnsInStage: 2 },
+      }),
+    );
+    expect(plan.milestone).toBeNull();
+    expect(plan.nudge).toBe('ask_sphere');
+    expect(plan.answer.map((item) => item.text)).toEqual([
+      'спросил, где ты живёшь',
+    ]);
+    expect(plan.constraints.maxParts).toBe(2);
+
+    const last = buildPlan(
+      input({
+        analysis: analysis({ intents: ['asks_about_practitioner'] }),
+        memory: memory({
+          card: withBirth,
+          said: [...sphereAsked, said('nudge', 'ask_sphere', 6, 5)],
+        }),
+        state: { remindersSent: 0, turnsInStage: 3 },
+      }),
+    );
+    expect(last.milestone?.key).toBe('links');
+    expect(last.nudge).toBe('start_analysis');
+    expect(last.phrases).toEqual(PHRASES['wait:no_request']);
+    expect(last.answer.map((item) => item.text)).toEqual([
+      'спросил, где ты живёшь',
+    ]);
+  });
+
+  it('«Отношения» в ответ на просьбу о данных — ещё раз дата вместе с уточнением, потом дата; после трёх просьб — дальше без неё', () => {
+    // Ответ на первую просьбу — только сфера.
+    const plan = buildPlan(
+      input({
+        analysis: analysis({
+          card: relationships,
+          answerPoints: [point('data', 'client', 'сфера — отношения')],
+        }),
+        memory: memory({ card: relationships, said: asked }),
+        state: { remindersSent: 0, turnsInStage: 1 },
+      }),
+    );
+    expect(plan.milestone).toBeNull();
+    expect(plan.nudge).toBe('ask_birth_date');
+    expect(plan.coveredNudges).toEqual(['clarify_request']);
+    expect(plan.phrases).toEqual([
+      'Пришлите, пожалуйста, дату рождения. Вы сейчас состоите в отношениях?',
+    ]);
+    expect(plan.goal).toContain(
+      'ещё раз попроси прислать дату рождения и задай уточняющий вопрос',
+    );
+    expect(plan.goal).not.toContain('место рождения');
+    expect(plan.constraints.maxParts).toBe(1);
+    // Первая просьба — не «повтор»: повторная просьба по сути её повторяет.
+    expect(plan.constraints.doNotRepeat).toEqual([]);
+
+    // «Нет» — подкатегория ясна, даты всё ещё нет: третья просьба, только о дате.
+    const single = {
+      ...relationships,
+      category: { value: 'relationships.single', confidence: 0.9 },
+    };
+    const second = [
+      ...asked,
+      said('nudge', 'ask_birth_date', 4, 20),
+      said('nudge', 'clarify_request', 4, 20),
+    ];
+    const again = buildPlan(
+      input({
+        analysis: analysis({
+          answerPoints: [point('answer', 'client', 'нет')],
+        }),
+        memory: memory({ card: single, said: second }),
+        state: { remindersSent: 0, turnsInStage: 2 },
+      }),
+    );
+    expect(again.nudge).toBe('ask_birth_date');
+    expect(again.coveredNudges).toEqual([]);
+    expect(again.phrases).toEqual(PHRASES['ask_birth_data:-']);
+    expect(again.goal).toContain('ещё раз попроси прислать дату рождения.');
+    expect(again.constraints.doNotRepeat).toEqual([
+      'уточняющий вопрос о запросе',
+    ]);
+
+    // Три просьбы были — дальше без даты: ссылки, диагностика по подкатегории.
+    const done = buildPlan(
+      input({
+        analysis: analysis({ intents: ['asks_about_practitioner'] }),
+        memory: memory({
+          card: single,
+          said: [...second, said('nudge', 'ask_birth_date', 6, 5)],
+        }),
+        state: { remindersSent: 0, turnsInStage: 3 },
+      }),
+    );
+    expect(done.milestone?.key).toBe('links');
+    expect(done.nudge).toBe('start_analysis');
+    expect(done.phrases).toEqual(PHRASES['wait:-']);
+  });
+
+  it('клиент не знает или не даст дату — больше не просим', () => {
+    const plan = buildPlan(
+      input({
+        analysis: analysis({
+          answerPoints: [point('answer', 'client', 'не помню дату рождения')],
+        }),
+        memory: memory({
+          card: {
+            ...relationships,
+            category: { value: 'relationships.couple', confidence: 0.9 },
+            birthDateDeclined: { value: 'unknown', confidence: 0.9 },
+          },
+          said: [
+            ...asked,
+            said('nudge', 'ask_birth_date', 4, 20),
+            said('nudge', 'clarify_request', 4, 20),
+          ],
+        }),
+        state: { remindersSent: 0, turnsInStage: 2 },
+      }),
+    );
+    expect(plan.milestone?.key).toBe('links');
+    expect(plan.nudge).toBe('start_analysis');
+
+    // Отказался сразу, сферы нет — спрашиваем только сферу.
+    const sphereOnly = buildPlan(
+      input({
+        analysis: analysis({
+          answerPoints: [point('answer', 'client', 'дату не скажу')],
+        }),
+        memory: memory({
+          card: { birthDateDeclined: { value: 'refused', confidence: 0.9 } },
+          said: asked,
+        }),
+        state: { remindersSent: 0, turnsInStage: 1 },
+      }),
+    );
+    expect(sphereOnly.nudge).toBe('ask_sphere');
+  });
+
+  it('«ок, сейчас пришлю» — не переспрашиваем, ждём данных', () => {
+    const plan = buildPlan(
+      input({
+        analysis: analysis({
+          intents: ['silent_ack'],
+          answerPoints: [point('ack', 'other', 'сейчас пришлю')],
+        }),
+        memory: memory({ said: asked }),
+        state: { remindersSent: 0, turnsInStage: 1 },
+      }),
+    );
+    expect(plan.nudge).toBeNull();
+    expect(plan.milestone).toBeNull();
+    expect(needsWriter(plan)).toBe(false);
+  });
+
+  it('«отношения» без подкатегории — уточняющий вопрос из библиотеки, ссылки после ответа', () => {
+    const plan = buildPlan(
+      input({
+        analysis: analysis({
+          answerPoints: [
+            point('data', 'client', 'прислал дату, место и сферу'),
+          ],
+        }),
+        memory: memory({
+          card: { ...withBirth, ...relationships },
+          said: asked,
+        }),
+        state: { remindersSent: 0, turnsInStage: 1 },
+      }),
+    );
+    expect(plan.milestone).toBeNull();
+    expect(plan.nudge).toBe('clarify_request');
+    expect(plan.phrases).toEqual(PHRASES['ask_request:relationships']);
+    expect(plan.constraints.maxParts).toBe(1);
+
+    // «Нет» — анализатор назвал подкатегорию; дальше ссылки.
+    const single = {
+      ...withBirth,
+      ...relationships,
+      category: { value: 'relationships.single', confidence: 0.9 },
+    };
+    const answered = buildPlan(
+      input({
+        analysis: analysis({
+          answerPoints: [point('answer', 'client', 'нет')],
+        }),
+        memory: memory({
+          card: single,
+          said: [...asked, said('nudge', 'clarify_request', 4, 10)],
+        }),
+        state: { remindersSent: 0, turnsInStage: 2 },
+      }),
+    );
+    expect(answered.milestone?.key).toBe('links');
+    expect(answered.nudge).toBe('start_analysis');
+    expect(answered.phrases).toEqual(PHRASES['wait:-']);
+    expect(answered.answer).toEqual([]);
+    // Диагностика — по подкатегории из ответа.
+    const diagnostic = buildPlan(
+      scheduled('diagnostic', {
+        stage: 'links',
+        memory: memory({
+          card: single,
+          said: [said('milestone', 'links', 6, 60)],
+        }),
+      }),
+    );
+    expect(diagnostic.milestone?.title).toBe(
+      'diagnostic relationships.single any',
+    );
+  });
+
+  it('на уточнение ответил не по делу — второй раз не спрашиваем: ссылки, диагностика по сфере', () => {
+    const plan = buildPlan(
+      input({
+        memory: memory({
+          card: { ...withBirth, ...relationships },
+          said: [...asked, said('nudge', 'clarify_request', 4, 10)],
+        }),
+        state: { remindersSent: 0, turnsInStage: 2 },
+      }),
+    );
+    expect(plan.milestone?.key).toBe('links');
+    expect(plan.nudge).toBe('start_analysis');
+  });
+
+  it('подкатегория ясна из рассказа или у сферы нет уточнения — не спрашиваем', () => {
+    const triangle = {
+      ...withBirth,
+      ...relationships,
+      category: { value: 'relationships.triangle', confidence: 0.9 },
+    };
+    for (const card of [triangle, { ...withBirth, ...money }]) {
+      const plan = buildPlan(
+        input({
+          memory: memory({ card, said: asked }),
+          state: { remindersSent: 0, turnsInStage: 1 },
+        }),
+      );
+      expect(plan.milestone?.key).toBe('links');
+      expect(plan.nudge).toBe('start_analysis');
+    }
+  });
+
+  it('всё пришло в первом сообщении, сфера «семья» — первым ответом приветствие и уточнение', () => {
+    const plan = buildPlan(
+      input({
+        memory: memory({
+          card: { ...withBirth, sphere: { value: 'family', confidence: 0.95 } },
+        }),
+      }),
+    );
+    expect(plan.milestone).toBeNull();
+    expect(plan.nudge).toBe('clarify_request');
+    expect(plan.phrases).toEqual(PHRASES['ask_request:family']);
+    expect(plan.goal).toContain('начни с приветствия');
+  });
+
+  it('«хочу расклад по отношениям» без данных — просьба о дате и месте вместе с уточнением, одним сообщением', () => {
+    const plan = buildPlan(
+      input({
+        analysis: analysis({
+          answerPoints: [
+            point('request', 'diagnostic', 'хочет расклад по отношениям'),
+          ],
+        }),
+        memory: memory({ card: relationships }),
+      }),
+    );
+    expect(plan.nudge).toBe('ask_birth_data');
+    expect(plan.coveredNudges).toEqual(['clarify_request']);
+    expect(plan.phrases).toEqual([
+      'Здравствуйте. Пришлите дату и место рождения. Вы сейчас состоите в отношениях?',
+    ]);
+    expect(plan.goal).toContain(
+      'попроси прислать дату рождения и место рождения и задай уточняющий вопрос',
+    );
+    expect(plan.constraints.maxParts).toBe(1);
+
+    // Прислал дату и место — уточнение уже было: ссылки.
+    const next = buildPlan(
+      input({
+        analysis: analysis({
+          answerPoints: [point('data', 'client', 'прислал дату и место')],
+        }),
+        memory: memory({
+          card: { ...withBirth, ...relationships },
+          said: [...asked, said('nudge', 'clarify_request', 2, 30)],
+        }),
+        state: { remindersSent: 0, turnsInStage: 1 },
+      }),
+    );
+    expect(next.milestone?.key).toBe('links');
+  });
+
+  it('данные просили, а клиент только спрашивает — ответ и ещё раз просьба о дате и сфере', () => {
     const plan = buildPlan(
       input({
         analysis: analysis({ intents: ['asks_about_practitioner'] }),
@@ -302,9 +624,12 @@ describe('план: знакомство', () => {
       }),
     );
     expect(plan.milestone).toBeNull();
-    expect(plan.nudge).toBeNull();
+    expect(plan.nudge).toBe('ask_birth_date');
+    expect(plan.goal).toContain(
+      'ещё раз попроси прислать дату рождения и в какой сфере вопрос',
+    );
     expect(plan.answer).toHaveLength(1);
-    expect(plan.constraints.maxParts).toBe(1);
+    expect(plan.constraints.maxParts).toBe(2);
   });
 
   it('ранний вопрос о цене — ответ по фразе из таблиц, без цен', () => {
@@ -362,6 +687,93 @@ describe('план: клиент молчит на знакомстве', () => 
     );
     expect(noQuestion.nudge).toBe('ask_want_options');
     expect(noQuestion.afterBlock).toBe(true);
+  });
+
+  it('молчит после вопроса о сфере — напоминание о сфере, хотя о данных уже напоминали', () => {
+    const plan = buildPlan(
+      scheduled('birth_data_reminder', {
+        memory: memory({
+          card: withBirth,
+          said: [
+            ...asked,
+            said('nudge', 'birth_data_reminder', 4, 200),
+            said('nudge', 'ask_sphere', 6, 100),
+          ],
+        }),
+        state: { remindersSent: 1, turnsInStage: 2 },
+      }),
+    );
+    expect(plan.nudge).toBe('birth_data_reminder');
+    expect(plan.phrases).toEqual(PHRASES['no_birth_data:-']);
+    expect(plan.goal).toContain('нужно знать в какой сфере вопрос');
+    expect(plan.goal).toContain('общий анализ');
+    expect(plan.constraints.doNotRepeat).toEqual([]);
+    expect(plan.reminders).toBe(1);
+  });
+
+  it('«Отношения» без даты и молчит — напоминание о дате (без места), потом диагностика по сфере', () => {
+    const card = { ...relationships };
+    const second = [
+      ...asked,
+      said('nudge', 'ask_birth_date', 4, 100),
+      said('nudge', 'clarify_request', 4, 100),
+    ];
+    const plan = buildPlan(
+      scheduled('birth_data_reminder', {
+        memory: memory({ card, said: second }),
+      }),
+    );
+    expect(plan.nudge).toBe('birth_data_reminder');
+    expect(plan.goal).toContain('нужно знать дату рождения');
+    expect(plan.goal).toContain('анализ по тому, что есть');
+    expect(plan.goal).not.toContain('место рождения');
+    expect(plan.constraints.doNotRepeat).toEqual([
+      'уточняющий вопрос о запросе',
+    ]);
+
+    const diagnostic = buildPlan(
+      scheduled('diagnostic', {
+        memory: memory({
+          card,
+          said: [...second, said('nudge', 'birth_data_reminder', 6, 60)],
+        }),
+      }),
+    );
+    expect(diagnostic.milestone?.title).toBe(
+      'diagnostic relationships.couple any',
+    );
+    expect(diagnostic.nudge).toBeNull();
+  });
+
+  it('молчит после уточнения — повторяет уточняющий вопрос, потом диагностика по сфере', () => {
+    const card = { ...withBirth, ...relationships };
+    const clarified = [...asked, said('nudge', 'clarify_request', 4, 100)];
+    const plan = buildPlan(
+      scheduled('birth_data_reminder', {
+        memory: memory({ card, said: clarified }),
+      }),
+    );
+    expect(plan.nudge).toBe('clarify_reminder');
+    expect(plan.phrases).toEqual(PHRASES['ask_request:relationships']);
+    expect(plan.constraints.doNotRepeat).toEqual([
+      'просьба о дате, месте рождения и сфере',
+    ]);
+    expect(plan.reminders).toBe(1);
+
+    const reminded = [...clarified, said('nudge', 'clarify_reminder', 6, 60)];
+    const again = buildPlan(
+      scheduled('birth_data_reminder', {
+        memory: memory({ card, said: reminded }),
+      }),
+    );
+    expect(again.idle).not.toBeNull();
+    const diagnostic = buildPlan(
+      scheduled('diagnostic', { memory: memory({ card, said: reminded }) }),
+    );
+    expect(diagnostic.milestone?.title).toBe(
+      'diagnostic relationships.couple any',
+    );
+    expect(diagnostic.nudge).toBeNull();
   });
 });
 

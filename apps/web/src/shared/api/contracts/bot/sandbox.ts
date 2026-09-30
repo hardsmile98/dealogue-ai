@@ -8,6 +8,8 @@ export interface SandboxSummaryDto {
   title: string;
   /** Реальный чат, из которого скопирована переписка. */
   sourceChatId: string | null;
+  /** Имя клиента в профиле Telegram (по нему агент определяет пол); null — без имени. */
+  clientName: string | null;
   /** Виртуальное «сейчас» сессии. */
   virtualNow: string;
   stage: Stage;

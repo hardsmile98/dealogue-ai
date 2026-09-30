@@ -31,6 +31,13 @@ export class BotSandboxSessionEntity {
   @Column({ name: 'source_chat_id', type: 'uuid', nullable: true })
   sourceChatId: string | null;
 
+  /**
+   * Имя клиента в профиле Telegram — по нему анализатор определяет пол.
+   * У копии чата — имя собеседника; null — клиент без имени.
+   */
+  @Column({ name: 'client_name', type: 'varchar', length: 200, nullable: true })
+  clientName: string | null;
+
   /** Виртуальное «сейчас»: двигают задержки доставки и перемотка. */
   @Column({ name: 'virtual_now', type: 'timestamptz' })
   virtualNow: Date;

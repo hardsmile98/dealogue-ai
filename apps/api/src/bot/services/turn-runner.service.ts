@@ -108,6 +108,8 @@ interface TurnContext extends AccountContext {
   turnId: string;
   state: BotChatStateEntity;
   library: LibraryContext;
+  /** Имя клиента в профиле мессенджера — только в ходе клиента, для анализатора. */
+  clientName: string | null;
   memory: Memory;
   history: HistoryMessage[];
   historyLines: HistoryLine[];
@@ -277,9 +279,10 @@ export class TurnRunnerService implements OnModuleDestroy {
     });
     if (!turnId) return;
     try {
-      const [memory, history] = await Promise.all([
+      const [memory, history, clientName] = await Promise.all([
         this.memories.load(state),
         env.channel.history(chatId, HISTORY_LIMIT),
+        clientNameOf(env.channel, chatId),
       ]);
       const messages = history
         .filter((message) => message.direction === 'in')
@@ -295,6 +298,7 @@ export class TurnRunnerService implements OnModuleDestroy {
       }
       const prompt = buildAnalyzerPrompt({
         memory,
+        clientName,
         history: formatHistory(history, memory.said, MILESTONE_TITLES),
         messages,
         historyLimit: HISTORY_LIMIT,
@@ -308,6 +312,7 @@ export class TurnRunnerService implements OnModuleDestroy {
         memory,
         analysis,
         messages.map((message) => message.text).join('\n'),
+        clientName,
       );
       await this.memories.saveAnalysis(
         chatId,
@@ -430,11 +435,14 @@ export class TurnRunnerService implements OnModuleDestroy {
     account: AccountContext,
     turnId: string,
   ): Promise<TurnContext> {
-    const [library, memory, history] = await Promise.all([
+    const client = request.trigger === 'client';
+    const [library, memory, history, clientName] = await Promise.all([
       this.libraries.load(request.accountId, account.persona),
       this.memories.load(state),
       env.channel.history(request.chatId, HISTORY_LIMIT),
-      request.trigger === 'client'
+      // Имя из профиля нужно только анализатору, а он работает в ходе клиента.
+      client ? clientNameOf(env.channel, request.chatId) : null,
+      client
         ? this.memories.setGeneration(request.chatId, request.generationSeq)
         : undefined,
     ]);
@@ -443,6 +451,7 @@ export class TurnRunnerService implements OnModuleDestroy {
       turnId,
       state,
       library,
+      clientName,
       memory,
       history,
       historyLines: formatHistory(history, memory.said, MILESTONE_TITLES),
@@ -601,6 +610,7 @@ export class TurnRunnerService implements OnModuleDestroy {
     if (request.trigger !== 'client') return null;
     const prompt = buildAnalyzerPrompt({
       memory: context.memory,
+      clientName: context.clientName,
       history: context.historyLines,
       messages: request.messages,
     });
@@ -613,6 +623,7 @@ export class TurnRunnerService implements OnModuleDestroy {
       context.memory,
       analysis,
       request.messages.map((message) => message.text).join('\n'),
+      context.clientName,
     );
     await this.turns.update(context.turnId, {
       analysis: analysis as unknown as Record<string, unknown>,
@@ -879,6 +890,22 @@ export class TurnRunnerService implements OnModuleDestroy {
         `клиент дописал ${where}, ход пересобирается`,
       );
     }
+  }
+}
+
+/**
+ * Имя клиента из профиля — подсказка для пола, без него ход идёт как
+ * раньше: сбой чтения ход не роняет.
+ */
+async function clientNameOf(
+  channel: Channel,
+  chatId: string,
+): Promise<string | null> {
+  if (!channel.clientName) return null;
+  try {
+    return await channel.clientName(chatId);
+  } catch {
+    return null;
   }
 }
 

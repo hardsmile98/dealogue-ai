@@ -1,5 +1,5 @@
 import type { BotMemoryDto } from '@/shared/api';
-import { CARD_LABELS } from './labels';
+import { CARD_LABELS, CARD_VALUE_LABELS } from './labels';
 
 export interface CardField {
   key: string;
@@ -29,11 +29,12 @@ export function readCard(card: BotMemoryDto['card']): CardField[] {
       typeof field.confidence === 'number' && field.confidence < 1
         ? ` (${Math.round(field.confidence * 100)}%)`
         : '';
+    const value = String(field.value);
     return [
       {
         key,
         label: CARD_LABELS[key] ?? key,
-        value: `${String(field.value)}${confidence}`,
+        value: `${CARD_VALUE_LABELS[key]?.[value] ?? value}${confidence}`,
       },
     ];
   });

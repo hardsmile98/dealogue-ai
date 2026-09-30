@@ -1083,6 +1083,50 @@
       "sort": 97,
       "enabled": true,
       "text": "I’m back with your analysis! ❤️ I want to say that it was a pleasure working with you—you have such a pleasant and warm energy. 😊\n\n🌞 You have a strong influence from the Sun and Uranus, which relate to self-identity. You know how to stand out and captivate others with your charisma. You’re a bright and strong individual with a magnetic charm that helps you in work, self-realization, and relationships. However, you haven’t fully learned how to use it yet.\n\nStrengths:\nIntelligence and Charisma: You have a sharp mind and great intellect. You handle analytical tasks with ease and absorb new information quickly. You naturally draw attention to yourself and know how to present yourself effectively.\n\nCreative Potential: You have a vivid imagination and can come up with original ideas that are useful in various areas of life.\n\nAmbition: You are highly driven to achieve your goals and are willing to put in the effort to succeed. You’re motivated and persistent.\n\nCommunication Skills: You have excellent social skills and can easily connect with people. You’re a strong leader and a great team player.\n\nWeaknesses:\nPerfectionism: In your quest for perfection, you can be overly critical of yourself and others. You tend to focus too much on details, which can slow progress and distract from bigger goals.\n\nImpatience: You may lose patience with tasks or goals if results don’t come quickly. This can cause you to lose interest or shift your focus to other projects.\n\nSelf-Criticism: Your harsh self-criticism can prevent you from recognizing your achievements and full potential. You may doubt yourself, which holds you back.\n\nPessimism: Sometimes, you focus on the negative aspects of situations instead of the positives. This can make you see problems rather than opportunities.\n\nTransformational Year:\nThe past year has been a transformational one for you. You’re currently on a path to rediscovering yourself, understanding who you are, and clarifying what you want to achieve in life. Old goals are starting to resurface.\n\nUnfortunately, you’ve been through pain, and you may still feel nostalgic for the past at times. But this is how the human soul undergoes transformation and spiritual growth. I recommend writing down your goals by hand, as the next cycle is opening a path to a higher level of life. 🙌\n\nLooking Ahead to 2025:\nIt’s important to understand that the outlook for 2025 depends entirely on your actions. We create our future, and it’s up to us to decide how it unfolds. There are always various scenarios—positive and negative—and you choose which one to pursue.\n\nIf you enter this new cycle with the right mindset, you can drastically change your situation. However, I must warn you: if you close yourself off to new opportunities, let fear take over, or retreat into worries, you’ll miss those chances.\n\nYou give so much to others, and your energy is bright. But I can see that you’re sensitive at your core, and your kindness isn’t always reciprocated. Some people take advantage of your resources, which leaves you feeling drained.\n\nChallenges Ahead:\n🌑 This year brings karmic challenges. It’s essential to pay attention to your family’s generational program, as karma from past lives is draining your energy from the 2nd, 10th, 7th, and 11th houses (finance, relationships, self-realization). You must proceed carefully.\n\n🪐 Over the next six months, Jupiter offers opportunities for financial growth by working on your 2nd house. Currently, your 2nd house is in a negative state due to inner restrictions and limiting beliefs. You often turn down opportunities out of fear of failure, or if you take them, you don’t give your full effort. This creates stagnation in your financial situation.\n\nExternal factors—fear, family, opinions of relatives and friends—have knocked you off course. You’ve almost resigned yourself to the belief that money will always come with great difficulty and that financial independence isn’t achievable. But this is a major mistake! Your financial channel is blocked, which prevents opportunities from flowing to you. Instead, you experience unplanned expenses and missed chances.\n\nVenus Influence:\nYou have a strong influence from Venus, which governs femininity and attraction. You know how to attract others and build beneficial partnerships. However, Venus isn’t fully activated yet. This causes feelings of restraint, relationship challenges, and a diminished sense of personal allure.\n\nLove and Relationships:\nThere’s an emotional wound or unresolved issue in your love life. You’re missing the feeling of being truly accepted, loved, and cherished. 🍀\n\nYour love energy isn’t entirely blocked, but you sometimes resist letting love into your life because you’re unsure how to.\n\nThere are energy leaks in the form of unresolved emotions and unspoken words, which drain you. These unresolved issues often stem from childhood or past traumatic events. They can manifest as misunderstandings, conflicts, and a weakening of your emotional connections, leading to stagnant relationships and repeated patterns with similar partners.\n\nOpportunities:\nDespite the challenges, this year brings a chance to turn things around. A transit through the 4th and 7th houses will create opportunities to either strengthen existing relationships or form new ones.\n\nTo end on a positive note, I want to highlight that you were born with incredible potential. Some people have to work hard just to achieve basic success, but your results can be truly extraordinary.\n\nHowever, your subconscious blocks are holding you back. These blocks interfere with incoming opportunities and prevent you from achieving your goals in love, health, finances, relationships, and work.\n\nWhat do you think about this? Do you feel ready to start addressing these areas of your life?\n\nIf you’re interested, I can explain how to work through these challenges, unlock your potential, and enter the new cycle in the right way to ensure the next seven years are successful. 🧡"
+    },
+    {
+      "seedKey": "agent.ask_sphere",
+      "kind": "ask_request",
+      "language": "ru",
+      "gender": null,
+      "category": "sphere",
+      "title": "Вопрос о сфере (данные пришли без неё)",
+      "sort": 98,
+      "enabled": true,
+      "text": "Подскажите, на какую сферу жизни сделать упор в анализе? Отношения, финансы, здоровье или самореализация?"
+    },
+    {
+      "seedKey": "agent.clarify.relationships",
+      "kind": "ask_request",
+      "language": "ru",
+      "gender": null,
+      "category": "relationships",
+      "title": "Уточнение: отношения",
+      "sort": 99,
+      "enabled": true,
+      "text": "Подскажите, вы сейчас состоите в отношениях?"
+    },
+    {
+      "seedKey": "agent.clarify.family",
+      "kind": "ask_request",
+      "language": "ru",
+      "gender": null,
+      "category": "family",
+      "title": "Уточнение: семья",
+      "sort": 100,
+      "enabled": true,
+      "text": "Подскажите, у вас уже есть дети?"
+    },
+    {
+      "seedKey": "agent.ask_birth_date",
+      "kind": "ask_birth_data",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Повторная просьба о дате рождения",
+      "sort": 101,
+      "enabled": true,
+      "text": "Пришлите, пожалуйста, вашу дату рождения — по ней я сделаю для вас анализ."
     }
   ]
 }

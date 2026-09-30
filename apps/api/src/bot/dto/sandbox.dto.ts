@@ -20,6 +20,13 @@ export class CreateSandboxDto {
   @IsOptional()
   @Trim()
   title?: string;
+
+  /** Имя клиента в профиле Telegram: по нему, как в живом чате, анализатор определяет пол. */
+  @MaxLength(200, { message: 'Имя длиннее 200 символов' })
+  @IsString()
+  @IsOptional()
+  @Trim()
+  clientName?: string;
 }
 
 /** Сообщения за клиента: одна отправка — одно или несколько сообщений подряд. */

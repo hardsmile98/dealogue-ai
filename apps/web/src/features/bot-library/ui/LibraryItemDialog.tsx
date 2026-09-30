@@ -53,8 +53,13 @@ export function LibraryItemDialog({
   const submit = () =>
     onSubmit({
       ...form,
-      // Категория есть только у диагностик и возражений.
-      category: categories ? form.category : null,
+      // Где категорию не выбирают в форме, она служебная («без запроса»,
+      // «после вариантов») — её сохраняем, пока вид не сменили.
+      category: categories
+        ? form.category
+        : form.kind === initial.kind
+          ? initial.category
+          : null,
       title: form.title.trim(),
       text: form.text.trim(),
     });

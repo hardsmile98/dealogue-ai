@@ -30,6 +30,24 @@ function input(patch: Partial<SaidInput>): SaidInput {
 }
 
 describe('saidEntries', () => {
+  it('уточнение внутри просьбы о данных записывается тем же сообщением', () => {
+    expect(
+      saidEntries(
+        input({
+          plan: {
+            milestone: null,
+            nudge: 'ask_birth_data',
+            coveredNudges: ['clarify_request'],
+            objection: null,
+          },
+        }),
+      ),
+    ).toEqual([
+      { kind: 'nudge', key: 'ask_birth_data', messageId: 100 },
+      { kind: 'nudge', key: 'clarify_request', messageId: 100 },
+    ]);
+  });
+
   it('ничего не ушло — ничего не сказано', () => {
     expect(
       saidEntries(

@@ -12,8 +12,9 @@ import { OwnOutgoing } from '../core/telegram-inbox.js';
 /**
  * `Channel` агента над Telegram-модулем (docs/agent-architecture.md,
  * раздел 8): отправка — через TelegramOutboundService, история — из
- * telegram_messages. Здесь же реестр своих исходящих: всё остальное
- * исходящее в чате агента написал человек.
+ * telegram_messages, имя клиента — из профиля собеседника (telegram_chats).
+ * Здесь же реестр своих исходящих: всё остальное исходящее в чате агента
+ * написал человек.
  *
  * Канал живёт один ход (или один пересчёт лестницы), поэтому строка чата
  * читается им один раз, а не перед каждой частью, «печатает» и «прочитано».
@@ -108,6 +109,8 @@ export class BotTelegramChannels {
           readAt: row.readAt,
         }));
       },
+      clientName: async (chatId) =>
+        (await chatOf(chatId))?.peerName.trim() || null,
     };
   }
 

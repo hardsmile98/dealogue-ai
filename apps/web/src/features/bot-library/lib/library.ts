@@ -1,4 +1,9 @@
-import { OBJECTION_CATEGORIES, REQUEST_CATEGORIES } from '@/shared/api';
+import {
+  OBJECTION_CATEGORIES,
+  REQUEST_CATEGORIES,
+  SPHERES,
+  SPHERE_QUESTION,
+} from '@/shared/api';
 import type {
   LibraryItemBody,
   LibraryItemDto,
@@ -6,7 +11,7 @@ import type {
   ObjectionCategory,
   RequestCategory,
 } from '@/shared/api';
-import { OBJECTION_LABELS } from '@/entities/bot';
+import { OBJECTION_LABELS, SPHERE_LABELS } from '@/entities/bot';
 
 export type KindFilter = LibraryKind | 'all';
 
@@ -14,19 +19,37 @@ function isObjection(category: string): category is ObjectionCategory {
   return (OBJECTION_CATEGORIES as readonly string[]).includes(category);
 }
 
-/** Название категории: запрос клиента (у диагностик) или возражение. */
+/**
+ * Вопросы знакомства (вид `ask_request`): повторный вопрос о сфере и
+ * уточняющий вопрос внутри сферы — агент задаёт его, только если для сферы
+ * есть такая фраза.
+ */
+const REQUEST_QUESTIONS: RequestCategory[] = [
+  { key: SPHERE_QUESTION, title: 'Вопрос о сфере' },
+  ...SPHERES.map((sphere) => ({
+    key: sphere,
+    title: `Уточнение: ${SPHERE_LABELS[sphere].toLowerCase()}`,
+  })),
+];
+
+/** Название категории: запрос клиента (у диагностик), вопрос знакомства или возражение. */
 export function categoryTitle(category: string | null): string | null {
   if (!category) return null;
   return (
     REQUEST_CATEGORIES.find((item) => item.key === category)?.title ??
+    REQUEST_QUESTIONS.find((item) => item.key === category)?.title ??
     (isObjection(category) ? OBJECTION_LABELS[category] : null) ??
     category
   );
 }
 
-/** Категория нужна диагностикам (запрос клиента) и возражениям (плейбук). */
+/**
+ * Категория, которую можно выбрать в редакторе: у диагностик — запрос
+ * клиента, у вопросов о запросе — сфера, у возражений — плейбук.
+ */
 export function categoryOptions(kind: LibraryKind): RequestCategory[] | null {
   if (kind === 'diagnostic') return [...REQUEST_CATEGORIES];
+  if (kind === 'ask_request') return REQUEST_QUESTIONS;
   if (kind === 'objection') {
     return OBJECTION_CATEGORIES.map((key) => ({
       key,

@@ -46,7 +46,7 @@ export class BotSandboxController {
     @Account() account: TelegramAccountEntity,
     @Body() dto: CreateSandboxDto,
   ): Promise<SandboxSessionDto> {
-    return this.sandbox.create(account, dto.title);
+    return this.sandbox.create(account, dto.title, dto.clientName);
   }
 
   @Get(':sessionId')

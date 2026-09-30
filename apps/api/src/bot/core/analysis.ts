@@ -11,6 +11,7 @@ import { parseJsonObject, stringList } from './json.js';
 import {
   ANSWER_KINDS,
   ANSWER_TOPICS,
+  BIRTH_DATE_DECLINES,
   INTENTS,
   MOODS,
   RISK_FLAGS,
@@ -20,6 +21,7 @@ import type {
   AnswerKind,
   AnswerPoint,
   AnswerTopic,
+  BirthDateDecline,
   CardField,
   ClientCard,
   ClientFact,
@@ -98,6 +100,14 @@ function parseCard(raw: unknown, sourceMessageId: number | null): ClientCard {
     );
   card.name = text('name');
   card.birthDate = text('birthDate') ?? text('birth_date');
+  card.birthDateDeclined = field(
+    source.birthDateDeclined,
+    sourceMessageId,
+    (v) =>
+      (BIRTH_DATE_DECLINES as readonly string[]).includes(String(v))
+        ? (v as BirthDateDecline)
+        : null,
+  );
   card.birthPlace = text('birthPlace') ?? text('birth_place');
   card.gender = field(source.gender, sourceMessageId, (v) =>
     (GENDERS as readonly string[]).includes(String(v)) ? (v as Gender) : null,

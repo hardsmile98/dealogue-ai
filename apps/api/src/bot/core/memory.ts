@@ -29,6 +29,7 @@ export function readCard(raw: unknown): ClientCard {
     'name',
     'gender',
     'birthDate',
+    'birthDateDeclined',
     'birthPlace',
     'sphere',
     'category',
@@ -97,8 +98,13 @@ export function diagnosticCategory(card: ClientCard): string | null {
   );
 }
 
-export function hasBirthData(card: ClientCard): boolean {
-  return Boolean(card.birthDate?.value && card.birthPlace?.value);
+/**
+ * Дату рождения больше не просим: она известна или клиент сказал, что её
+ * не будет. Место рождения необязательно (решение владельца 30.09): его
+ * просят только в первом сообщении вместе с датой.
+ */
+export function birthDateSettled(card: ClientCard): boolean {
+  return Boolean(card.birthDate?.value || card.birthDateDeclined?.value);
 }
 
 export function clientLanguage(card: ClientCard, fallback = 'ru'): string {
@@ -169,14 +175,38 @@ export function nextLanguage(
   return current;
 }
 
+/**
+ * Имя в карточке — только то, что клиент назвал сам. Имя из профиля
+ * анализатор видит ради пола; если он всё же записал его в карточку, а в
+ * тексте клиента этого имени нет, поле отбрасывается — иначе ответчик
+ * начнёт обращаться к клиенту по профилю или нику.
+ */
+export function withoutProfileName(
+  update: ClientCard,
+  profileName: string | null,
+  newText: string,
+): ClientCard {
+  const name = update.name?.value.trim().toLowerCase();
+  if (!name || !profileName) return update;
+  const fromProfile = profileName.toLowerCase().includes(name);
+  if (!fromProfile || newText.toLowerCase().includes(name)) return update;
+  const rest = { ...update };
+  delete rest.name;
+  return rest;
+}
+
 /** Память после анализа — то, что видят план и ответчик в этом ходе. */
 export function applyAnalysis(
   memory: Memory,
   analysis: Analysis,
   newText = '',
+  profileName: string | null = null,
 ): { memory: Memory; factsUpdate: FactsUpdate } {
   const { facts, update } = applyFacts(memory.facts, analysis);
-  const card = mergeCard(memory.card, analysis.card);
+  const card = mergeCard(
+    memory.card,
+    withoutProfileName(analysis.card, profileName, newText),
+  );
   const language = nextLanguage(memory.card, analysis.language, newText);
   if (language) card.language = language;
   return {
@@ -204,4 +234,73 @@ export function argumentsUsed(
 export function nudgesSaid(said: readonly SaidEntry[], nudge: string): number {
   return said.filter((entry) => entry.kind === 'nudge' && entry.key === nudge)
     .length;
+}
+
+/** Вопросы знакомства (docs/agent-architecture.md, 2.0) по старшинству. */
+const INTAKE_QUESTIONS = [
+  'ask_birth_data',
+  'ask_birth_date',
+  'ask_sphere',
+  'clarify_request',
+] as const;
+export type IntakeQuestionNudge = (typeof INTAKE_QUESTIONS)[number];
+/** Просьбы о данных: дата, место и сфера; повторно — дата и сфера. */
+const DATA_REQUESTS: readonly string[] = [
+  'ask_birth_data',
+  'ask_birth_date',
+  'ask_sphere',
+];
+
+/**
+ * Сколько сообщений агента просили данные (дату рождения, сферу) — первое
+ * сообщение и повторные просьбы. Шаги одного сообщения — одна просьба.
+ */
+export function dataRequestsSent(said: readonly SaidEntry[]): number {
+  const messages = new Set<number | string>();
+  said.forEach((entry, index) => {
+    if (entry.kind === 'nudge' && DATA_REQUESTS.includes(entry.key))
+      messages.add(entry.messageId ?? `entry:${index}`);
+  });
+  return messages.size;
+}
+const INTAKE_REMINDERS: readonly string[] = [
+  'birth_data_reminder',
+  'clarify_reminder',
+];
+
+export interface IntakeQuestion {
+  nudge: IntakeQuestionNudge;
+  /** После него уже было напоминание: дальше молчание ведёт к диагностике. */
+  reminded: boolean;
+}
+
+/**
+ * Последний вопрос знакомства и было ли после него напоминание: на
+ * молчание после каждого вопроса — одно напоминание, потом диагностика.
+ * Уточнение внутри просьбы о данных записано тем же сообщением — вопросом
+ * считается просьба о данных. null — ни о чём не спрашивали.
+ */
+export function lastIntakeQuestion(
+  said: readonly SaidEntry[],
+): IntakeQuestion | null {
+  let last: { nudge: IntakeQuestionNudge; messageId: number | null } | null =
+    null;
+  let reminded = false;
+  for (const entry of said) {
+    if (entry.kind !== 'nudge') continue;
+    const sameMessage =
+      last !== null &&
+      entry.messageId !== null &&
+      entry.messageId === last.messageId;
+    const index = (INTAKE_QUESTIONS as readonly string[]).indexOf(entry.key);
+    if (index >= 0) {
+      if (sameMessage && index > INTAKE_QUESTIONS.indexOf(last!.nudge))
+        continue;
+      last = { nudge: INTAKE_QUESTIONS[index]!, messageId: entry.messageId };
+      reminded = false;
+    } else if (last && !sameMessage && INTAKE_REMINDERS.includes(entry.key)) {
+      reminded = true;
+    }
+  }
+  return last && { nudge: last.nudge, reminded };
 }

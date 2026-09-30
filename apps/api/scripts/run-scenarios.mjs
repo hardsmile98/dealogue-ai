@@ -1,6 +1,7 @@
 // Прогон сценариев владельца: реальная база и DeepSeek, канал в памяти, без Telegram.
 // Печатает, что ушло клиенту, и замечания проверяющего — проверка «ничего лишнего».
-// Запуск из apps/api после nest build: TELEGRAM_API_ID= TELEGRAM_API_HASH= BOT_ACCOUNT_ID=<uuid> node scripts/run-scenarios.mjs [A|B|C|D|E|F]
+// Запуск из apps/api после nest build: TELEGRAM_API_ID= TELEGRAM_API_HASH= BOT_ACCOUNT_ID=<uuid> node scripts/run-scenarios.mjs [A|B|…|O]
+// G–O ждут в библиотеке аккаунта вопросы знакомства agent.* (импорт стандартной библиотеки, режим keep).
 // KEEP=1 оставляет чаты песочницы для разбора (потом: DELETE FROM bot_chat_state WHERE sandbox AND ...).
 import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
@@ -30,7 +31,8 @@ const jobs = app.get(BotJobsRepository);
 const ladder = app.get(BotLadderService);
 const db = app.get(DataSource);
 
-function session(name) {
+/** `clientName` — имя клиента в профиле Telegram (подсказка анализатору для пола). */
+function session(name, { clientName = null } = {}) {
   const CHAT = randomUUID();
   const history = [];
   let nextId = 1;
@@ -57,6 +59,7 @@ function session(name) {
     setTyping: async () => {},
     markRead: async () => {},
     history: async () => history.slice(),
+    clientName: async () => clientName,
   };
   const log = [];
   const print = (line) => {
@@ -69,10 +72,14 @@ function session(name) {
 
   async function turnLog(turnId) {
     const [row] = await db.query(
-      `SELECT plan->>'goal' AS goal, review, final->'removed' AS removed, error FROM bot_turns WHERE id = $1`,
+      `SELECT plan->>'goal' AS goal, plan->>'nudge' AS nudge, plan->'milestone'->>'title' AS milestone, review, final->'removed' AS removed, error FROM bot_turns WHERE id = $1`,
       [turnId],
     );
     if (!row) return;
+    if (row.nudge || row.milestone)
+      print(
+        `      план: ${[row.nudge && `шаг ${row.nudge}`, row.milestone && `веха «${row.milestone}»`].filter(Boolean).join(', ')}`,
+      );
     if (row.review?.violations?.length)
       print(
         `      проверяющий: ${row.review.violations.map((v) => `${v.code}(${v.severity}): ${v.detail}`).join(' | ')}${row.review.rewritten ? ' → переписано' : ''}`,
@@ -312,6 +319,133 @@ const scenarios = {
     await s.client(['Да есть желение']);
     s.wait(1);
     await s.client(['Все подходят']);
+    await s.finish();
+  },
+  // Сфера «отношения» без подкатегории: уточняющий вопрос, диагностика по
+  // ответу; пол — по имени из профиля.
+  async G() {
+    const s = session('G: отношения — уточнение', { clientName: 'Анна' });
+    await s.start();
+    await s.client(['Здравствуйте, хочу бесплатный расклад, код 12']);
+    s.wait(3);
+    await s.client(['04.01.1999, Москва, отношения']);
+    s.wait(2);
+    await s.client(['Нет, расстались полгода назад']);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.finish();
+  },
+  // Данные без сферы, клиент молчит: вопрос о сфере → напоминание → общая диагностика.
+  async H() {
+    const s = session('H: без сферы и молчит');
+    await s.start();
+    await s.client(['Добрый день, код 5']);
+    s.wait(3);
+    await s.client(['12.12.1990 Сочи']);
+    await s.readAll();
+    s.wait(90);
+    await s.schedule('birth_data_reminder');
+    await s.readAll();
+    s.wait(75);
+    await s.schedule('diagnostic');
+    await s.finish();
+  },
+  // Сфера в первом сообщении без данных: уточнение в просьбе о данных.
+  async I() {
+    const s = session('I: семья — уточнение в просьбе о данных', {
+      clientName: 'Ольга Петрова',
+    });
+    await s.start();
+    await s.client(['Здравствуйте! Хочу расклад по семье, код 12']);
+    s.wait(3);
+    await s.client(['03.03.1985, Самара', 'да, двое детей']);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.finish();
+  },
+  // Мужское имя в профиле: «да» на уточнение — «Отношения в паре», мужская.
+  async J() {
+    const s = session('J: отношения, мужское имя в профиле', {
+      clientName: 'Дмитрий',
+    });
+    await s.start();
+    await s.client(['Здравствуйте, код 12']);
+    s.wait(3);
+    await s.client(['15.08.1988, Тверь, отношения']);
+    s.wait(2);
+    await s.client(['Да']);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.finish();
+  },
+  // Ник вместо имени — не признак пола: без него — универсальная.
+  async K() {
+    const s = session('K: ник в профиле', { clientName: 'Солнышко 🌸' });
+    await s.start();
+    await s.client(['Здравствуйте, код 12']);
+    s.wait(3);
+    await s.client(['15.08.1988, Тверь, отношения']);
+    s.wait(2);
+    await s.client(['Нет']);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.finish();
+  },
+  // Песочница владельца 30.09: на просьбу о данных — только «Отношения».
+  // Дату просим ещё раз вместе с уточнением, потом ещё раз; место — нет.
+  async L() {
+    const s = session('L: «Отношения» без даты', { clientName: 'Анна' });
+    await s.start();
+    await s.client(['Здравствуйте! Хочу бесплатный расклад, код 12']);
+    s.wait(2);
+    await s.client(['Отношения']);
+    s.wait(2);
+    await s.client(['Нет']);
+    s.wait(2);
+    await s.client(['04.04.1999']);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.finish();
+  },
+  // «Отношения» и молчит: напоминание о дате → диагностика по сфере.
+  async M() {
+    const s = session('M: «Отношения» и молчит', { clientName: 'Анна' });
+    await s.start();
+    await s.client(['Здравствуйте! Хочу бесплатный расклад, код 12']);
+    s.wait(2);
+    await s.client(['Отношения']);
+    await s.readAll();
+    s.wait(90);
+    await s.schedule('birth_data_reminder');
+    await s.readAll();
+    s.wait(75);
+    await s.schedule('diagnostic');
+    await s.finish();
+  },
+  // Песочница владельца 30.09 без имени в профиле: пол — по «с мужем».
+  async N() {
+    const s = session('N: пол по словам о муже');
+    await s.start();
+    await s.client(['Здравствуйте! Хочу бесплатный расклад, код 12']);
+    s.wait(2);
+    await s.client(['04.04.1999 Москва']);
+    s.wait(2);
+    await s.client(['Отношения']);
+    s.wait(2);
+    await s.client(['Да, в отношениях с мужем 10 лет']);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.finish();
+  },
+  // Не помнит дату — больше не просим.
+  async O() {
+    const s = session('O: не помнит дату', { clientName: 'Ольга' });
+    await s.start();
+    await s.client(['Здравствуйте, код 12']);
+    s.wait(2);
+    await s.client(['Финансы', 'дату рождения точно не помню']);
+    s.wait(60);
+    await s.schedule('diagnostic');
     await s.finish();
   },
 };

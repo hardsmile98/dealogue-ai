@@ -15,6 +15,11 @@ export interface Channel {
   markRead(chatId: string): Promise<void>;
   /** Последние сообщения чата по возрастанию времени, не больше `limit`. */
   history(chatId: string, limit: number): Promise<HistoryMessage[]>;
+  /**
+   * Имя клиента в профиле мессенджера — подсказка анализатору для пола.
+   * Нет у канала (песочница с нуля, скрипты) или пустое — null.
+   */
+  clientName?(chatId: string): Promise<string | null>;
 }
 
 export interface Clock {

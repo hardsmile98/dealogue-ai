@@ -1,4 +1,9 @@
-import { MILESTONE_TITLES, STAGES } from '../library/kinds.js';
+import {
+  MILESTONE_TITLES,
+  SPHERE_QUESTION,
+  STAGES,
+  isSphere,
+} from '../library/kinds.js';
 import type {
   Gender,
   LibraryKind,
@@ -9,13 +14,17 @@ import type { Timings } from '../library/timings.js';
 import { milestoneAt, milestoneMessageId, seenByClient } from './history.js';
 import {
   argumentsUsed,
+  birthDateSettled,
   clientLanguage,
+  dataRequestsSent,
   diagnosticCategory,
-  hasBirthData,
+  knownCategory,
   knownGender,
+  lastIntakeQuestion,
   nudgesSaid,
   requestKnown,
 } from './memory.js';
+import type { IntakeQuestionNudge } from './memory.js';
 import type {
   Analysis,
   AnswerPoint,
@@ -80,6 +89,12 @@ export interface PlanInput {
   dueJobs: readonly JobKind[];
 }
 
+/**
+ * Просьб о данных (дата рождения, сфера) в ответах клиенту — не больше:
+ * первое сообщение и ещё две (решение владельца 30.09).
+ */
+export const MAX_DATA_REQUESTS = 3;
+
 /** Напоминания — всего не больше `maxReminders` на чат (лимит держит лестница). */
 const REMINDER_JOBS: readonly JobKind[] = [
   'birth_data_reminder',
@@ -119,8 +134,11 @@ interface StepSpec {
   rotate?: boolean;
   /** Из фразы берётся только первый абзац (дальше в ней ссылки — они уходят вехой). */
   firstParagraph?: boolean;
-  /** О каком шаге напоминает — его нет в «не повторять». */
-  reminds?: Nudge;
+  /**
+   * Какие шаги повторяет по своей сути (напоминание, повторный вопрос о
+   * сфере) — их нет в «не повторять».
+   */
+  reminds?: readonly Nudge[];
 }
 
 /**
@@ -134,11 +152,35 @@ const STEPS: Record<Nudge, StepSpec> = {
     task: 'одним сообщением попроси прислать дату рождения, место рождения и в какой сфере вопрос',
     title: 'просьба о дате, месте рождения и сфере',
   },
+  ask_birth_date: {
+    kind: 'ask_birth_data',
+    task: 'одним коротким сообщением ещё раз попроси прислать дату рождения',
+    title: 'повторная просьба о дате рождения',
+    reminds: ['ask_birth_data', 'ask_sphere'],
+  },
+  ask_sphere: {
+    kind: 'ask_request',
+    category: SPHERE_QUESTION,
+    task: 'клиент прислал данные, но не написал, в какой сфере вопрос, — одним коротким вопросом спроси, на какую сферу жизни сделать упор в анализе',
+    title: 'вопрос о сфере',
+    reminds: ['ask_birth_data', 'ask_birth_date'],
+  },
+  clarify_request: {
+    kind: 'ask_request',
+    task: 'одним коротким вопросом уточни запрос внутри названной сферы',
+    title: 'уточняющий вопрос о запросе',
+  },
   birth_data_reminder: {
     kind: 'no_birth_data',
-    task: 'коротко и мягко напомни, что для анализа нужны дата, место рождения и сфера, а без них сделаешь общий анализ по основным сферам; без слов «напоминаю», «напомню о себе»',
+    task: 'коротко и мягко напомни, что для анализа нужны дата рождения и сфера, а без них сделаешь общий анализ по основным сферам; без слов «напоминаю», «напомню о себе»',
     title: 'напоминание о данных',
-    reminds: 'ask_birth_data',
+    reminds: ['ask_birth_data', 'ask_birth_date', 'ask_sphere'],
+  },
+  clarify_reminder: {
+    kind: 'ask_request',
+    task: 'клиент не ответил на уточняющий вопрос — мягко задай его ещё раз одним коротким сообщением, другими словами; без слов «напоминаю», «напомню о себе»',
+    title: 'напоминание об уточняющем вопросе',
+    reminds: ['clarify_request'],
   },
   start_analysis: {
     kind: 'wait',
@@ -259,7 +301,7 @@ function reactionOf(analysis: Analysis): Reaction {
  * которое правится при изменении логики воронки, покрыто таблицами тестов.
  */
 export function buildPlan(input: PlanInput): Plan {
-  const { analysis, memory, stage, trigger, job, timings, state } = input;
+  const { analysis, memory, stage, trigger, job, timings } = input;
   // Язык — из карточки: он «липкий» и уже обновлён анализом этого хода (memory.nextLanguage).
   const language = clientLanguage(memory.card);
   const intents = new Set(analysis?.intents ?? []);
@@ -271,6 +313,7 @@ export function buildPlan(input: PlanInput): Plan {
     answer: [],
     milestone: null,
     nudge: null,
+    coveredNudges: [],
     phrases: [],
     afterBlock: false,
     objection: null,
@@ -308,11 +351,16 @@ export function buildPlan(input: PlanInput): Plan {
     requestKnown(card) ||
     intents.has('shares_story') ||
     memory.facts.some((fact) => fact.kind === 'situation');
-  const askedData = nudgesSaid(said, 'ask_birth_data') > 0;
-  const allKnown = hasBirthData(card) && hasRequest;
-  const gaveData = Boolean(
-    card.birthDate?.value || card.birthPlace?.value || hasRequest,
-  );
+  const clarify = clarifyPhrases(input, query);
+  const intake =
+    stage === 'intake' && trigger === 'client'
+      ? intakeMove({
+          memory,
+          hasRequest,
+          clarify: clarify.length > 0,
+          acknowledged: analysis !== null && onlyAcknowledges(analysis),
+        })
+      : null;
   const reaction = analysis ? reactionOf(analysis) : null;
   const jobMilestone = job ? JOB_MILESTONE[job.kind] : undefined;
   const due = (kind: JobKind) =>
@@ -321,16 +369,14 @@ export function buildPlan(input: PlanInput): Plan {
   const wantMilestone = (key: Milestone): boolean => {
     switch (key) {
       case 'links':
-        // Дату, место и сферу спрашиваем один раз: что бы клиент ни прислал
-        // в ответ — идём дальше, недостающее не переспрашиваем.
-        return (
-          stage === 'intake' &&
-          trigger === 'client' &&
-          (allKnown || (askedData && gaveData) || state.turnsInStage >= 2)
-        );
+        // Вопросы знакомства кончились: ответ на последний, каким бы он ни
+        // был, ведёт к «займусь анализом» и ссылкам.
+        return intake?.links === true;
       case 'diagnostic': {
-        // Молчит и после напоминания — общая диагностика (лестница).
-        if (stage === 'intake') return askedData && due('diagnostic');
+        // Молчит и после напоминания — диагностика по тому, что известно
+        // (без сферы — общая), по лестнице.
+        if (stage === 'intake')
+          return lastIntakeQuestion(said) !== null && due('diagnostic');
         if (stage !== 'links') return false;
         const elapsed = minutesBetween(milestoneAt(said, 'links'), input.now);
         const asked =
@@ -406,13 +452,11 @@ export function buildPlan(input: PlanInput): Plan {
   } else if (trigger === 'schedule' && job) {
     plan.nudge = scheduledNudge(job.kind, stage, said);
     if (plan.nudge && REMINDER_JOBS.includes(job.kind)) plan.reminders = 1;
+  } else if (intake) {
+    plan.nudge = intake.nudge;
+    if (intake.withClarify) plan.coveredNudges = ['clarify_request'];
   } else if (trigger === 'client') {
-    plan.nudge = clientNudge(
-      stage,
-      said,
-      askedData || allKnown,
-      Boolean(plan.objection?.phrase),
-    );
+    plan.nudge = clientNudge(stage, said, Boolean(plan.objection?.phrase));
   }
   // Условие задания проверяется в момент срабатывания, а не при постановке.
   if (trigger === 'schedule' && !plan.milestone && !plan.nudge) {
@@ -422,6 +466,14 @@ export function buildPlan(input: PlanInput): Plan {
   }
   if (plan.nudge) {
     plan.phrases = stepPhrases(plan.nudge, input, query);
+    // Уточнение внутри просьбы о данных — одним сообщением с ней.
+    const withClarify = clarify[0];
+    if (plan.coveredNudges.includes('clarify_request') && withClarify) {
+      plan.phrases =
+        plan.phrases.length > 0
+          ? plan.phrases.map((phrase) => `${phrase} ${withClarify}`)
+          : [withClarify];
+    }
     plan.afterBlock = Boolean(STEPS[plan.nudge].after && plan.milestone);
   }
 
@@ -457,7 +509,9 @@ export function buildPlan(input: PlanInput): Plan {
   plan.constraints.maxParts =
     (plan.answer.length > 0 || plan.objection ? 1 : 0) + (plan.nudge ? 1 : 0);
   // Напоминание по своей сути повторяет то, о чём напоминает, — это не повтор.
-  const reminded = plan.nudge ? STEPS[plan.nudge].reminds : undefined;
+  const reminded: readonly string[] = plan.nudge
+    ? (STEPS[plan.nudge].reminds ?? [])
+    : [];
   plan.constraints.doNotRepeat = [
     ...new Set(
       said
@@ -465,7 +519,7 @@ export function buildPlan(input: PlanInput): Plan {
           (entry) =>
             entry.kind === 'nudge' &&
             entry.key !== plan.nudge &&
-            entry.key !== reminded &&
+            !reminded.includes(entry.key) &&
             entry.key in STEPS,
         )
         .map((entry) => STEPS[entry.key as Nudge].title),
@@ -542,6 +596,79 @@ function needsOwnAnswer(point: AnswerPoint, turn: TurnCoverage): boolean {
   return true;
 }
 
+interface IntakeMove {
+  /** Вопрос знакомства этого хода; null — спрашивать нечего. */
+  nudge: IntakeQuestionNudge | null;
+  /** Уточняющий вопрос входит в просьбу о данных — одним сообщением. */
+  withClarify: boolean;
+  /** Вопросы кончились — пора «займусь анализом» и ссылок. */
+  links: boolean;
+}
+
+/**
+ * Ход клиента на знакомстве (docs/agent-architecture.md, 2.0): что
+ * спросить или пора ссылок. Нужны дата рождения и сфера; место
+ * необязательно — его просим только в первом сообщении, вместе с датой.
+ * Пока даты или сферы нет, каждый ответ клиента получает просьбу о
+ * недостающем — всего не больше `MAX_DATA_REQUESTS` просьб; дату больше не
+ * просим, если клиент сказал, что не знает её или не даст. Сфера названа,
+ * а подкатегория не ясна и у сферы есть уточняющий вопрос — один раз
+ * уточняем, в той же просьбе, если она есть. Вопросы кончились или лимит
+ * просьб вышел — ссылки. На «ок, сейчас пришлю» не переспрашиваем: ждём
+ * данных, молчит — напомнит лестница.
+ */
+function intakeMove(input: {
+  memory: Memory;
+  hasRequest: boolean;
+  /** У названной сферы есть уточняющий вопрос, а подкатегория не ясна. */
+  clarify: boolean;
+  /** Клиент только подтвердил («ок», «сейчас пришлю») — ничего не прислал и не спросил. */
+  acknowledged: boolean;
+}): IntakeMove {
+  const { card, said } = input.memory;
+  const clarify = input.clarify && nudgesSaid(said, 'clarify_request') === 0;
+  const needDate = !birthDateSettled(card);
+  const needSphere = !input.hasRequest;
+  const requests = dataRequestsSent(said);
+  if ((needDate || needSphere) && requests < MAX_DATA_REQUESTS) {
+    if (requests > 0 && input.acknowledged)
+      return { nudge: null, withClarify: false, links: false };
+    // Дата есть — остаётся сфера: её вопрос по своей фразе, и в первом ответе тоже.
+    const nudge: IntakeQuestionNudge = !needDate
+      ? 'ask_sphere'
+      : requests === 0
+        ? 'ask_birth_data'
+        : 'ask_birth_date';
+    return { nudge, withClarify: clarify, links: false };
+  }
+  if (clarify)
+    return { nudge: 'clarify_request', withClarify: false, links: false };
+  return { nudge: null, withClarify: false, links: true };
+}
+
+/** В ходе клиента только «ок», «спасибо», «сейчас пришлю» — по пунктам анализатора. */
+function onlyAcknowledges(analysis: Analysis): boolean {
+  return (
+    analysis.answerPoints.length > 0 &&
+    analysis.answerPoints.every((point) => point.kind === 'ack')
+  );
+}
+
+/**
+ * Уточняющий вопрос внутри названной сферы — фраза `ask_request` с
+ * категорией-сферой. Пусто — уточнять нечего: сферы нет, подкатегория уже
+ * ясна или у сферы нет такой фразы.
+ */
+function clarifyPhrases(
+  input: PlanInput,
+  query: { category: string | null; gender: Gender | null; language: string },
+): string[] {
+  const sphere = input.memory.card.sphere?.value;
+  if (!sphere || !isSphere(sphere) || knownCategory(input.memory.card))
+    return [];
+  return input.library.phrases('ask_request', { ...query, category: sphere });
+}
+
 /** Шаг вместе с вехой: перед ссылками, после диагностики без вопроса, перед общей диагностикой. */
 function milestoneNudge(
   milestone: PlanMilestone,
@@ -571,6 +698,10 @@ function stepPhrases(
   if (nudge === 'start_analysis') {
     const preferred = query.category === null ? find('no_request') : [];
     phrases = preferred.length > 0 ? preferred : find(null);
+  } else if (nudge === 'clarify_request' || nudge === 'clarify_reminder') {
+    // Уточнение — фраза названной сферы.
+    const sphere = input.memory.card.sphere?.value;
+    phrases = sphere ? find(sphere) : [];
   } else {
     phrases = find(step.category ?? null);
   }
@@ -600,8 +731,16 @@ function scheduledNudge(
   const nudge = JOB_NUDGE[kind];
   if (!nudge) return null;
   switch (kind) {
-    case 'birth_data_reminder':
-      return stage === 'intake' && nudgesSaid(said, nudge) === 0 ? nudge : null;
+    case 'birth_data_reminder': {
+      // Одно напоминание после каждого вопроса знакомства: об уточнении —
+      // тем же уточняющим вопросом, о данных и сфере — фразой из таблиц.
+      if (stage !== 'intake') return null;
+      const question = lastIntakeQuestion(said);
+      if (!question || question.reminded) return null;
+      return question.nudge === 'clarify_request'
+        ? 'clarify_reminder'
+        : 'birth_data_reminder';
+    }
     case 'return_question':
       return stage === 'diagnostic' ? nudge : null;
     case 'offer_nudge':
@@ -614,20 +753,17 @@ function scheduledNudge(
 }
 
 /**
- * Шаг в ходе клиента без вехи. Дату, место и сферу просим один раз; после
- * диагностики на вопрос или сомнение — ответ и один раз предложить
- * рассказать о вариантах (если фраза плейбука на возражение уже не
- * предлагает это сама); дальше клиенту только отвечают.
+ * Шаг в ходе клиента без вехи после знакомства (вопросы знакомства —
+ * `intakeMove`): после диагностики на вопрос или сомнение — ответ и один
+ * раз предложить рассказать о вариантах (если фраза плейбука на
+ * возражение уже не предлагает это сама); дальше клиенту только отвечают.
  */
 function clientNudge(
   stage: Stage,
   said: Memory['said'],
-  dataAsked: boolean,
   objectionPhrase: boolean,
 ): Nudge | null {
   switch (stage) {
-    case 'intake':
-      return dataAsked ? null : 'ask_birth_data';
     case 'diagnostic':
       return !objectionPhrase && nudgesSaid(said, 'ask_want_options') === 0
         ? 'ask_want_options'
@@ -637,19 +773,44 @@ function clientNudge(
   }
 }
 
-/** Задача шага словами для ответчика; просьба о данных — ровно о том, чего не хватает. */
-function stepTask(nudge: Nudge, memory: Memory): string {
-  if (nudge !== 'ask_birth_data') return STEPS[nudge].task;
+const DATA_STEPS: readonly Nudge[] = [
+  'ask_birth_data',
+  'ask_birth_date',
+  'birth_data_reminder',
+];
+
+/**
+ * Задача шага словами для ответчика; просьба о данных и напоминание о них —
+ * ровно о том, чего не хватает. Место рождения — только в первой просьбе и
+ * только вместе с датой: оно необязательно.
+ */
+function stepTask(nudge: Nudge, plan: Plan, memory: Memory): string {
+  if (!DATA_STEPS.includes(nudge)) return STEPS[nudge].task;
+  const { card } = memory;
+  const request = requestKnown(card);
+  const date = !birthDateSettled(card);
+  const place = nudge === 'ask_birth_data' && date && !card.birthPlace?.value;
   const missing = [
-    ...(memory.card.birthDate?.value ? [] : ['дату рождения']),
-    ...(memory.card.birthPlace?.value ? [] : ['место рождения']),
-    ...(requestKnown(memory.card) ? [] : ['в какой сфере вопрос']),
+    ...(date ? ['дату рождения'] : []),
+    ...(place ? ['место рождения'] : []),
+    ...(request ? [] : ['в какой сфере вопрос']),
   ];
   const list =
     missing.length > 1
       ? `${missing.slice(0, -1).join(', ')} и ${missing.at(-1)}`
-      : (missing[0] ?? 'дату и место рождения');
-  return `одним сообщением попроси прислать ${list}`;
+      : (missing[0] ?? 'дату рождения');
+  if (nudge === 'birth_data_reminder') {
+    const without = request
+      ? 'анализ по тому, что есть'
+      : 'общий анализ по основным сферам';
+    return `коротко и мягко напомни, что для анализа нужно знать ${list}, а без этого сделаешь ${without}; без слов «напоминаю», «напомню о себе»`;
+  }
+  const clarify = plan.coveredNudges.includes('clarify_request')
+    ? ' и задай уточняющий вопрос из фразы'
+    : '';
+  return nudge === 'ask_birth_date'
+    ? `одним коротким сообщением ещё раз попроси прислать ${list}${clarify}`
+    : `одним сообщением попроси прислать ${list}${clarify}`;
 }
 
 /**
@@ -710,7 +871,7 @@ function describeGoal(plan: Plan, input: PlanInput, stage: Stage): string {
   }
   if (plan.nudge) {
     const step = STEPS[plan.nudge];
-    const task = stepTask(plan.nudge, input.memory);
+    const task = stepTask(plan.nudge, plan, input.memory);
     const statement = step.statement
       ? ' Шаг — утверждение: без вопросов клиенту; если во фразе есть вопрос (например, «хорошо?»), убери его.'
       : '';

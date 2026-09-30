@@ -91,6 +91,11 @@ export interface RequestCategory {
     | 'request'
     | 'other';
   title: string;
+  /**
+   * По каким словам клиента анализатор узнаёт категорию — в том числе по
+   * ответу на уточняющий вопрос внутри сферы («Вы состоите в отношениях?»).
+   */
+  hint?: string;
 }
 
 /**
@@ -102,31 +107,37 @@ export const REQUEST_CATEGORIES: readonly RequestCategory[] = [
     key: 'relationships.breakup',
     group: 'relationships',
     title: 'Расставание',
+    hint: 'не в отношениях: недавно расстались, переживает расставание',
   },
   {
     key: 'relationships.psych_astro',
     group: 'relationships',
     title: 'Психология и астрология',
+    hint: 'в отношениях, но партнёр холоден, отдаляется, избегает; повторяется один и тот же сценарий',
   },
   {
     key: 'relationships.single',
     group: 'relationships',
     title: 'Нет отношений, не получается построить',
+    hint: 'не в отношениях, одинок, не получается построить отношения',
   },
   {
     key: 'relationships.ex_conflict',
     group: 'relationships',
     title: 'Бывший партнёр или конфликт',
+    hint: 'бывший партнёр (хочет вернуть, не отпускает) или конфликт, ссора с партнёром',
   },
   {
     key: 'relationships.triangle',
     group: 'relationships',
     title: 'Любовный треугольник, измены',
+    hint: 'измены, третий человек в отношениях',
   },
   {
     key: 'relationships.couple',
     group: 'relationships',
     title: 'Отношения в паре',
+    hint: 'в отношениях или в браке, вопрос о них',
   },
   { key: 'money.love', group: 'money', title: 'Финансы и любовь' },
   { key: 'money.work', group: 'money', title: 'Финансы и работа' },
@@ -145,9 +156,24 @@ export const REQUEST_CATEGORIES: readonly RequestCategory[] = [
   },
   { key: 'money.health', group: 'money', title: 'Финансы и здоровье' },
   { key: 'health.own', group: 'health', title: 'Здоровье' },
-  { key: 'health.child', group: 'health', title: 'Здоровье ребёнка' },
-  { key: 'family.child', group: 'family', title: 'Семья, ребёнок' },
-  { key: 'family.childbearing', group: 'family', title: 'Деторождение' },
+  {
+    key: 'health.child',
+    group: 'health',
+    title: 'Здоровье ребёнка',
+    hint: 'болеет ребёнок, вопрос о здоровье детей',
+  },
+  {
+    key: 'family.child',
+    group: 'family',
+    title: 'Семья, ребёнок',
+    hint: 'дети уже есть: отношения с ребёнком, воспитание, семья',
+  },
+  {
+    key: 'family.childbearing',
+    group: 'family',
+    title: 'Деторождение',
+    hint: 'детей нет: хочет ребёнка, не получается забеременеть',
+  },
   { key: 'universal.general', group: 'universal', title: 'Универсальная' },
   { key: 'universal.seven_roads', group: 'universal', title: '7 дорог' },
   {
@@ -216,6 +242,15 @@ export const SPHERE_CATEGORY: Readonly<Record<Sphere, string>> = {
 export function isSphere(value: string): value is Sphere {
   return (SPHERES as readonly string[]).includes(value);
 }
+
+/**
+ * Категория фразы вида `ask_request`, которую агент задаёт на знакомстве:
+ * `sphere` — повторный вопрос о сфере (клиент прислал данные без неё),
+ * ключ сферы (`relationships`, `family`…) — уточняющий вопрос внутри
+ * сферы («Вы состоите в отношениях?»). Уточнение задаётся только для
+ * сфер, у которых такая фраза есть в библиотеке.
+ */
+export const SPHERE_QUESTION = 'sphere';
 
 /** Режим чата: агент ведёт сам, чат у менеджера, агент выключен в этом чате. */
 export const CHAT_MODES = ['auto', 'manager', 'off'] as const;

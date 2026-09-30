@@ -1,11 +1,20 @@
 import type { Stage } from '../library/kinds.js';
 import type { Range, Timings } from '../library/timings.js';
 import { lastOutgoing, milestoneAt } from './history.js';
-import { nudgesSaid } from './memory.js';
+import { lastIntakeQuestion, nudgesSaid } from './memory.js';
+import type { IntakeQuestionNudge } from './memory.js';
 import type { HistoryMessage, JobKind, SaidEntry } from './types.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
+
+/** Как вопрос знакомства называется в причине ступени (журнал, песочница). */
+const INTAKE_QUESTION_TITLES: Record<IntakeQuestionNudge, string> = {
+  ask_birth_data: 'запрос даты, места и сферы',
+  ask_birth_date: 'повторный запрос даты рождения',
+  ask_sphere: 'вопрос о сфере',
+  clarify_request: 'уточняющий вопрос',
+};
 
 /**
  * Задания лестницы — пересчёт заменяет все ожидающие этих видов. `offer` и
@@ -68,8 +77,9 @@ function pick(seed: string, range: Range): number {
  * все ожидающие ступени после каждого хода и каждого «прочитано», поэтому
  * отмена и перепостановка — это просто пересчёт.
  *
- * - `intake`: спросили дату, место и сферу, клиент молчит — одно
- *   напоминание, дальше — общая диагностика.
+ * - `intake`: после каждого вопроса знакомства (дата, место и сфера;
+ *   сфера; уточнение внутри сферы) клиент молчит — одно напоминание,
+ *   дальше — диагностика по тому, что известно (без сферы — общая).
  * - `links`: обещанная диагностика уходит по таймеру, прочитано или нет.
  * - После диагностики и после вариантов — только напоминания: варианты и
  *   цены уходят по реакции клиента, а не по времени.
@@ -141,14 +151,15 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
 
   switch (stage) {
     case 'intake': {
-      if (nudgesSaid(said, 'ask_birth_data') === 0) return null;
-      if (remindersLeft && nudgesSaid(said, 'birth_data_reminder') === 0) {
+      const question = lastIntakeQuestion(said);
+      if (!question) return null;
+      if (remindersLeft && !question.reminded) {
         return step(
           'birth_data_reminder',
           readAt,
           timings.birthDataReminderMin,
           MINUTE,
-          'просьба о данных прочитана, клиент молчит',
+          `${INTAKE_QUESTION_TITLES[question.nudge]} прочитан, клиент молчит`,
         );
       }
       return step(
@@ -156,7 +167,7 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
         readAt,
         timings.diagnosticDelayMin,
         MINUTE,
-        'клиент молчит и после напоминания — общая диагностика',
+        'клиент молчит и после напоминания — диагностика по тому, что известно',
       );
     }
     case 'diagnostic': {

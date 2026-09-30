@@ -82,6 +82,66 @@ describe('лестница молчания', () => {
     expect(nextLadderStep(input('intake'))).toBeNull();
   });
 
+  it('знакомство: после вопроса о сфере и после уточнения — снова одно напоминание, потом диагностика', () => {
+    // Данные пришли без сферы (напоминание о них уже было) — спросили сферу.
+    const sphereAsked = [
+      said('nudge', 'ask_birth_data', 2, 1),
+      said('nudge', 'birth_data_reminder', 3, 80),
+      said('nudge', 'ask_sphere', 5, 100),
+    ];
+    const history = [
+      incoming(1, 0),
+      outgoing(2, 1, 5),
+      outgoing(3, 80, 90),
+      incoming(4, 95),
+      outgoing(5, 100, 101),
+    ];
+    const reminder = nextLadderStep(
+      input('intake', {
+        said: sphereAsked,
+        history,
+        lastHandledMessageId: 4,
+        remindersSent: 1,
+      }),
+    );
+    expect(reminder?.kind).toBe('birth_data_reminder');
+    expect(reminder?.reason).toContain('вопрос о сфере');
+    expect(
+      within(
+        minutesAfter(reminder!.runAt, at(101)),
+        DEFAULT_TIMINGS.birthDataReminderMin,
+      ),
+    ).toBe(true);
+
+    // Уточнение в первом же ответе (дата, место и сфера пришли сразу).
+    const clarified = [said('nudge', 'clarify_request', 2, 1)];
+    expect(nextLadderStep(input('intake', { said: clarified }))?.kind).toBe(
+      'birth_data_reminder',
+    );
+    const after = nextLadderStep(
+      input('intake', {
+        said: [...clarified, said('nudge', 'clarify_reminder', 3, 80)],
+        history: [incoming(1, 0), outgoing(2, 1, 5), outgoing(3, 80, 90)],
+        remindersSent: 1,
+      }),
+    );
+    expect(after?.kind).toBe('diagnostic');
+
+    // Уточнение вошло в просьбу о данных — это один вопрос, не два.
+    const merged = [
+      said('nudge', 'clarify_request', 2, 1),
+      said('nudge', 'ask_birth_data', 2, 1),
+    ];
+    const one = nextLadderStep(
+      input('intake', {
+        said: [...merged, said('nudge', 'birth_data_reminder', 3, 80)],
+        history: [incoming(1, 0), outgoing(2, 1, 5), outgoing(3, 80, 90)],
+        remindersSent: 1,
+      }),
+    );
+    expect(one?.kind).toBe('diagnostic');
+  });
+
   it('ссылки: диагностика по таймеру даже без прочтения', () => {
     const links = [said('milestone', 'links', 2, 1)];
     const unread = [incoming(1, 0), outgoing(2, 1, null)];

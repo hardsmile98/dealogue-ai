@@ -15,6 +15,8 @@ export interface SandboxSummaryDto {
   title: string;
   /** Реальный чат, из которого скопирована переписка. */
   sourceChatId: string | null;
+  /** Имя клиента в профиле Telegram (по нему анализатор определяет пол); null — без имени. */
+  clientName: string | null;
   virtualNow: string;
   stage: Stage;
   mode: ChatMode;
@@ -64,6 +66,7 @@ export function toSandboxSummaryDto(
     accountId: session.accountId,
     title: session.title,
     sourceChatId: session.sourceChatId,
+    clientName: session.clientName,
     virtualNow: session.virtualNow.toISOString(),
     stage,
     mode: state.mode,

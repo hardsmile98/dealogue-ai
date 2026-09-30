@@ -74,14 +74,18 @@ export const sandboxApi = botApi.injectEndpoints({
         ],
       }),
 
+      /** Новая пустая сессия; `clientName` — имя клиента в профиле Telegram (пусто — без имени). */
       createSandbox: build.mutation<
         SandboxSessionDto,
-        { accountId: string; title?: string }
+        { accountId: string; title?: string; clientName?: string }
       >({
-        query: ({ accountId, title }) => ({
+        query: ({ accountId, title, clientName }) => ({
           url: `/telegram/accounts/${accountId}/bot/sandbox`,
           method: 'POST',
-          body: title ? { title } : {},
+          body: {
+            ...(title ? { title } : {}),
+            ...(clientName ? { clientName } : {}),
+          },
         }),
         invalidatesTags: listTag,
       }),

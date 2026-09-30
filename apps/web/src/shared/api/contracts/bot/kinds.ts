@@ -87,6 +87,24 @@ export const REQUEST_CATEGORIES: readonly RequestCategory[] = [
   { key: 'other.relocation', title: 'Переезд' },
 ];
 
+/** Сфера запроса — то, что клиент назвал в ответ на «в какой сфере вопрос». */
+export const SPHERES = [
+  'relationships',
+  'money',
+  'health',
+  'family',
+  'self_realization',
+  'future',
+  'all',
+] as const;
+export type Sphere = (typeof SPHERES)[number];
+
+/**
+ * Категория фразы вида `ask_request`: `sphere` — повторный вопрос о сфере,
+ * ключ сферы — уточняющий вопрос внутри неё («Вы состоите в отношениях?»).
+ */
+export const SPHERE_QUESTION = 'sphere';
+
 /** Режим чата: агент ведёт сам, чат у менеджера, агент выключен в этом чате. */
 export type ChatMode = 'auto' | 'manager' | 'off';
 /** Что владелец может выставить руками; `manager` ставит только система. */

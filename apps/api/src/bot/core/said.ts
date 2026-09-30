@@ -4,7 +4,9 @@ import type { FinalPart, Plan, SaidEntry, SentPart } from './types.js';
 const KEY_MAX_LENGTH = 64;
 
 export interface SaidInput {
-  plan: Pick<Plan, 'milestone' | 'nudge' | 'objection'>;
+  /** `coveredNudges` может не быть у ходов, записанных до его появления. */
+  plan: Pick<Plan, 'milestone' | 'nudge' | 'objection'> &
+    Partial<Pick<Plan, 'coveredNudges'>>;
   /** Аргументы плейбука, которые ответчик назвал использованными. */
   writerArguments: readonly string[];
   /** Части к отправке — по ним находится тело вехи. */
@@ -17,8 +19,8 @@ export interface SaidInput {
 
 /**
  * Реестр сказанного по итогу хода (docs/agent-architecture.md, 3.9 и 4):
- * доставленная веха (и ссылки вместе с вехой `links`), подталкивание,
- * подход к возражению и аргументы ответчика. Ничего не ушло — ничего не
+ * доставленная веха (и ссылки вместе с вехой `links`), подталкивание
+ * (и шаги, которые оно сделало заодно), подход к возражению и аргументы ответчика. Ничего не ушло — ничего не
  * сказано. Запасная фраза шага воронки не делает: подталкивание, подход и
  * аргументы в реестр не попадают, веха (она уходит сама) — попадает.
  */
@@ -46,11 +48,9 @@ export function saidEntries(input: SaidInput): Omit<SaidEntry, 'at'>[] {
   if (fallback) return entries;
 
   if (plan.nudge) {
-    entries.push({
-      kind: 'nudge',
-      key: plan.nudge,
-      messageId: lastSent.messageId,
-    });
+    for (const key of [plan.nudge, ...(plan.coveredNudges ?? [])]) {
+      entries.push({ kind: 'nudge', key, messageId: lastSent.messageId });
+    }
   }
   if (plan.objection) {
     entries.push({

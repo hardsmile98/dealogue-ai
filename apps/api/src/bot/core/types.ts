@@ -37,11 +37,21 @@ export interface CardField<T> {
   sourceMessageId?: number;
 }
 
+/**
+ * Почему даты рождения не будет: клиент не знает или не помнит её
+ * (`unknown`) или не хочет называть (`refused`). Тогда агент больше не
+ * просит дату.
+ */
+export const BIRTH_DATE_DECLINES = ['unknown', 'refused'] as const;
+export type BirthDateDecline = (typeof BIRTH_DATE_DECLINES)[number];
+
 /** Структурная карточка клиента — только то, по чему код принимает решения. */
 export interface ClientCard {
   name?: CardField<string>;
   gender?: CardField<Gender>;
   birthDate?: CardField<string>;
+  /** Клиент сказал, что даты рождения не даст (`BIRTH_DATE_DECLINES`). */
+  birthDateDeclined?: CardField<BirthDateDecline>;
   birthPlace?: CardField<string>;
   /** Сфера, которую назвал клиент (`SPHERES`), — запрос известен, даже если подкатегория не ясна. */
   sphere?: CardField<string>;
@@ -175,10 +185,19 @@ export interface Analysis {
  * основа, по которой ответчик пишет сообщение. `start_analysis` и
  * `general_analysis` идут в одном ходе с вехой перед ней,
  * `ask_want_options` — после диагностики без своего вопроса в конце.
+ * Вопросы знакомства: `ask_birth_data` (дата, место, сфера),
+ * `ask_birth_date` (повторная просьба о дате рождения, а если сферы нет —
+ * и о ней), `ask_sphere` (дата есть, сферы нет), `clarify_request`
+ * (уточнение внутри сферы, «Вы состоите в отношениях?»); на молчание после
+ * них — `birth_data_reminder` или `clarify_reminder`.
  */
 export const NUDGES = [
   'ask_birth_data',
+  'ask_birth_date',
+  'ask_sphere',
+  'clarify_request',
   'birth_data_reminder',
+  'clarify_reminder',
   'start_analysis',
   'general_analysis',
   'ask_want_options',
@@ -233,6 +252,11 @@ export interface Plan {
   milestone: PlanMilestone | null;
   /** Шаг воронки этого хода. */
   nudge: Nudge | null;
+  /**
+   * Шаги, которые сообщение шага делает заодно: уточняющий вопрос внутри
+   * просьбы о данных. В реестр сказанного идут вместе с `nudge`.
+   */
+  coveredNudges: Nudge[];
   /** Фразы шага из таблиц — основа его сообщения (варианты); пусто — шаг пишется по задаче. */
   phrases: string[];
   /** Текст ответчика идёт после тела вехи (вопрос после диагностики), а не перед ним. */
