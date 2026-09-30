@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { KeyedLock, TimeoutError, runDetached, withTimeout } from './async.js';
+import {
+  KeyedLock,
+  Semaphore,
+  TimeoutError,
+  runDetached,
+  withTimeout,
+} from './async.js';
 
 describe('withTimeout', () => {
   it('отдаёт результат, если промис успел', async () => {
@@ -88,5 +94,61 @@ describe('KeyedLock', () => {
     await lock.run('chat', async () => undefined);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(lock.size).toBe(0);
+  });
+});
+
+describe('Semaphore', () => {
+  const deferred = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => (resolve = done));
+    return { promise, resolve };
+  };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('не больше limit задач одновременно, остальные — по очереди', async () => {
+    const gate = new Semaphore(2);
+    const order: string[] = [];
+    const holds = [deferred(), deferred(), deferred()];
+    const tasks = holds.map((hold, index) =>
+      gate.run(async () => {
+        order.push(`start:${index}`);
+        await hold.promise;
+      }),
+    );
+    await tick();
+    expect(order).toEqual(['start:0', 'start:1']);
+    expect(gate.stats).toEqual({ active: 2, waiting: 1 });
+    holds[0]!.resolve();
+    await tick();
+    expect(order).toEqual(['start:0', 'start:1', 'start:2']);
+    holds[1]!.resolve();
+    holds[2]!.resolve();
+    await Promise.all(tasks);
+    expect(gate.stats).toEqual({ active: 0, waiting: 0 });
+  });
+
+  it('ошибка задачи освобождает место', async () => {
+    const gate = new Semaphore(1);
+    await expect(
+      gate.run(async () => {
+        throw new Error('упало');
+      }),
+    ).rejects.toThrow('упало');
+    await expect(gate.run(async () => 'дальше')).resolves.toBe('дальше');
+  });
+
+  it('ожидание обрывается сигналом — задача не начинается', async () => {
+    const gate = new Semaphore(1);
+    const hold = deferred();
+    const busy = gate.run(() => hold.promise);
+    const controller = new AbortController();
+    const started = vi.fn();
+    const waiting = gate.run(async () => started(), controller.signal);
+    controller.abort(new Error('остановка'));
+    await expect(waiting).rejects.toThrow('остановка');
+    hold.resolve();
+    await busy;
+    expect(started).not.toHaveBeenCalled();
+    expect(gate.stats).toEqual({ active: 0, waiting: 0 });
   });
 });

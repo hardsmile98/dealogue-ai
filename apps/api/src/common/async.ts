@@ -76,3 +76,56 @@ export class KeyedLock {
     return this.tails.size;
   }
 }
+
+/**
+ * Не больше `limit` задач одновременно, остальные ждут своей очереди по
+ * порядку. Ожидание можно оборвать сигналом — тогда задача не начнётся, а
+ * промис отклонится причиной сигнала.
+ */
+export class Semaphore {
+  private active = 0;
+  private readonly waiting: (() => void)[] = [];
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    await this.acquire(signal);
+    try {
+      return await task();
+    } finally {
+      this.release();
+    }
+  }
+
+  /** Сколько задач выполняется и сколько ждут — для проверок и логов. */
+  get stats(): { active: number; waiting: number } {
+    return { active: this.active, waiting: this.waiting.length };
+  }
+
+  private acquire(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(signal.reason);
+    if (this.active < this.limit) {
+      this.active += 1;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        const index = this.waiting.indexOf(start);
+        if (index >= 0) this.waiting.splice(index, 1);
+        reject(signal?.reason);
+      };
+      const start = () => {
+        signal?.removeEventListener('abort', onAbort);
+        this.active += 1;
+        resolve();
+      };
+      this.waiting.push(start);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  private release(): void {
+    this.active -= 1;
+    this.waiting.shift()?.();
+  }
+}

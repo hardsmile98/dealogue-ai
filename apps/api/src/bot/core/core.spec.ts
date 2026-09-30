@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { parseAnalysis } from './analysis.js';
 import {
   formatHistory,
-  lastIncoming,
   lastOutgoing,
   milestoneMessageId,
   seenByClient,
@@ -98,7 +97,6 @@ describe('история для промпта', () => {
 
   it('находит последние сообщения; «видел» — прочитал или написал после', () => {
     expect(lastOutgoing(history)?.id).toBe(4);
-    expect(lastIncoming(history)?.id).toBe(3);
     expect(seenByClient(history, 2)).toBe(true);
     expect(seenByClient(history, 4)).toBe(false);
     // Отметки о прочтении нет, но клиент ответил — значит, видел.

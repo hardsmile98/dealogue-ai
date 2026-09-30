@@ -3,7 +3,6 @@ import {
   GENDERS,
   LANGUAGES,
   LIBRARY_KINDS,
-  MILESTONE_KINDS,
   OBJECTION_CATEGORIES,
   isRequestCategory,
 } from '../kinds.js';
@@ -64,7 +63,6 @@ describe('стандартная библиотека', () => {
       );
       expect(enabled, kind).toHaveLength(1);
     }
-    expect(MILESTONE_KINDS).toContain('offer');
   });
 
   it('плейсхолдеры только известные и только вне диагностик', () => {

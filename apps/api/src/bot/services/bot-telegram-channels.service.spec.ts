@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TimeoutError } from '../../common/async.js';
 import type { TelegramChatEntity } from '../../telegram/entities/telegram-chat.entity.js';
 import type { TelegramAccountsRepository } from '../../telegram/repositories/telegram-accounts.repository.js';
 import type { TelegramChatsRepository } from '../../telegram/repositories/telegram-chats.repository.js';
@@ -15,7 +16,7 @@ function setup(chat: TelegramChatEntity | null = CHAT) {
   let channels!: BotTelegramChannels;
   const outbound = {
     isOnline: vi.fn(() => true),
-    sendText: vi.fn(
+    startSend: vi.fn(
       async (_accountId: string, _chat: unknown, text: string) => {
         ownDuringSend = channels.own.isOwn('chat-1', -1, text);
         return { id: 501, message: text };
@@ -102,11 +103,92 @@ describe('BotTelegramChannels', () => {
 
   it('сбой отправки снимает текст из «отправляется сейчас»', async () => {
     const t = setup();
-    t.outbound.sendText.mockRejectedValueOnce(new Error('offline'));
+    t.outbound.startSend.mockRejectedValueOnce(new Error('offline'));
     await expect(
       t.channels.forAccount('acc-1').send('chat-1', 'упадёт'),
     ).rejects.toThrow('offline');
     expect(t.channels.own.isOwn('chat-1', 0, 'упадёт')).toBe(false);
     expect(t.events.emit).not.toHaveBeenCalled();
+  });
+
+  describe('зависшая отправка', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Отправка, которая висит, пока тест её не отпустит. */
+    function hanging(t: ReturnType<typeof setup>) {
+      let deliver!: (message: { id: number; message: string }) => void;
+      let fail!: (error: Error) => void;
+      t.outbound.startSend.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            deliver = resolve;
+            fail = reject;
+          }),
+      );
+      return {
+        deliver: (id: number) => deliver({ id, message: 'Привет' }),
+        fail: (error: Error) => fail(error),
+      };
+    }
+
+    it('дошла после таймаута: своя, записана, повторная отправка того же текста не шлёт второй раз', async () => {
+      vi.useFakeTimers();
+      const t = setup();
+      const late = hanging(t);
+      const channel = t.channels.forAccount('acc-1');
+      const first = channel.send('chat-1', 'Привет');
+      const firstFailed = expect(first).rejects.toBeInstanceOf(TimeoutError);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await firstFailed;
+      // Запрос не отменён: пока он идёт, эхо с этим текстом — своё, а не менеджера.
+      expect(t.channels.own.isOwn('chat-1', 900, 'Привет')).toBe(true);
+
+      // Досылка того же текста ждёт зависший запрос, а не шлёт второй раз.
+      const retry = channel.send('chat-1', 'Привет');
+      late.deliver(900);
+      await expect(retry).resolves.toEqual({ messageId: 900 });
+      expect(t.outbound.startSend).toHaveBeenCalledTimes(1);
+      expect(t.ingest.storeOwnOutgoing).toHaveBeenCalledWith(CHAT, {
+        id: 900,
+        message: 'Привет',
+      });
+      expect(t.channels.own.isOwn('chat-1', 900, 'другой текст')).toBe(true);
+    });
+
+    it('не дошла: текст перестаёт быть своим, следующая отправка идёт заново', async () => {
+      vi.useFakeTimers();
+      const t = setup();
+      const late = hanging(t);
+      const channel = t.channels.forAccount('acc-1');
+      const first = channel.send('chat-1', 'Привет');
+      const firstFailed = expect(first).rejects.toBeInstanceOf(TimeoutError);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await firstFailed;
+      late.fail(new Error('connection closed'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.channels.own.isOwn('chat-1', 0, 'Привет')).toBe(false);
+      await expect(channel.send('chat-1', 'Привет')).resolves.toEqual({
+        messageId: 501,
+      });
+      expect(t.outbound.startSend).toHaveBeenCalledTimes(2);
+    });
+
+    it('всё ещё висит — досылка откладывается, а не шлёт дубль', async () => {
+      vi.useFakeTimers();
+      const t = setup();
+      hanging(t);
+      const channel = t.channels.forAccount('acc-1');
+      const first = channel.send('chat-1', 'Привет');
+      const firstFailed = expect(first).rejects.toBeInstanceOf(TimeoutError);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await firstFailed;
+      const retry = channel.send('chat-1', 'Привет');
+      const retryFailed = expect(retry).rejects.toBeInstanceOf(TimeoutError);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await retryFailed;
+      expect(t.outbound.startSend).toHaveBeenCalledTimes(1);
+    });
   });
 });

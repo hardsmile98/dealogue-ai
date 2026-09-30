@@ -334,6 +334,10 @@ export class BotTelegramService
       );
       return;
     }
+    // Поколение — до чтения истории: сообщение, пришедшее между ними, не
+    // попадёт в ход, зато сделает его устаревшим, и следующий ход ответит
+    // на всё сразу, а не отдельным вторым ответом.
+    const generation = this.collector.currentGeneration(chatId);
     // Все неотвеченные: и собранные сейчас, и оставшиеся от прерванного хода.
     const history = await env.channel.history(chatId, HISTORY_LIMIT);
     const messages = unansweredIncoming(
@@ -341,7 +345,6 @@ export class BotTelegramService
       state.lastHandledMessageId ?? 0,
     );
     if (messages.length === 0) return;
-    const generation = this.collector.currentGeneration(chatId);
     await this.runner.run(
       {
         chatId,

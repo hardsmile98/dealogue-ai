@@ -1,4 +1,4 @@
-import type { FinalPart } from './types.js';
+import type { FinalPart, ReviewViolation } from './types.js';
 
 /** Лимит Telegram на одно сообщение. */
 export const MESSAGE_MAX_LENGTH = 4096;
@@ -61,6 +61,63 @@ export function normalizeUrl(url: string): string {
     .replace(/^www\./i, '')
     .replace(/\/+$/u, '')
     .toLowerCase();
+}
+
+/** Сколько вопросов клиенту в тексте: знаки «?», подряд идущие — один. */
+export function countQuestions(parts: readonly string[]): number {
+  return parts.reduce(
+    (sum, part) => sum + (part.match(/\?+/gu)?.length ?? 0),
+    0,
+  );
+}
+
+/** Короче этого одинаковые сообщения — не повтор, а обычная реплика («Понял вас 🙏»). */
+const REPEAT_MIN_LETTERS = 20;
+
+/** Текст для сравнения: только буквы и цифры в нижнем регистре. */
+function comparable(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+export interface DraftCheckInput {
+  parts: readonly string[];
+  /** Сколько вопросов разрешает план (`plan.constraints.maxQuestions`). */
+  maxQuestions: number;
+  /** Наши прошлые сообщения в чате. */
+  previous: readonly string[];
+}
+
+/**
+ * Нарушения черновика, видные по символам: вопросов больше, чем просит
+ * план, или сообщение слово в слово повторяет наше прошлое. Идут вместе с
+ * замечаниями проверяющего, и ответчик переписывает текст; отправку они не
+ * блокируют.
+ */
+export function draftViolations(input: DraftCheckInput): ReviewViolation[] {
+  const violations: ReviewViolation[] = [];
+  const questions = countQuestions(input.parts);
+  if (questions > input.maxQuestions) {
+    violations.push({
+      code: 'extra_question',
+      severity: 'hard',
+      detail:
+        input.maxQuestions === 0
+          ? `вопросов в тексте: ${questions}, а план вопросов не просит — убери их`
+          : `вопросов в тексте: ${questions}, а план разрешает ${input.maxQuestions} — оставь только вопрос из плана`,
+    });
+  }
+  const seen = new Set(input.previous.map(comparable));
+  for (const part of input.parts) {
+    const text = comparable(part);
+    if (text.length >= REPEAT_MIN_LETTERS && seen.has(text)) {
+      violations.push({
+        code: 'self_repeat',
+        severity: 'hard',
+        detail: `сообщение слово в слово повторяет твоё прошлое: «${part.trim()}» — скажи иначе`,
+      });
+    }
+  }
+  return violations;
 }
 
 /** Письменность языка; для языков без записи проверка не делается. */

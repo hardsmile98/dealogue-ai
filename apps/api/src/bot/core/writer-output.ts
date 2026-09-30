@@ -10,7 +10,7 @@ export class WriterParseError extends Error {
 
 /**
  * Ответчик работает в JSON-режиме: `messages` — сообщения клиенту по
- * порядку, остальное — служебная мета. Тело вехи код ставит после
+ * порядку, `notes` — пояснение в журнал. Тело вехи код ставит после
  * `messages` сам, поэтому служебное не может утечь клиенту.
  */
 export function parseWriterOutput(raw: string): Draft {
@@ -18,9 +18,6 @@ export function parseWriterOutput(raw: string): Draft {
   if (!data) throw new WriterParseError('Ответчик вернул не JSON-объект');
   return {
     parts: stringList(data.messages),
-    meta: {
-      arguments: stringList(data.arguments),
-      notes: typeof data.notes === 'string' ? data.notes : '',
-    },
+    notes: typeof data.notes === 'string' ? data.notes : '',
   };
 }

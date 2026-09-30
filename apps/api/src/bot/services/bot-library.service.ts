@@ -13,7 +13,12 @@ import type {
   UpdateLibraryItemDto,
 } from '../dto/library.dto.js';
 import type { BotLibraryItemEntity } from '../entities/bot-library-item.entity.js';
-import { OBJECTION_CATEGORIES, isRequestCategory } from '../library/kinds.js';
+import {
+  OBJECTION_CATEGORIES,
+  OBJECTION_KINDS,
+  isObjectionCategory,
+  isRequestCategory,
+} from '../library/kinds.js';
 import type { LibraryKind } from '../library/kinds.js';
 import { unknownPlaceholders } from '../library/persona.js';
 import { DEFAULT_LIBRARY } from '../library/seed/default-library.js';
@@ -129,9 +134,8 @@ export class BotLibraryService {
       );
     }
     if (
-      kind === 'objection' &&
-      (!category ||
-        !(OBJECTION_CATEGORIES as readonly string[]).includes(category))
+      OBJECTION_KINDS.includes(kind) &&
+      (!category || !isObjectionCategory(category))
     ) {
       throw new BadRequestException(
         `У возражения должна быть категория из плейбука: ${OBJECTION_CATEGORIES.join(', ')}`,

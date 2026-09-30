@@ -1,5 +1,6 @@
 import {
   OBJECTION_CATEGORIES,
+  OBJECTION_KINDS,
   REQUEST_CATEGORIES,
   SPHERES,
   SPHERE_QUESTION,
@@ -45,12 +46,13 @@ export function categoryTitle(category: string | null): string | null {
 
 /**
  * Категория, которую можно выбрать в редакторе: у диагностик — запрос
- * клиента, у вопросов о запросе — сфера, у возражений — плейбук.
+ * клиента, у вопросов о запросе — сфера, у возражений (после диагностики
+ * и после вариантов) — категория возражения.
  */
 export function categoryOptions(kind: LibraryKind): RequestCategory[] | null {
   if (kind === 'diagnostic') return [...REQUEST_CATEGORIES];
   if (kind === 'ask_request') return REQUEST_QUESTIONS;
-  if (kind === 'objection') {
+  if (OBJECTION_KINDS.includes(kind)) {
     return OBJECTION_CATEGORIES.map((key) => ({
       key,
       title: OBJECTION_LABELS[key],

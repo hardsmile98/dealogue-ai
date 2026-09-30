@@ -22,6 +22,7 @@ export const LIBRARY_KINDS = [
   'links',
   'diagnostic',
   'return_question',
+  'diagnostic_objection',
   'offer',
   'prices',
   'nudge',
@@ -31,17 +32,24 @@ export const LIBRARY_KINDS = [
 ] as const;
 export type LibraryKind = (typeof LIBRARY_KINDS)[number];
 
+/** Плейбуки возражений: на диагностику (вариантов ещё не было) и на варианты работы. */
+export const OBJECTION_KINDS: readonly LibraryKind[] = [
+  'diagnostic_objection',
+  'objection',
+];
+
 export const GENDERS = ['f', 'm'] as const;
 export type Gender = (typeof GENDERS)[number];
 
 export const LANGUAGES = ['ru', 'en'] as const;
 export type Language = (typeof LANGUAGES)[number];
 
-/** Категории возражений — плейбук (элементы вида `objection`). */
+/** Категории возражений — плейбуки (элементы видов `OBJECTION_KINDS`). */
 export const OBJECTION_CATEGORIES = [
   'expensive',
   'think_about_it',
   'dont_believe',
+  'not_resonate',
   'no_time',
   'ask_partner',
   'tried_before',

@@ -11,6 +11,12 @@ export interface DelayPlanInput {
   now: Date;
   parts: readonly FinalPart[];
   timings: Timings;
+  /**
+   * Сколько клиент уже ждёт ответа сверх обычного — у повтора после сбоя
+   * или перезапуска. Пауза «как человек» считается от его сообщения, а не
+   * начинается заново.
+   */
+  waitedMs?: number;
   random?: () => number;
 }
 
@@ -59,7 +65,11 @@ export function planDelays(input: DelayPlanInput): DelayPlan {
     pauseMs:
       index === 0 ? 0 : Math.round(pick(timings.partPauseSec, random) * 1000),
   }));
-  return { initialMs: Math.round(initialSec * 1000), parts };
+  const initialMs = Math.max(
+    0,
+    Math.round(initialSec * 1000) - Math.max(0, input.waitedMs ?? 0),
+  );
+  return { initialMs, parts };
 }
 
 export interface DeliverInput {

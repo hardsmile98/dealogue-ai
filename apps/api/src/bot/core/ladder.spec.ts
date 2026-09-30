@@ -189,6 +189,31 @@ describe('лестница молчания', () => {
     ).toBeNull();
   });
 
+  it('клиент отвечал после диагностики и замолчал — первое напоминание не быстро, а через 12–16 ч', () => {
+    const step = nextLadderStep(
+      input('diagnostic', {
+        said: [
+          said('milestone', 'links', 2, 1),
+          said('milestone', 'diagnostic', 2, 1),
+          said('argument', 'not_resonate:0', 4, 20),
+          said('nudge', 'clarify_objection', 4, 20),
+        ],
+        history: [
+          incoming(1, 0),
+          outgoing(2, 1, 5),
+          incoming(3, 10),
+          outgoing(4, 20, 25),
+        ],
+        lastHandledMessageId: 3,
+      }),
+    );
+    expect(step?.kind).toBe('return_question');
+    expect(step?.reason).toContain('отвечал после диагностики');
+    expect(
+      within(minutesAfter(step!.runAt, at(25)) / 60, DEFAULT_TIMINGS.stepHours),
+    ).toBe(true);
+  });
+
   it('после вариантов — только напоминания, цены по таймеру не уходят', () => {
     expect(nextLadderStep(input('offer'))?.kind).toBe('offer_nudge');
     expect(

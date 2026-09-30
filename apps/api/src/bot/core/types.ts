@@ -182,14 +182,18 @@ export interface Analysis {
 
 /**
  * Шаги воронки между вехами (раздел 2.3). У шага есть фраза из таблиц —
- * основа, по которой ответчик пишет сообщение. `start_analysis` и
- * `general_analysis` идут в одном ходе с вехой перед ней,
+ * образец тона, по которому ответчик пишет своё сообщение. `start_analysis`
+ * и `general_analysis` идут в одном ходе с вехой перед ней,
  * `ask_want_options` — после диагностики без своего вопроса в конце.
  * Вопросы знакомства: `ask_birth_data` (дата, место, сфера),
  * `ask_birth_date` (повторная просьба о дате рождения, а если сферы нет —
  * и о ней), `ask_sphere` (дата есть, сферы нет), `clarify_request`
  * (уточнение внутри сферы, «Вы состоите в отношениях?»); на молчание после
- * них — `birth_data_reminder` или `clarify_reminder`.
+ * них — `birth_data_reminder` или `clarify_reminder`. `follow_up` —
+ * напоминание по разговору, когда клиент уже отвечал после вехи.
+ * `clarify_objection`, `pause_objection`, `release_objection` — не шаги
+ * хода, а отметки в реестре: чем закончилась отработка возражения (раздел
+ * 2.5).
  */
 export const NUDGES = [
   'ask_birth_data',
@@ -203,9 +207,34 @@ export const NUDGES = [
   'ask_want_options',
   'ask_feedback',
   'ask_offer_questions',
+  'follow_up',
   'unread_reminder',
+  'clarify_objection',
+  'pause_objection',
+  'release_objection',
 ] as const;
 export type Nudge = (typeof NUDGES)[number];
+
+/**
+ * Чем заканчивается отработка возражения (раздел 2.5):
+ * - `question` — своим вопросом клиенту (уточнение);
+ * - `step` — шагом воронки отдельным сообщением («рассказать, как
+ *   проработать?»);
+ * - `open` — ничем: без вопросов, дверь открыта («посоветуйтесь, я на
+ *   связи»), клиент сам вернётся;
+ * - `release` — клиента отпускаем после повторных возражений: без
+ *   вопросов, и напоминаний на этапе больше нет.
+ */
+export type ObjectionEnd = 'question' | 'step' | 'open' | 'release';
+
+/** Отметка в реестре для каждого исхода отработки, кроме шага (его записывает сам шаг). */
+export const OBJECTION_MARKERS: Readonly<
+  Record<Exclude<ObjectionEnd, 'step'>, Nudge>
+> = {
+  question: 'clarify_objection',
+  open: 'pause_objection',
+  release: 'release_objection',
+};
 
 /**
  * Виды заданий планировщика: ступени лестницы молчания (раздел 2.4),
@@ -247,8 +276,13 @@ export interface PlanMilestone {
 /** План хода — собирает код, LLM пишет текст под него (раздел 3.4). */
 export interface Plan {
   handoff: { reason: HandoffReason; detail: string } | null;
-  /** Пункты, на которые нужен отдельный ответ; остальное закрывают шаг и веха. */
+  /** Пункты, на которые нужен отдельный ответ; остальное закрывают шаг, веха и отработка возражения. */
   answer: PlannedAnswer[];
+  /**
+   * Что клиент рассказал (ситуация, чувства, ответ на уточнение) — на это
+   * короткий отклик в начале сообщения шага, отдельного ответа нет.
+   */
+  react: string[];
   milestone: PlanMilestone | null;
   /** Шаг воронки этого хода. */
   nudge: Nudge | null;
@@ -257,15 +291,25 @@ export interface Plan {
    * просьбы о данных. В реестр сказанного идут вместе с `nudge`.
    */
   coveredNudges: Nudge[];
-  /** Фразы шага из таблиц — основа его сообщения (варианты); пусто — шаг пишется по задаче. */
+  /**
+   * Фразы шага из таблиц — образцы тона и длины, а не шаблон; первая уходит
+   * как есть, если текст ответчика не прошёл проверки. Пусто — шаг пишется
+   * по задаче.
+   */
   phrases: string[];
   /** Текст ответчика идёт после тела вехи (вопрос после диагностики), а не перед ним. */
   afterBlock: boolean;
-  /** Подход из плейбука: категория, номер (0 — первый) и его фраза из таблиц. */
+  /**
+   * Отработка возражения (раздел 2.5): категория, номер подхода на этапе
+   * (0 — первый), задача словами, чем заканчивается и образцы тона из
+   * плейбука этапа.
+   */
   objection: {
     category: string;
     approach: number;
-    phrase: string | null;
+    task: string;
+    ends: ObjectionEnd;
+    phrases: string[];
   } | null;
   constraints: {
     doNotRepeat: string[];
@@ -273,6 +317,8 @@ export interface Plan {
     language: string;
     /** Сколько сообщений может написать ответчик (тело вехи не считается). */
     maxParts: number;
+    /** Сколько вопросов клиенту может быть в тексте ответчика: шаг и уточнение по возражению. */
+    maxQuestions: number;
   };
   /** План словами — для ответчика, проверяющего и журнала. */
   goal: string;
@@ -285,16 +331,11 @@ export interface Plan {
   idle: string | null;
 }
 
-export interface WriterMeta {
-  /** Подходы плейбука, которые ответчик назвал использованными. */
-  arguments: string[];
-  notes: string;
-}
-
 export interface Draft {
   /** Сообщения по порядку; тело вехи, если оно есть, код ставит после них. */
   parts: string[];
-  meta: WriterMeta;
+  /** Одно предложение ответчика о том, что он сделал, — только в журнал. */
+  notes: string;
 }
 
 export interface ReviewViolation {

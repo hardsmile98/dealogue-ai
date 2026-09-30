@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { HISTORY_LIMIT, unansweredIncoming } from '../core/history.js';
+import { LADDER_KINDS } from '../core/ladder.js';
 import { JOB_KINDS } from '../core/types.js';
 import type {
   JobKind,
@@ -10,6 +11,7 @@ import type {
 import type { BotJobEntity } from '../entities/bot-job.entity.js';
 import { BotChatStateRepository } from '../repositories/bot-chat-state.repository.js';
 import { BotJobsRepository } from '../repositories/bot-jobs.repository.js';
+import { BotLadderService } from './bot-ladder.service.js';
 import { TurnRunnerService } from './turn-runner.service.js';
 import type { TurnEnvironment } from './turn-runner.service.js';
 
@@ -33,9 +35,10 @@ export function toTurnJob(job: BotJobEntity): TurnJob | null {
 
 /**
  * Выполнение одного задания — общее для поллера (боевые чаты) и перемотки
- * песочницы. Условие ступени проверяет план хода в момент срабатывания; здесь
- * только выбор, каким ходом её выполнить. Досылка (`resume`) доводит
- * собранный ход и в чате, который за это время ушёл менеджеру.
+ * песочницы. Здесь выбор, каким ходом его выполнить, и проверка, что
+ * ступень лестницы ещё нужна; её условие ещё раз проверяет план хода.
+ * Досылка (`resume`) доводит собранный ход и в чате, который за это время
+ * ушёл менеджеру.
  */
 @Injectable()
 export class BotJobExecutor {
@@ -43,6 +46,7 @@ export class BotJobExecutor {
     private readonly states: BotChatStateRepository,
     private readonly jobs: BotJobsRepository,
     private readonly runner: TurnRunnerService,
+    private readonly ladder: BotLadderService,
   ) {}
 
   async execute(
@@ -88,6 +92,22 @@ export class BotJobExecutor {
     if (turnJob.kind === 'reply') {
       // Повторять нечего: клиенту уже ответили.
       await this.jobs.markDone(job.id);
+      return null;
+    }
+    // Ступень лестницы — только если лестница и сейчас выводит её же: клиент
+    // мог ответить, пока задание ждало (повтор упавшего напоминания пересчёт
+    // не снимает), — тогда оно устарело.
+    if (
+      LADDER_KINDS.includes(turnJob.kind) &&
+      !(await this.ladder.stillDue(
+        job.chatId,
+        env.channel,
+        turnJob.kind,
+        env.clock.now(),
+      ))
+    ) {
+      await this.jobs.cancel(job.id);
+      await this.ladder.reschedule(job.chatId, env.channel);
       return null;
     }
     return this.runner.run(

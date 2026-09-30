@@ -1,30 +1,41 @@
 import {
   MILESTONE_TITLES,
-  SPHERE_QUESTION,
+  OBJECTION_TITLES,
   STAGES,
-  isSphere,
+  isObjectionCategory,
 } from '../library/kinds.js';
 import type {
   Gender,
+  HandoffReason,
   LibraryKind,
   Milestone,
   Stage,
 } from '../library/kinds.js';
 import type { Timings } from '../library/timings.js';
-import { milestoneAt, milestoneMessageId, seenByClient } from './history.js';
+import { describeGoal } from './goal.js';
 import {
-  argumentsUsed,
+  milestoneAt,
+  milestoneMessageId,
+  repliedAfter,
+  seenByClient,
+} from './history.js';
+import {
   birthDateSettled,
   clientLanguage,
   dataRequestsSent,
   diagnosticCategory,
   knownCategory,
   knownGender,
+  knownSphere,
   lastIntakeQuestion,
   nudgesSaid,
+  objectionPending,
   requestKnown,
 } from './memory.js';
-import type { IntakeQuestionNudge } from './memory.js';
+import type { IntakeQuestionNudge, ObjectionPending } from './memory.js';
+import { RETURN_STEPS, objectionMove, objectionStage } from './objections.js';
+import type { ObjectionMove } from './objections.js';
+import { STEPS, isNudge, rotated, stepQuestions } from './steps.js';
 import type {
   Analysis,
   AnswerPoint,
@@ -41,6 +52,8 @@ import type {
   TurnTrigger,
 } from './types.js';
 
+export { needsWriter } from './goal.js';
+
 export interface PhraseQuery {
   language: string;
   gender: Gender | null;
@@ -56,9 +69,9 @@ export interface LibraryAvailability {
     query: { category: string | null; gender: Gender | null; language: string },
   ): PlanMilestone | null;
   /**
-   * Фразы вида из таблиц — основа шага воронки: на языке клиента (нет на
-   * нём — на русском, ответчик переведёт), по категории и полу, в порядке
-   * библиотеки.
+   * Фразы вида из таблиц — образцы тона для шага воронки и отработки
+   * возражения: на языке клиента (нет на нём — на русском), по категории и
+   * полу, в порядке библиотеки.
    */
   phrases(kind: LibraryKind, query: PhraseQuery): string[];
   /** Есть ли на языке хотя бы одна диагностика — иначе клиента ведёт менеджер. */
@@ -119,109 +132,6 @@ const JOB_MILESTONE: Partial<Record<JobKind, Milestone>> = {
   diagnostic: 'diagnostic',
 };
 
-interface StepSpec {
-  /** Вид библиотеки с фразой шага; null — фразы в таблицах нет, шаг пишется по задаче. */
-  kind: LibraryKind | null;
-  category?: string;
-  task: string;
-  /** Как шаг называется в «уже было, не повторять». */
-  title: string;
-  /** Утверждение, а не вопрос: вопрос из фразы («хорошо?») убирается. */
-  statement?: boolean;
-  /** Идёт после тела вехи этого хода, а не перед ним. */
-  after?: boolean;
-  /** Напоминание, которое может повториться: каждый раз — следующий вариант фразы. */
-  rotate?: boolean;
-  /** Из фразы берётся только первый абзац (дальше в ней ссылки — они уходят вехой). */
-  firstParagraph?: boolean;
-  /**
-   * Какие шаги повторяет по своей сути (напоминание, повторный вопрос о
-   * сфере) — их нет в «не повторять».
-   */
-  reminds?: readonly Nudge[];
-}
-
-/**
- * Шаги воронки: чья фраза из таблиц — основа сообщения и что шаг делает.
- * Ответчик пишет шаг по фразе, а не придумывает его: так агент идёт по
- * воронке из таблиц и не задаёт лишних вопросов.
- */
-const STEPS: Record<Nudge, StepSpec> = {
-  ask_birth_data: {
-    kind: 'greeting',
-    task: 'одним сообщением попроси прислать дату рождения, место рождения и в какой сфере вопрос',
-    title: 'просьба о дате, месте рождения и сфере',
-  },
-  ask_birth_date: {
-    kind: 'ask_birth_data',
-    task: 'одним коротким сообщением ещё раз попроси прислать дату рождения',
-    title: 'повторная просьба о дате рождения',
-    reminds: ['ask_birth_data', 'ask_sphere'],
-  },
-  ask_sphere: {
-    kind: 'ask_request',
-    category: SPHERE_QUESTION,
-    task: 'клиент прислал данные, но не написал, в какой сфере вопрос, — одним коротким вопросом спроси, на какую сферу жизни сделать упор в анализе',
-    title: 'вопрос о сфере',
-    reminds: ['ask_birth_data', 'ask_birth_date'],
-  },
-  clarify_request: {
-    kind: 'ask_request',
-    task: 'одним коротким вопросом уточни запрос внутри названной сферы',
-    title: 'уточняющий вопрос о запросе',
-  },
-  birth_data_reminder: {
-    kind: 'no_birth_data',
-    task: 'коротко и мягко напомни, что для анализа нужны дата рождения и сфера, а без них сделаешь общий анализ по основным сферам; без слов «напоминаю», «напомню о себе»',
-    title: 'напоминание о данных',
-    reminds: ['ask_birth_data', 'ask_birth_date', 'ask_sphere'],
-  },
-  clarify_reminder: {
-    kind: 'ask_request',
-    task: 'клиент не ответил на уточняющий вопрос — мягко задай его ещё раз одним коротким сообщением, другими словами; без слов «напоминаю», «напомню о себе»',
-    title: 'напоминание об уточняющем вопросе',
-    reminds: ['clarify_request'],
-  },
-  start_analysis: {
-    kind: 'wait',
-    task: 'скажи, что понял и займёшься анализом, а потом вернёшься с результатами',
-    title: 'обещание сделать анализ',
-    statement: true,
-  },
-  general_analysis: {
-    kind: 'links',
-    category: 'no_request',
-    task: 'скажи, что не увидел запроса и сделал общий анализ — результаты ниже',
-    title: 'общий анализ без запроса',
-    statement: true,
-    firstParagraph: true,
-  },
-  ask_want_options: {
-    kind: null,
-    task: 'одним коротким вопросом спроси, рассказать ли, как это можно проработать (например: «Рассказать вам, как это можно проработать?»)',
-    title: 'вопрос, рассказать ли о вариантах работы',
-    after: true,
-  },
-  ask_feedback: {
-    kind: 'return_question',
-    task: 'клиент молчит после диагностики — задай вопрос по ней; без слов «напоминаю», «напомню о себе»',
-    title: 'вопрос-отклик на диагностику',
-    rotate: true,
-  },
-  ask_offer_questions: {
-    kind: 'nudge',
-    category: 'offer',
-    task: 'спроси, всё ли понятно по направлениям и есть ли вопросы',
-    title: 'вопрос после вариантов работы',
-    rotate: true,
-  },
-  unread_reminder: {
-    kind: null,
-    task: 'ненавязчиво напомни о себе одним коротким сообщением, опираясь на то, о чём шёл разговор; без давления и без повтора своих прошлых фраз',
-    title: 'напоминание о себе',
-  },
-};
-
 /**
  * Темы, которые раскрываются только вехой: до этапа `opensAt` на такой
  * пункт ответчик отвечает по формуле, не раскрывая. Тему пункта называет
@@ -238,9 +148,10 @@ const TOPIC_HOLDS: Partial<
     opensAt: 'diagnostic',
     hold: 'результаты диагностики не пересказывай и не придумывай: скажи, что пришлёшь их, когда посмотришь',
   },
+  // О работе подробно рассказывает веха «описание практик»; до неё — только общо.
   practice: {
-    opensAt: 'diagnostic',
-    hold: 'ответь коротко и общо, без подробностей: о практиках подробно расскажешь после диагностики',
+    opensAt: 'offer',
+    hold: 'ответь коротко и общо, без подробностей о практиках и вариантах работы',
   },
 };
 
@@ -266,39 +177,59 @@ function minutesBetween(from: Date | null, to: Date): number {
     : Number.POSITIVE_INFINITY;
 }
 
+/**
+ * Намерения, которые прямо просят веху. Варианты — «расскажите»,
+ * «сколько стоит», «готов», выбрал; цены — только цена, готовность и
+ * выбор: вопрос о практиках после вариантов («как проходит чистка?») —
+ * это вопрос, а не согласие.
+ */
+const EXPLICIT_INTENTS: Readonly<
+  Record<'offer' | 'prices', readonly string[]>
+> = {
+  offer: ['asks_practice', 'asks_price', 'ready', 'chooses_option'],
+  prices: ['asks_price', 'ready', 'chooses_option'],
+};
+
 /** Как клиент отреагировал на веху — по намерениям и пунктам анализа. */
 interface Reaction {
-  /** Прямо просит следующий шаг: варианты, цену, выбрал вариант, готов. */
-  explicit: boolean;
-  /** Спросил что-то (на вопрос нужен ответ). */
-  asks: boolean;
+  /** Прямо просит эту веху (`EXPLICIT_INTENTS`). */
+  explicit(milestone: 'offer' | 'prices'): boolean;
   /** Возражает или сомневается. */
   resists: boolean;
+  /**
+   * Спросил или попросил о чём-то, кроме того, на что отвечает следующая
+   * веха: «где вы живёте?», «расскажите про себя» — это не согласие на
+   * варианты, на это отвечают.
+   */
+  asksBeyond(topic: AnswerTopic): boolean;
 }
 
 function reactionOf(analysis: Analysis): Reaction {
-  const intents = new Set(analysis.intents);
+  const intents = new Set<string>(analysis.intents);
   return {
-    explicit:
-      intents.has('asks_practice') ||
-      intents.has('asks_price') ||
-      intents.has('ready') ||
-      intents.has('chooses_option'),
-    asks: analysis.answerPoints.some(
-      (point) => !point.skip && point.kind === 'question',
-    ),
+    explicit: (milestone) =>
+      EXPLICIT_INTENTS[milestone].some((intent) => intents.has(intent)),
     resists:
       analysis.objection !== null ||
       intents.has('objects') ||
       intents.has('doubts') ||
       analysis.answerPoints.some((point) => point.kind === 'objection'),
+    asksBeyond: (topic) =>
+      analysis.answerPoints.some(
+        (point) =>
+          !point.skip &&
+          (point.kind === 'question' || point.kind === 'request') &&
+          point.topic !== topic,
+      ),
   };
 }
 
 /**
- * План хода (docs/agent-architecture.md, 3.4): передача → веха → шаг
- * воронки → ответы → ограничения. Чистая функция: единственное место,
- * которое правится при изменении логики воронки, покрыто таблицами тестов.
+ * План хода (docs/agent-architecture.md, 3.4): передача → веха →
+ * возражение и шаг воронки → ответы → ограничения. Чистая функция:
+ * единственное место логики воронки, покрыто таблицами тестов. Таблицы
+ * шагов и возражений — `steps.ts` и `objections.ts`, план словами —
+ * `goal.ts`.
  */
 export function buildPlan(input: PlanInput): Plan {
   const { analysis, memory, stage, trigger, job, timings } = input;
@@ -311,6 +242,7 @@ export function buildPlan(input: PlanInput): Plan {
   const plan: Plan = {
     handoff: null,
     answer: [],
+    react: [],
     milestone: null,
     nudge: null,
     coveredNudges: [],
@@ -322,6 +254,7 @@ export function buildPlan(input: PlanInput): Plan {
       doNotMention: [],
       language,
       maxParts: 0,
+      maxQuestions: 0,
     },
     goal: '',
     reminders: 0,
@@ -347,8 +280,9 @@ export function buildPlan(input: PlanInput): Plan {
   const category = diagnosticCategory(card);
   const gender = knownGender(card);
   const query = { category, gender, language };
-  const hasRequest =
-    requestKnown(card) ||
+  // Клиент рассказал о своей ситуации: сферу всё равно спрашиваем
+  // (решение 30.09), но «не увидел вашего запроса» ему не говорим.
+  const told =
     intents.has('shares_story') ||
     memory.facts.some((fact) => fact.kind === 'situation');
   const clarify = clarifyPhrases(input, query);
@@ -356,15 +290,26 @@ export function buildPlan(input: PlanInput): Plan {
     stage === 'intake' && trigger === 'client'
       ? intakeMove({
           memory,
-          hasRequest,
           clarify: clarify.length > 0,
           acknowledged: analysis !== null && onlyAcknowledges(analysis),
         })
       : null;
   const reaction = analysis ? reactionOf(analysis) : null;
+  // Где разговор после возражения: ответ на уточнение или «ок» после «я на
+  // связи» — не согласие на следующую веху.
+  const at = objectionStage(stage);
+  const pending: ObjectionPending | null =
+    at !== null ? objectionPending(said, at) : null;
   const jobMilestone = job ? JOB_MILESTONE[job.kind] : undefined;
   const due = (kind: JobKind) =>
     input.dueJobs.includes(kind) || job?.kind === kind;
+  // Откликнулся на веху, не возражая и не спрашивая о другом, и разговор не
+  // ждёт ответа на уточнение или паузу после возражения.
+  const agrees = (topic: AnswerTopic) =>
+    reaction !== null &&
+    pending === null &&
+    !reaction.resists &&
+    !reaction.asksBeyond(topic);
 
   const wantMilestone = (key: Milestone): boolean => {
     switch (key) {
@@ -374,9 +319,14 @@ export function buildPlan(input: PlanInput): Plan {
         return intake?.links === true;
       case 'diagnostic': {
         // Молчит и после напоминания — диагностика по тому, что известно
-        // (без сферы — общая), по лестнице.
+        // (без сферы — общая), по лестнице. Клиент написал — он уже не
+        // молчит: решают вопросы знакомства.
         if (stage === 'intake')
-          return lastIntakeQuestion(said) !== null && due('diagnostic');
+          return (
+            trigger === 'schedule' &&
+            job?.kind === 'diagnostic' &&
+            lastIntakeQuestion(said) !== null
+          );
         if (stage !== 'links') return false;
         const elapsed = minutesBetween(milestoneAt(said, 'links'), input.now);
         const asked =
@@ -385,23 +335,22 @@ export function buildPlan(input: PlanInput): Plan {
         return due('diagnostic') || asked;
       }
       case 'offer':
-        // Хочет узнать варианты или откликнулся без вопроса и возражения
-        // («да», «ок», «хочу всё изменить») — варианты сразу.
+        // Хочет узнать варианты или откликнулся без возражения и без
+        // вопроса о другом («да», «ок», «хочу всё изменить») — варианты сразу.
         return (
           stage === 'diagnostic' &&
           reaction !== null &&
           seenByClient(input.history, milestoneMessageId(said, 'diagnostic')) &&
-          (reaction.explicit ||
-            (!reaction.resists && (!reaction.asks || analysis!.interest >= 2)))
+          (reaction.explicit('offer') || agrees(MILESTONE_ANSWERS.offer))
         );
       case 'prices':
-        // Выбрал вариант, спросил цену, готов или ответил без вопроса и
-        // возражения («да, всё понятно») — цены сразу.
+        // Выбрал вариант, спросил цену, готов или ответил без возражения и
+        // без вопроса («да, всё понятно») — цены сразу.
         return (
           stage === 'offer' &&
           reaction !== null &&
           seenByClient(input.history, milestoneMessageId(said, 'offer')) &&
-          (reaction.explicit || (!reaction.resists && !reaction.asks))
+          (reaction.explicit('prices') || agrees(MILESTONE_ANSWERS.prices))
         );
       default:
         return false;
@@ -416,31 +365,38 @@ export function buildPlan(input: PlanInput): Plan {
     null;
   if (target && wantMilestone(target)) {
     const item = input.library.milestone(target, query);
-    if (item) {
-      plan.milestone = item;
-    } else if (target === 'diagnostic') {
+    // Вехи на языке клиента нет — вести его дальше нечем: менеджер.
+    if (!item) {
       return handoff(
         plan,
         'no_language_materials',
-        `нет диагностики для «${category ?? 'универсальная'}», ${gender ?? 'любой пол'}, ${language}`,
+        target === 'diagnostic'
+          ? `нет диагностики для «${category ?? 'универсальная'}», ${gender ?? 'любой пол'}, ${language}`
+          : `нет «${MILESTONE_TITLES[target]}» на языке «${language}»`,
       );
     }
+    plan.milestone = item;
   }
 
-  // 3. Возражение: следующий подход из плейбука.
+  // 3. Возражение: подход по этапу и повтору, образцы — из плейбука этапа.
+  let move: ObjectionMove | null = null;
   if (analysis?.objection) {
-    const approach = argumentsUsed(said, analysis.objection);
-    const approaches = input.library.phrases('objection', {
-      ...query,
-      category: analysis.objection,
-    });
+    const chosen = objectionMove(stage, analysis.objection, said);
+    move = chosen.move;
     plan.objection = {
       category: analysis.objection,
-      approach,
-      phrase:
-        approaches.length > 0
-          ? (approaches[approach % approaches.length] as string)
-          : null,
+      approach: chosen.approach,
+      task: move.task,
+      ends: move.ends,
+      phrases: chosen.playbook
+        ? rotated(
+            input.library.phrases(chosen.playbook, {
+              ...query,
+              category: analysis.objection,
+            }),
+            chosen.approach,
+          )
+        : [],
     };
   }
 
@@ -448,15 +404,23 @@ export function buildPlan(input: PlanInput): Plan {
   // «займусь анализом»; после диагностики без вопроса в конце — вопрос,
   // рассказать ли о вариантах; перед общей диагностикой — «не увидел запроса».
   if (plan.milestone) {
-    plan.nudge = milestoneNudge(plan.milestone, stage, category);
+    plan.nudge = milestoneNudge(plan.milestone, stage, category, told);
   } else if (trigger === 'schedule' && job) {
-    plan.nudge = scheduledNudge(job.kind, stage, said);
-    if (plan.nudge && REMINDER_JOBS.includes(job.kind)) plan.reminders = 1;
+    plan.nudge = scheduledNudge(job.kind, stage, said, input.history);
+    if (plan.nudge && REMINDER_JOBS.includes(job.kind)) {
+      // Лимит напоминаний и «отпустили» проверяются и здесь: повтор
+      // упавшего напоминания лестница не пересчитывает.
+      const allowed =
+        input.state.remindersSent < timings.maxReminders &&
+        pending !== 'release';
+      if (allowed) plan.reminders = 1;
+      else plan.nudge = null;
+    }
   } else if (intake) {
     plan.nudge = intake.nudge;
     if (intake.withClarify) plan.coveredNudges = ['clarify_request'];
   } else if (trigger === 'client') {
-    plan.nudge = clientNudge(stage, said, Boolean(plan.objection?.phrase));
+    plan.nudge = clientNudge(stage, said, move, pending);
   }
   // Условие задания проверяется в момент срабатывания, а не при постановке.
   if (trigger === 'schedule' && !plan.milestone && !plan.nudge) {
@@ -476,58 +440,60 @@ export function buildPlan(input: PlanInput): Plan {
     }
     plan.afterBlock = Boolean(STEPS[plan.nudge].after && plan.milestone);
   }
+  // Отработка не может обещать того, чего в ходе нет: уходит веха — она и
+  // ответ, своего вопроса и паузы не нужно; шага нет — нечем «вести к
+  // вариантам».
+  if (plan.objection) {
+    if (plan.milestone || (plan.objection.ends === 'step' && !plan.nudge))
+      plan.objection.ends = 'open';
+  }
 
-  // 5. Ответить клиенту — только на то, что не закрывают шаг и веха.
-  // Тема, до которой разговор ещё не дошёл, получает формулу без раскрытия.
+  // 5. Ответить клиенту — только на то, что не закрывают шаг, веха и
+  // отработка возражения; на рассказ — отклик в сообщении шага. Тема, до
+  // которой разговор ещё не дошёл, получает формулу без раскрытия.
   const reached: Stage = plan.milestone ? plan.milestone.key : stage;
   const turn: TurnCoverage = {
-    handled: plan.nudge !== null || plan.milestone !== null,
-    stage,
+    step: plan.nudge !== null,
     milestone: plan.milestone?.key ?? null,
+    stage,
+    objection: plan.objection !== null,
+    answersQuestion: trigger === 'client' && pending === 'question',
   };
-  // Ранняя цена без вехи в ходе — фраза из таблиц «стоимость — вопрос обсуждаемый».
-  const priceDeflect = plan.milestone
+  // Цена раньше времени после диагностики — по смыслу фразы из таблиц
+  // («стоимость — вопрос обсуждаемый, сначала поймём, какой результат
+  // нужен»); до диагностики — «к стоимости вернусь позже»: расклад и так
+  // бесплатный, обсуждать нечего.
+  const priceDeflect = before(reached, 'diagnostic')
     ? undefined
     : input.library.phrases('price_deflect', { ...query, category: null })[0];
-  plan.answer = (analysis?.answerPoints ?? [])
-    .filter((point) => needsOwnAnswer(point, turn))
-    .map<PlannedAnswer>((point) => {
-      const rule = TOPIC_HOLDS[point.topic];
-      if (!rule || !before(reached, rule.opensAt))
-        return { ...point, hold: null };
-      const hold =
-        point.topic === 'price' && priceDeflect
-          ? `цены не называй: ответь по фразе из сценария, смысл не меняй — «${priceDeflect}»`
+  for (const point of analysis?.answerPoints ?? []) {
+    const mode = answerMode(point, turn);
+    if (mode === 'react') {
+      plan.react.push(point.text);
+      continue;
+    }
+    if (mode !== 'answer') continue;
+    const rule = TOPIC_HOLDS[point.topic];
+    const hold =
+      !rule || !before(reached, rule.opensAt)
+        ? null
+        : point.topic === 'price' && priceDeflect
+          ? `цены не называй: скажи своими словами то же, что практик говорит так — «${priceDeflect}»`
           : rule.hold;
-      return { ...point, hold };
-    });
+    plan.answer.push({ ...point, hold } satisfies PlannedAnswer);
+  }
   const priceHeld = plan.answer.some(
     (point) => point.topic === 'price' && point.hold,
   );
 
-  // 6. Ограничения. Сообщений ответчика: одно на ответы, одно на шаг.
+  // 6. Ограничения. Сообщений ответчика: одно на ответы и возражение, одно
+  // на шаг (отклик — в нём же). Вопросы — только те, что просит план.
   plan.constraints.maxParts =
     (plan.answer.length > 0 || plan.objection ? 1 : 0) + (plan.nudge ? 1 : 0);
-  // Напоминание по своей сути повторяет то, о чём напоминает, — это не повтор.
-  const reminded: readonly string[] = plan.nudge
-    ? (STEPS[plan.nudge].reminds ?? [])
-    : [];
-  plan.constraints.doNotRepeat = [
-    ...new Set(
-      said
-        .filter(
-          (entry) =>
-            entry.kind === 'nudge' &&
-            entry.key !== plan.nudge &&
-            !reminded.includes(entry.key) &&
-            entry.key in STEPS,
-        )
-        .map((entry) => STEPS[entry.key as Nudge].title),
-    ),
-    ...said
-      .filter((entry) => entry.kind === 'argument')
-      .map((entry) => `подход к возражению ${entry.key}`),
-  ];
+  plan.constraints.maxQuestions =
+    (plan.nudge ? stepQuestions(plan.nudge, plan) : 0) +
+    (plan.objection?.ends === 'question' ? 1 : 0);
+  plan.constraints.doNotRepeat = doNotRepeat(said, plan.nudge);
   // Цены своими словами — никогда: они уходят только телом вехи «стоимость».
   plan.constraints.doNotMention.push(
     priceHeld
@@ -540,60 +506,108 @@ export function buildPlan(input: PlanInput): Plan {
   if (before(stage, 'diagnostic'))
     plan.constraints.doNotMention.push('подробное описание практик и услуг');
 
-  plan.goal = describeGoal(plan, input, stage);
+  plan.goal = describeGoal(plan, {
+    trigger,
+    firstReply:
+      stage === 'intake' &&
+      input.state.turnsInStage === 0 &&
+      trigger === 'client',
+    memory,
+    history: input.history,
+  });
   return plan;
 }
 
-function handoff(
-  plan: Plan,
-  reason: Plan['handoff'] extends infer H
-    ? H extends { reason: infer R }
-      ? R
-      : never
-    : never,
-  detail: string,
-): Plan {
+function handoff(plan: Plan, reason: HandoffReason, detail: string): Plan {
   plan.handoff = { reason, detail };
   plan.goal = `Передать менеджеру: ${detail}.`;
   return plan;
 }
 
+/**
+ * «Уже было, не повторять»: сделанные шаги (кроме текущего, того, о чём он
+ * напоминает, и отметок) и прошлые отработки возражений.
+ */
+function doNotRepeat(said: Memory['said'], nudge: Nudge | null): string[] {
+  const reminded: readonly string[] = nudge ? (STEPS[nudge].reminds ?? []) : [];
+  const steps = said
+    .filter(
+      (entry) =>
+        entry.kind === 'nudge' &&
+        entry.key !== nudge &&
+        !reminded.includes(entry.key) &&
+        isNudge(entry.key) &&
+        !STEPS[entry.key].marker,
+    )
+    .map((entry) => STEPS[entry.key as Nudge].title);
+  const argued = said
+    .filter((entry) => entry.kind === 'argument')
+    .map((entry) => {
+      const category = entry.key.split(':')[0] ?? entry.key;
+      return `твоя прошлая отработка возражения «${isObjectionCategory(category) ? OBJECTION_TITLES[category] : category}»`;
+    });
+  return [...new Set(steps), ...new Set(argued)];
+}
+
 interface TurnCoverage {
-  /** В ходе есть шаг воронки или веха. */
-  handled: boolean;
-  stage: Stage;
+  /** В ходе есть шаг воронки — сообщение, к которому можно приложить отклик. */
+  step: boolean;
   milestone: Milestone | null;
+  stage: Stage;
+  /** В ходе есть отработка возражения — она и отвечает на него. */
+  objection: boolean;
+  /** Клиент отвечает на уточнение по возражению. */
+  answersQuestion: boolean;
 }
 
 /**
- * Нужен ли пункту отдельный ответ. Шаг воронки и веха сами отвечают на
- * рассказ о проблеме и просьбу о раскладе: «понимаю вас» к ним — это и
- * есть лишние сообщения. Приветствие, «ок», присланные данные и короткий
- * ответ на наш вопрос отдельного ответа не требуют никогда («всё
- * записал», «хорошо, посмотрю в целом»); если в ходе нет ни шага, ни
- * вехи, на них агент молчит.
+ * Что делать с пунктом клиента: отдельный ответ (`answer`), короткий
+ * отклик в начале сообщения шага (`react`) или ничего (null).
+ * - Приветствие, «ок», присланные данные — ничего: их закрывает шаг
+ *   («всё записал» — лишнее).
+ * - Рассказ и чувства: есть шаг — отклик в нём; нет ни шага, ни вехи —
+ *   ответ; веха без шага — ничего: вехи уходят без обрамления.
+ * - Короткий ответ на наш вопрос — ничего; на уточнение по возражению —
+ *   как рассказ: клиент сказал, что у него на самом деле.
+ * - Возражение и всё о нём закрывает его отработка.
+ * - Вопрос, на который отвечает веха хода, и просьба о раскладе до
+ *   диагностики (её закрывает шаг) — ничего; прочие вопросы — ответ.
  */
-function needsOwnAnswer(point: AnswerPoint, turn: TurnCoverage): boolean {
-  if (point.skip) return false;
+function answerMode(
+  point: AnswerPoint,
+  turn: TurnCoverage,
+): 'answer' | 'react' | null {
+  if (point.skip) return null;
+  const story = (): 'answer' | 'react' | null =>
+    turn.objection
+      ? null
+      : turn.step
+        ? 'react'
+        : turn.milestone
+          ? null
+          : 'answer';
   switch (point.kind) {
     case 'greeting':
     case 'ack':
     case 'data':
+      return null;
     case 'answer':
-      return false;
+      return turn.answersQuestion ? story() : null;
     case 'story':
     case 'emotion':
-      return !turn.handled;
+      return story();
+    case 'objection':
+      return turn.objection ? null : 'answer';
     default:
       break;
   }
   // «Расскажите о практиках», «а цена?» — веха этого хода и есть ответ.
   if (turn.milestone && MILESTONE_ANSWERS[turn.milestone] === point.topic)
-    return false;
+    return null;
   // Просьба о раскладе и «когда будет»: пока диагностика не ушла, на них отвечает шаг воронки.
   if (point.topic === 'diagnostic' && before(turn.stage, 'diagnostic'))
-    return !turn.handled;
-  return true;
+    return turn.step || turn.milestone ? null : 'answer';
+  return 'answer';
 }
 
 interface IntakeMove {
@@ -619,7 +633,6 @@ interface IntakeMove {
  */
 function intakeMove(input: {
   memory: Memory;
-  hasRequest: boolean;
   /** У названной сферы есть уточняющий вопрос, а подкатегория не ясна. */
   clarify: boolean;
   /** Клиент только подтвердил («ок», «сейчас пришлю») — ничего не прислал и не спросил. */
@@ -628,7 +641,8 @@ function intakeMove(input: {
   const { card, said } = input.memory;
   const clarify = input.clarify && nudgesSaid(said, 'clarify_request') === 0;
   const needDate = !birthDateSettled(card);
-  const needSphere = !input.hasRequest;
+  // Сферу узнаём всегда (решение 30.09): рассказ без сферы её не заменяет.
+  const needSphere = !requestKnown(card);
   const requests = dataRequestsSent(said);
   if ((needDate || needSphere) && requests < MAX_DATA_REQUESTS) {
     if (requests > 0 && input.acknowledged)
@@ -663,28 +677,37 @@ function clarifyPhrases(
   input: PlanInput,
   query: { category: string | null; gender: Gender | null; language: string },
 ): string[] {
-  const sphere = input.memory.card.sphere?.value;
-  if (!sphere || !isSphere(sphere) || knownCategory(input.memory.card))
-    return [];
+  const sphere = knownSphere(input.memory.card);
+  if (!sphere || knownCategory(input.memory.card)) return [];
   return input.library.phrases('ask_request', { ...query, category: sphere });
 }
 
-/** Шаг вместе с вехой: перед ссылками, после диагностики без вопроса, перед общей диагностикой. */
+/**
+ * Шаг вместе с вехой: перед ссылками, после диагностики без вопроса, перед
+ * общей диагностикой. «Не увидел вашего запроса» — только если клиент и
+ * правда ничего не рассказал, и только если диагностика спрашивает сама:
+ * шаг за ход — один, а вопрос после диагностики обязателен.
+ */
 function milestoneNudge(
   milestone: PlanMilestone,
   stage: Stage,
   category: string | null,
+  told: boolean,
 ): Nudge | null {
   if (milestone.key === 'links')
     return milestone.kind === 'links' ? 'start_analysis' : null;
   if (milestone.key !== 'diagnostic') return null;
-  // Вопрос после диагностики обязателен; «не увидел запроса» — только если
-  // диагностика спрашивает сама (шаг за ход — один).
   if (!milestone.asks) return 'ask_want_options';
-  return stage === 'intake' && category === null ? 'general_analysis' : null;
+  return stage === 'intake' && category === null && !told
+    ? 'general_analysis'
+    : null;
 }
 
-/** Фразы шага из таблиц. У «займусь анализом» свой вариант, когда запроса нет. */
+/**
+ * Образцы шага из таблиц. У «займусь анализом» свой вариант, когда запроса
+ * нет; у напоминаний каждый раз первым идёт следующий вариант — он же
+ * уйдёт как есть, если текст ответчика не пройдёт проверки.
+ */
 function stepPhrases(
   nudge: Nudge,
   input: PlanInput,
@@ -700,7 +723,7 @@ function stepPhrases(
     phrases = preferred.length > 0 ? preferred : find(null);
   } else if (nudge === 'clarify_request' || nudge === 'clarify_reminder') {
     // Уточнение — фраза названной сферы.
-    const sphere = input.memory.card.sphere?.value;
+    const sphere = knownSphere(input.memory.card);
     phrases = sphere ? find(sphere) : [];
   } else {
     phrases = find(step.category ?? null);
@@ -710,23 +733,23 @@ function stepPhrases(
       .map((phrase) => phrase.split(/\n\s*\n/)[0]?.trim() ?? '')
       .filter(Boolean);
   }
-  if (step.rotate && phrases.length > 0) {
-    // Повторное напоминание — следующим вариантом фразы.
-    const sent = nudgesSaid(input.memory.said, nudge);
-    return [phrases[sent % phrases.length] as string];
-  }
-  return phrases;
+  return step.rotate
+    ? rotated(phrases, nudgesSaid(input.memory.said, nudge))
+    : phrases;
 }
 
 /**
  * Шаг по расписанию — только если он ещё к месту: напоминание о данных,
  * пока клиент молчит на этапе знакомства; вопрос-отклик, пока этап не
- * сменился.
+ * сменился. Клиент уже отвечал после вехи этапа (спросил, возразил) —
+ * отклик уже был, и напоминание идёт по разговору (`follow_up`), а не
+ * «жду обратную связь по раскладу».
  */
 function scheduledNudge(
   kind: JobKind,
   stage: Stage,
   said: Memory['said'],
+  history: readonly HistoryMessage[],
 ): Nudge | null {
   const nudge = JOB_NUDGE[kind];
   if (!nudge) return null;
@@ -742,9 +765,13 @@ function scheduledNudge(
         : 'birth_data_reminder';
     }
     case 'return_question':
-      return stage === 'diagnostic' ? nudge : null;
-    case 'offer_nudge':
-      return stage === 'offer' ? nudge : null;
+    case 'offer_nudge': {
+      const at = kind === 'return_question' ? 'diagnostic' : 'offer';
+      if (stage !== at) return null;
+      return repliedAfter(history, milestoneMessageId(said, at))
+        ? 'follow_up'
+        : nudge;
+    }
     case 'unread_reminder':
       return before(stage, 'prices') ? nudge : null;
     default:
@@ -753,151 +780,36 @@ function scheduledNudge(
 }
 
 /**
+ * Сколько раз после диагностики агент сам, без возражения, спрашивает,
+ * рассказать ли о вариантах, — клиент задаёт вопросы о другом. Дальше ему
+ * только отвечают, чтобы не давить.
+ */
+const MAX_OPTIONS_QUESTIONS = 2;
+
+/**
  * Шаг в ходе клиента без вехи после знакомства (вопросы знакомства —
- * `intakeMove`): после диагностики на вопрос или сомнение — ответ и один
- * раз предложить рассказать о вариантах (если фраза плейбука на
- * возражение уже не предлагает это сама); дальше клиенту только отвечают.
+ * `intakeMove`). Возвратный вопрос этапа — «рассказать, как проработать?»
+ * после диагностики, «всё ли понятно по направлениям?» после вариантов:
+ * - возражение — решает его отработка: вопрос идёт следом, только если она
+ *   заканчивается шагом;
+ * - ответ на уточнение по возражению — отклик и возвратный вопрос;
+ * - пауза после возражения или клиента отпустили — только ответ;
+ * - после диагностики на вопрос о другом — ответ и вопрос о вариантах, не
+ *   больше `MAX_OPTIONS_QUESTIONS` раз за этап.
  */
 function clientNudge(
   stage: Stage,
   said: Memory['said'],
-  objectionPhrase: boolean,
+  move: ObjectionMove | null,
+  pending: ObjectionPending | null,
 ): Nudge | null {
-  switch (stage) {
-    case 'diagnostic':
-      return !objectionPhrase && nudgesSaid(said, 'ask_want_options') === 0
-        ? 'ask_want_options'
-        : null;
-    default:
-      return null;
-  }
-}
-
-const DATA_STEPS: readonly Nudge[] = [
-  'ask_birth_data',
-  'ask_birth_date',
-  'birth_data_reminder',
-];
-
-/**
- * Задача шага словами для ответчика; просьба о данных и напоминание о них —
- * ровно о том, чего не хватает. Место рождения — только в первой просьбе и
- * только вместе с датой: оно необязательно.
- */
-function stepTask(nudge: Nudge, plan: Plan, memory: Memory): string {
-  if (!DATA_STEPS.includes(nudge)) return STEPS[nudge].task;
-  const { card } = memory;
-  const request = requestKnown(card);
-  const date = !birthDateSettled(card);
-  const place = nudge === 'ask_birth_data' && date && !card.birthPlace?.value;
-  const missing = [
-    ...(date ? ['дату рождения'] : []),
-    ...(place ? ['место рождения'] : []),
-    ...(request ? [] : ['в какой сфере вопрос']),
-  ];
-  const list =
-    missing.length > 1
-      ? `${missing.slice(0, -1).join(', ')} и ${missing.at(-1)}`
-      : (missing[0] ?? 'дату рождения');
-  if (nudge === 'birth_data_reminder') {
-    const without = request
-      ? 'анализ по тому, что есть'
-      : 'общий анализ по основным сферам';
-    return `коротко и мягко напомни, что для анализа нужно знать ${list}, а без этого сделаешь ${without}; без слов «напоминаю», «напомню о себе»`;
-  }
-  const clarify = plan.coveredNudges.includes('clarify_request')
-    ? ' и задай уточняющий вопрос из фразы'
-    : '';
-  return nudge === 'ask_birth_date'
-    ? `одним коротким сообщением ещё раз попроси прислать ${list}${clarify}`
-    : `одним сообщением попроси прислать ${list}${clarify}`;
-}
-
-/**
- * Нужен ли ответчик: есть шаг воронки или то, на что ответить. Иначе ход —
- * это веха сама по себе или молчание («ок» во время ожидания).
- */
-export function needsWriter(
-  plan: Pick<Plan, 'nudge' | 'answer' | 'objection'>,
-): boolean {
-  return (
-    plan.nudge !== null || plan.answer.length > 0 || plan.objection !== null
-  );
-}
-
-function describeGoal(plan: Plan, input: PlanInput, stage: Stage): string {
-  const lines: string[] = [];
-  if (!needsWriter(plan)) {
-    return plan.milestone
-      ? `Отправить «${MILESTONE_TITLES[plan.milestone.key]}» (${plan.milestone.title}) без сопровождения — писать ничего не нужно.`
-      : 'Промолчать: клиенту нечего отвечать, шага воронки нет — только «прочитано».';
-  }
-  if (input.trigger === 'schedule') {
-    lines.push(
-      'Ход по расписанию: ты пишешь первым, клиент ничего нового не писал. Не благодари, не отвечай и не сочувствуй — отвечать не на что; паузу не комментируй; не ссылайся на слова клиента, которых нет в истории.',
-    );
-  }
-  if (
-    stage === 'intake' &&
-    input.state.turnsInStage === 0 &&
-    input.trigger === 'client'
-  ) {
-    lines.push('Это первый ответ клиенту: начни с приветствия.');
-  }
-  if (plan.milestone && plan.afterBlock) {
-    lines.push(
-      `Сначала система отправит «${MILESTONE_TITLES[plan.milestone.key]}» (${plan.milestone.title}) текстом из библиотеки, твоё сообщение уйдёт сразу после неё. Её не пересказывай и не комментируй.`,
-    );
-  }
-  if (plan.answer.length > 0) {
-    const items = plan.answer.map((point, index) => {
-      const hold = point.hold ? ` — ${point.hold}` : '';
-      return `${index + 1}) ${point.text}${hold}`;
-    });
-    lines.push(
-      `Ответить коротко, по существу, одним сообщением, в этом порядке: ${items.join('; ')}.`,
-    );
-  }
-  if (plan.objection) {
-    const nth =
-      plan.objection.approach > 0
-        ? ` (повторяется, ${plan.objection.approach + 1}-й раз — не так, как раньше)`
-        : '';
-    lines.push(
-      plan.objection.phrase
-        ? `Возражение «${plan.objection.category}»${nth}: отработай по фразе из сценария, смысл не меняй — «${plan.objection.phrase}».`
-        : `Возражение «${plan.objection.category}»${nth}: отработай коротко и спокойно, без давления.`,
-    );
-  }
-  if (plan.nudge) {
-    const step = STEPS[plan.nudge];
-    const task = stepTask(plan.nudge, plan, input.memory);
-    const statement = step.statement
-      ? ' Шаг — утверждение: без вопросов клиенту; если во фразе есть вопрос (например, «хорошо?»), убери его.'
-      : '';
-    if (plan.phrases.length === 0) {
-      lines.push(`Шаг воронки (отдельным сообщением): ${task}.${statement}`);
-    } else {
-      const variants =
-        plan.phrases.length > 1
-          ? ' Вариантов несколько — возьми за основу один, не смешивай.'
-          : '';
-      lines.push(
-        `Шаг воронки (отдельным сообщением): ${task}. Пиши его по фразе из сценария — её смысл, похожая длина; подстроить под разговор и под задачу шага можно, добавлять другое — нет.${statement}${variants}`,
-        ...plan.phrases.map((phrase) => `«${phrase}»`),
-      );
-    }
-  }
-  if (plan.milestone && !plan.afterBlock) {
-    lines.push(
-      `Сразу после твоих сообщений система отправит «${MILESTONE_TITLES[plan.milestone.key]}» (${plan.milestone.title}) текстом из библиотеки. О ней не пиши: ни вступления, ни пересказа, ни продолжения.`,
-    );
-  }
-  if (plan.constraints.doNotRepeat.length > 0)
-    lines.push(
-      `Уже было, не повторять: ${plan.constraints.doNotRepeat.join(', ')}.`,
-    );
-  if (plan.constraints.doNotMention.length > 0)
-    lines.push(`Не упоминать: ${plan.constraints.doNotMention.join(', ')}.`);
-  return lines.join('\n');
+  const at = objectionStage(stage);
+  if (!at) return null;
+  const back = RETURN_STEPS[at];
+  if (move) return move.ends === 'step' ? back : null;
+  if (pending === 'question') return back;
+  if (pending) return null;
+  return at === 'diagnostic' && nudgesSaid(said, back) < MAX_OPTIONS_QUESTIONS
+    ? back
+    : null;
 }

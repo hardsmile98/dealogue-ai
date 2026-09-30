@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { saidEntries } from './said.js';
 import type { SaidInput } from './said.js';
-import type { FinalPart, SentPart } from './types.js';
+import type { FinalPart, ObjectionEnd, Plan, SentPart } from './types.js';
 
 const text = (value: string): FinalPart => ({ text: value, block: false });
 const block = (value: string): FinalPart => ({ text: value, block: true });
+
+const objection = (
+  category: string,
+  approach: number,
+  ends: ObjectionEnd,
+): NonNullable<Plan['objection']> => ({
+  category,
+  approach,
+  task: '…',
+  ends,
+  phrases: [],
+});
 
 function sentFor(parts: readonly FinalPart[], firstId = 100): SentPart[] {
   return parts.map((part, index) => ({
@@ -21,7 +33,6 @@ function input(patch: Partial<SaidInput>): SaidInput {
   const parts = patch.parts ?? [text('привет')];
   return {
     plan: { milestone: null, nudge: null, objection: null },
-    writerArguments: [],
     parts,
     sent: sentFor(parts),
     fallback: false,
@@ -118,26 +129,64 @@ describe('saidEntries', () => {
     ).toEqual([]);
   });
 
-  it('подталкивание, подход к возражению и аргументы — по последнему сообщению', () => {
+  it('отработка — по первому сообщению ответчика, шаг — по последнему; не ушёл шаг — он не сделан', () => {
     const parts = [text('раз'), text('два')];
+    const plan = {
+      milestone: null,
+      nudge: 'ask_want_options' as const,
+      objection: objection('think_about_it', 1, 'step'),
+    };
+    expect(saidEntries(input({ plan, parts, sent: sentFor(parts) }))).toEqual([
+      { kind: 'nudge', key: 'ask_want_options', messageId: 101 },
+      { kind: 'argument', key: 'think_about_it:1', messageId: 100 },
+    ]);
+    // Клиент дописал после первой части: вопрос о вариантах не ушёл.
+    expect(
+      saidEntries(input({ plan, parts, sent: sentFor(parts.slice(0, 1)) })),
+    ).toEqual([{ kind: 'argument', key: 'think_about_it:1', messageId: 100 }]);
+    // Вместо текста ушла фраза шага: шаг сделан, возражение не отработано.
+    const phrase = [text('Рассказать вам, как это можно проработать?')];
+    expect(
+      saidEntries(
+        input({ plan, parts: phrase, sent: sentFor(phrase), stepOnly: true }),
+      ),
+    ).toEqual([{ kind: 'nudge', key: 'ask_want_options', messageId: 100 }]);
+  });
+
+  it('отработка возражения своим вопросом — отметка уточнения: ответ клиента будет ответом на него', () => {
+    const parts = [text('Понимаю. А что сейчас происходит на самом деле?')];
     expect(
       saidEntries(
         input({
           plan: {
             milestone: null,
-            nudge: 'ask_offer_questions',
-            objection: { category: 'expensive', approach: 1, phrase: null },
+            nudge: null,
+            objection: objection('not_resonate', 0, 'question'),
           },
-          writerArguments: ['expensive:1', 'x'.repeat(80)],
           parts,
           sent: sentFor(parts),
         }),
       ),
     ).toEqual([
-      { kind: 'nudge', key: 'ask_offer_questions', messageId: 101 },
-      { kind: 'argument', key: 'expensive:1', messageId: 101 },
-      { kind: 'argument', key: 'x'.repeat(64), messageId: 101 },
+      { kind: 'argument', key: 'not_resonate:0', messageId: 100 },
+      { kind: 'nudge', key: 'clarify_objection', messageId: 100 },
     ]);
+    // Пауза и «отпустили» — свои отметки; ход до 30.09 без исхода — без отметки.
+    const plan = (ends: ObjectionEnd | undefined) => ({
+      milestone: null,
+      nudge: null,
+      objection: {
+        ...objection('later', 0, 'open'),
+        ends: ends as ObjectionEnd,
+      },
+    });
+    const markers = (ends: ObjectionEnd | undefined) =>
+      saidEntries(input({ plan: plan(ends), parts, sent: sentFor(parts) }))
+        .filter((entry) => entry.kind === 'nudge')
+        .map((entry) => entry.key);
+    expect(markers('open')).toEqual(['pause_objection']);
+    expect(markers('release')).toEqual(['release_objection']);
+    expect(markers(undefined)).toEqual([]);
   });
 
   it('агент промолчал — ничего не сказано', () => {
@@ -158,9 +207,8 @@ describe('saidEntries', () => {
               asks: false,
             },
             nudge: 'ask_feedback',
-            objection: { category: 'later', approach: 0, phrase: null },
+            objection: objection('later', 0, 'question'),
           },
-          writerArguments: ['later:0'],
           parts,
           sent: sentFor(parts),
           fallback: true,

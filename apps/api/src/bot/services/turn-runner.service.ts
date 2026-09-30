@@ -9,7 +9,11 @@ import { TurnInterrupted } from '../core/channel.js';
 import type { Channel, Clock } from '../core/channel.js';
 import { clientTextForPrompt } from '../core/client-text.js';
 import { planDelays } from '../core/delivery.js';
-import { hardChecks, wrongScript } from '../core/hard-checks.js';
+import {
+  draftViolations,
+  hardChecks,
+  wrongScript,
+} from '../core/hard-checks.js';
 import {
   HISTORY_LIMIT,
   formatHistory,
@@ -18,9 +22,10 @@ import {
   repliesSince,
 } from '../core/history.js';
 import type { HistoryLine } from '../core/history.js';
-import { applyAnalysis } from '../core/memory.js';
+import { applyAnalysis, knownGender } from '../core/memory.js';
 import type { FactsUpdate } from '../core/memory.js';
 import { buildPlan, needsWriter } from '../core/plan.js';
+import { fallbackStepPhrase } from '../core/steps.js';
 import { nextRetry } from '../core/retry.js';
 import type {
   Analysis,
@@ -76,6 +81,17 @@ export interface TurnEnvironment {
 /** Срочные задания: созревшие или созреют в ближайшие минуты входят в ход клиента. */
 const DUE_WINDOW_MS = 10 * 60_000;
 
+/** Через сколько повторить ответ клиенту, если ход упал ещё до начала. */
+const START_RETRY_MS = 60_000;
+
+/** Напоминания: не ушли за окно повторов — пропускаются, чат менеджеру не уходит. */
+const REMINDER_JOB_KINDS: readonly JobKind[] = [
+  'birth_data_reminder',
+  'return_question',
+  'offer_nudge',
+  'unread_reminder',
+];
+
 /**
  * Сколько при остановке API ждать идущие ходы. Паузы и обращения к модели
  * прерываются сразу; ждём только начатую отправку в Telegram (у неё свой
@@ -123,7 +139,8 @@ interface ComposedTurn {
   parts: FinalPart[];
   /** Текст ответчика не прошёл: вместо него — веха сама или запасная фраза. */
   fallback: boolean;
-  writerArguments: readonly string[];
+  /** Вместо текста ответчика — фраза шага из таблиц: отработки возражения в ней нет. */
+  stepOnly: boolean;
 }
 
 /**
@@ -194,8 +211,43 @@ export class TurnRunnerService implements OnModuleDestroy {
   ): Promise<TurnResult> {
     if (this.stopping.signal.aborted) return Promise.resolve(interrupted());
     return this.track(
-      this.locks.run(request.chatId, () => this.execute(request, env, llm)),
+      this.locks.run(request.chatId, () =>
+        this.execute(request, env, llm).catch((error: unknown) =>
+          this.failedToStart(request, env, error),
+        ),
+      ),
     );
+  }
+
+  /**
+   * Сбой до начала хода (база, канал, журнал), когда повтор ещё не
+   * поставлен: сообщения клиента не должны остаться без ответа — ответ
+   * повторится заданием `reply` (оно само соберёт неотвеченное). Задание,
+   * которое ход выполнял, закрывается сбоем, чтобы не висеть в `running`.
+   */
+  private async failedToStart(
+    request: TurnRequest,
+    env: TurnEnvironment,
+    error: unknown,
+  ): Promise<never> {
+    if (!(error instanceof TurnInterrupted)) {
+      const message = errorMessage(error);
+      try {
+        // Сначала закрыть своё задание: пока оно `running`, новый `reply` не ставится.
+        if (request.job) await this.jobs.markFailed(request.job.id, message);
+        if (request.trigger === 'client') {
+          await this.jobs.scheduleReplies(
+            [request.chatId],
+            new Date(env.clock.now().getTime() + START_RETRY_MS),
+          );
+        }
+      } catch (retryError) {
+        this.logger.error(
+          `Чат ${request.chatId}: не удалось поставить повтор после сбоя — ${errorMessage(retryError)}`,
+        );
+      }
+    }
+    throw error;
   }
 
   /**
@@ -251,6 +303,26 @@ export class TurnRunnerService implements OnModuleDestroy {
   /** Передача менеджеру: режим, причина, ярлык, снятие заданий. Нужна и каналу (чужое исходящее). */
   handoff(chatId: string, reason: HandoffReason): Promise<void> {
     return this.delivery.handoff(chatId, reason);
+  }
+
+  /**
+   * Клиент написал, а чат ушёл менеджеру, пока ход ждал (закрылся ход с
+   * ценами, человек ответил в Telegram): канал ставит «нужен ответ» только
+   * чатам, которые уже у менеджера, — эти сообщения он видел ещё у агента.
+   * Если после них никто не писал, менеджер должен увидеть, что ответа ждут.
+   */
+  private async markAwaitingReply(
+    state: BotChatStateEntity,
+    request: TurnRequest,
+    env: TurnEnvironment,
+  ): Promise<void> {
+    if (state.sandbox || state.label === 'needs_reply') return;
+    const lastClient = request.messages.at(-1);
+    if (!lastClient) return;
+    const history = await env.channel.history(request.chatId, HISTORY_LIMIT);
+    const answered = lastOutgoing(history);
+    if (answered && answered.id > lastClient.id) return;
+    await this.states.setLabel(request.chatId, 'needs_reply');
   }
 
   private track<T>(task: Promise<T>): Promise<T> {
@@ -370,6 +442,11 @@ export class TurnRunnerService implements OnModuleDestroy {
     accountLoad.catch(() => undefined);
     const state = await this.states.find(initial.chatId);
     if (!state || state.mode !== 'auto') {
+      // Чат ушёл менеджеру, пока задание ждало замка: задание больше не нужно.
+      if (initial.job) await this.jobs.cancel(initial.job.id);
+      if (state?.mode === 'manager' && initial.trigger === 'client') {
+        await this.markAwaitingReply(state, initial, env);
+      }
       return skipped('чат не в режиме агента');
     }
     // На что уже ответил ход, закрытый раньше этого (досылка, повтор), —
@@ -553,6 +630,9 @@ export class TurnRunnerService implements OnModuleDestroy {
     // доставляется. Прерванный после неё (остановка API, сбой отправки)
     // досылается с того же места, а не собирается заново.
     const last = lastOutgoing(context.history);
+    // Ответ по заданию (повтор после сбоя, неотвеченное после перезапуска):
+    // клиент уже ждёт с момента своего сообщения — пауза не начинается заново.
+    const lastClientAt = request.messages.at(-1)?.sentAt;
     const delays = planDelays({
       trigger: request.trigger,
       isNewLead: last === null,
@@ -560,6 +640,10 @@ export class TurnRunnerService implements OnModuleDestroy {
       now: context.now,
       parts: composed.parts,
       timings: context.timings,
+      waitedMs:
+        request.job && lastClientAt
+          ? context.now.getTime() - lastClientAt.getTime()
+          : 0,
     });
     const turn: CommittedTurn = {
       turnId,
@@ -577,8 +661,8 @@ export class TurnRunnerService implements OnModuleDestroy {
           0,
           ...context.history.map((message) => message.id),
         ),
-        writerArguments: [...composed.writerArguments],
         fallback: composed.fallback,
+        stepOnly: composed.stepOnly,
         stage,
         markRead: request.trigger === 'client',
         sending: null,
@@ -709,14 +793,14 @@ export class TurnRunnerService implements OnModuleDestroy {
       await this.turns.update(turnId, {
         final: { parts, removed: [], fallback: false, blockedByReview: false },
       });
-      return { parts, fallback: false, writerArguments: [] };
+      return { parts, fallback: false, stepOnly: false };
     }
 
     const writerInput: WriterPromptInput = {
       persona: context.persona,
       stage,
       examples: library.stageExamples(stage),
-      about: library.about(language),
+      about: library.about(language, stage, knownGender(memory.card)),
       history: context.historyLines,
       memory,
       plan,
@@ -732,11 +816,26 @@ export class TurnRunnerService implements OnModuleDestroy {
       block,
     };
 
+    // Что видно по символам (лишние вопросы, слово в слово повтор своего
+    // прошлого сообщения), проверяет код — вместе с замечаниями проверяющего.
+    const previous = context.history
+      .filter((message) => message.direction === 'out')
+      .map((message) => message.text);
+    const ownChecks = (text: readonly string[]) =>
+      draftViolations({
+        parts: text,
+        maxQuestions: plan.constraints.maxQuestions,
+        previous,
+      });
+
     let draft = await this.model.write(context.llm, writerInput);
-    const review = await this.model.review(context.llm, {
+    const reviewed = await this.model.review(context.llm, {
       ...reviewerInput,
       parts: draft.parts,
     });
+    const review: Review = {
+      violations: [...ownChecks(draft.parts), ...reviewed.violations],
+    };
     let finalReview: Review | null = null;
     const rewritten = hasHardViolations(review);
     if (rewritten) {
@@ -760,6 +859,8 @@ export class TurnRunnerService implements OnModuleDestroy {
         violations: review.violations,
         rewritten,
         final: finalReview?.violations ?? null,
+        // Что код видит в тексте после переписывания — отправку не блокирует.
+        remaining: rewritten ? ownChecks(draft.parts) : [],
       },
     });
     this.assertFresh(env, 'после текста');
@@ -777,20 +878,28 @@ export class TurnRunnerService implements OnModuleDestroy {
     const checked = check(blockedByReview ? [] : draft.parts);
     let parts: FinalPart[] = checked.parts;
     let fallback = blockedByReview || !parts.some((part) => !part.block);
+    let stepOnly = false;
     // Текст ответчика не прошёл: шаг воронки уходит фразой из таблиц как
     // есть (если она на языке клиента), веха — сама, она полное сообщение;
-    // если нет ни того, ни другого — запасная фраза из библиотеки.
-    const stepPhrase = plan.phrases[0];
-    if (fallback && stepPhrase && !wrongScript(stepPhrase, language)) {
+    // если нет ни того, ни другого — нейтральная запасная фраза.
+    const stepPhrase = fallback ? fallbackStepPhrase(plan) : null;
+    if (stepPhrase && !wrongScript(stepPhrase, language)) {
       parts = check([stepPhrase]).parts;
       fallback = false;
+      stepOnly = true;
     } else if (checked.blocked) {
-      parts = [{ text: library.fallbackPhrase(language, stage), block: false }];
+      parts = [{ text: library.fallbackPhrase(language), block: false }];
     }
     await this.turns.update(turnId, {
-      final: { parts, removed: checked.removed, fallback, blockedByReview },
+      final: {
+        parts,
+        removed: checked.removed,
+        fallback,
+        stepOnly,
+        blockedByReview,
+      },
     });
-    return { parts, fallback, writerArguments: draft.meta.arguments };
+    return { parts, fallback, stepOnly };
   }
 
   /**
@@ -814,6 +923,8 @@ export class TurnRunnerService implements OnModuleDestroy {
         error: error.message,
         finished: true,
       });
+      // Клиент дописал: ответит новый ход, задание этого своё отработало.
+      if (request.job) await this.jobs.markDone(request.job.id);
       return {
         turnId,
         status: error.status,
@@ -851,13 +962,27 @@ export class TurnRunnerService implements OnModuleDestroy {
     };
   }
 
-  /** Повтор упавшего хода заданием или, когда окно повторов вышло, передача менеджеру. */
+  /**
+   * Повтор упавшего хода заданием или, когда окно повторов вышло, передача
+   * менеджеру. Напоминание, которое так и не удалось отправить, просто не
+   * уходит: клиент ничего не ждёт, отдавать чат менеджеру не за что.
+   */
   private async retryOrHandoff(
     request: TurnRequest,
     clock: Clock,
   ): Promise<HandoffReason | null> {
     const next = nextRetry(request.job?.retry, clock.now());
     if (!next) {
+      const reminder =
+        request.trigger === 'schedule' &&
+        request.job !== null &&
+        REMINDER_JOB_KINDS.includes(request.job.kind);
+      if (reminder) {
+        this.logger.warn(
+          `Чат ${request.chatId}: напоминание «${request.job?.kind}» так и не ушло — пропущено`,
+        );
+        return null;
+      }
       await this.handoff(request.chatId, 'agent_unavailable');
       return 'agent_unavailable';
     }

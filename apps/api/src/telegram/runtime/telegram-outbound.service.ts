@@ -19,7 +19,7 @@ const RESOLVE_DIALOGS_LIMIT = 50;
  * У запросов teleproto нет своего таймаута: по «полуживому» соединению
  * отправка висела бы вечно вместе с HTTP-запросом менеджера.
  */
-const SEND_TIMEOUT_MS = 30_000;
+export const SEND_TIMEOUT_MS = 30_000;
 /** «Печатает…» и прочтение — косметика, ждать их долго незачем. */
 const ACTION_TIMEOUT_MS = 10_000;
 
@@ -43,18 +43,27 @@ export class TelegramOutboundService {
     chat: TelegramChatEntity,
     text: string,
   ): Promise<Api.Message> {
+    return withTimeout(this.startSend(accountId, chat, text), SEND_TIMEOUT_MS);
+  }
+
+  /**
+   * Сама отправка, без таймаута. Таймаут не отменяет запрос: по
+   * «полуживому» соединению сообщение может дойти и после него. Кто
+   * повторяет отправку сам (агент), должен знать, чем кончился зависший
+   * запрос, — иначе клиент получит сообщение дважды.
+   */
+  async startSend(
+    accountId: string,
+    chat: TelegramChatEntity,
+    text: string,
+  ): Promise<Api.Message> {
     const client = this.requireClient(accountId);
-    return withTimeout(
-      (async () => {
-        const peer = await this.resolvePeer(client, chat);
-        return client.sendMessage(peer, {
-          message: text,
-          parseMode: false,
-          linkPreview: false,
-        });
-      })(),
-      SEND_TIMEOUT_MS,
-    );
+    const peer = await this.resolvePeer(client, chat);
+    return client.sendMessage(peer, {
+      message: text,
+      parseMode: false,
+      linkPreview: false,
+    });
   }
 
   /** Показать или снять индикатор «печатает…». Ошибки глотаем — это косметика. */

@@ -1,7 +1,8 @@
 // Прогон сценариев владельца: реальная база и DeepSeek, канал в памяти, без Telegram.
 // Печатает, что ушло клиенту, и замечания проверяющего — проверка «ничего лишнего».
-// Запуск из apps/api после nest build: TELEGRAM_API_ID= TELEGRAM_API_HASH= BOT_ACCOUNT_ID=<uuid> node scripts/run-scenarios.mjs [A|B|…|O]
-// G–O ждут в библиотеке аккаунта вопросы знакомства agent.* (импорт стандартной библиотеки, режим keep).
+// Запуск из apps/api после nest build: TELEGRAM_API_ID= TELEGRAM_API_HASH= BOT_ACCOUNT_ID=<uuid> node scripts/run-scenarios.mjs [A|B|…|T]
+// G–T ждут в библиотеке аккаунта вопросы знакомства agent.* (импорт стандартной библиотеки, режим keep).
+// P–T — возражения и вопросы после диагностики и вариантов (песочница владельца 30.09).
 // KEEP=1 оставляет чаты песочницы для разбора (потом: DELETE FROM bot_chat_state WHERE sandbox AND ...).
 import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
@@ -110,7 +111,9 @@ function session(name, { clientName = null } = {}) {
     );
     for (const part of result.sent)
       print(`    АГЕНТ${part.block ? ' (веха)' : ''}: ${show(part.text)}`);
-    await turnLog(result.turnId);
+    // Ход не начинался (журнала нет) — только причина.
+    if (result.turnId) await turnLog(result.turnId);
+    else print(`      не начат: ${result.error ?? '—'}`);
     await ladderLog();
   }
   return {
@@ -446,6 +449,122 @@ const scenarios = {
     await s.client(['Финансы', 'дату рождения точно не помню']);
     s.wait(60);
     await s.schedule('diagnostic');
+    await s.finish();
+  },
+  // Песочница владельца 30.09 (Анна): «не про меня» после диагностики,
+  // молчание, ответ на уточнение, варианты, «ничего не подходит».
+  async P() {
+    const s = session('P: «вообще не про меня»', { clientName: 'Анна' });
+    await s.start();
+    await s.client(['Здравствуйте! Хочу бесплатный расклад, код 12']);
+    s.wait(2);
+    await s.client(['11.04.1999 Москва деньги']);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.readAll();
+    s.wait(5);
+    await s.client(['вообще не про меня']);
+    await s.readAll();
+    s.wait(14 * 60);
+    await s.schedule('return_question');
+    s.wait(30);
+    await s.client([
+      'у меня с деньгами в целом нормально, просто работу нормальную найти не могу',
+    ]);
+    s.wait(5);
+    await s.client(['ну давайте']);
+    s.wait(10);
+    await s.client(['Ничего не подходит']);
+    s.wait(5);
+    await s.client(['хочу просто стабильный доход и понять, чем заниматься']);
+    await s.finish();
+  },
+  // Песочница владельца 30.09: «не знаю, мне надо изучить» на вопрос о вариантах.
+  async Q() {
+    const s = session('Q: «надо изучить»');
+    await s.start();
+    await s.client(['Хочу расклад']);
+    s.wait(2);
+    await s.client(['22.12.93 отношения']);
+    s.wait(2);
+    await s.client(['Да']);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.readAll();
+    s.wait(5);
+    await s.client(['не знаю мне надо изучить']);
+    await s.readAll();
+    s.wait(14 * 60);
+    await s.schedule('return_question');
+    s.wait(20);
+    await s.client(['ладно, расскажите']);
+    await s.finish();
+  },
+  // Не верит в метод, дважды, потом отказывается.
+  async R() {
+    const s = session('R: «не верю я в это»', { clientName: 'Мария' });
+    await s.start();
+    await s.client(['Добрый день, хочу расклад, код 5']);
+    s.wait(2);
+    await s.client(['03.03.1990, Казань, здоровье']);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.readAll();
+    s.wait(5);
+    await s.client(['честно, не очень верю я во всё это']);
+    s.wait(5);
+    await s.client(['всё равно не верю, это общие слова']);
+    s.wait(5);
+    await s.client(['нет, не надо']);
+    await s.finish();
+  },
+  // Песочница владельца 30.09: «Расскажите про себя» — не согласие на варианты.
+  async S() {
+    const s = session('S: «Расскажите про себя»', { clientName: 'Анна' });
+    await s.start();
+    await s.client(['Здравствуйте, хочу расклад, код 12']);
+    s.wait(2);
+    await s.client([
+      '11.04.1999 Москва, деньги',
+      'денег вечно не хватает, устала от этого',
+    ]);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.readAll();
+    s.wait(5);
+    await s.client(['Расскажите про себя']);
+    s.wait(5);
+    await s.client(['а давно вы этим занимаетесь?']);
+    s.wait(5);
+    await s.client(['ну давайте, расскажите, как работаете']);
+    await s.finish();
+  },
+  // После вариантов: вопрос о работе — не согласие на цены; «посоветуюсь с
+  // мужем» → пауза: «ок, спасибо» — молчание; сама спросила цену — цены.
+  async T() {
+    const s = session('T: вопрос о работе и пауза после вариантов', {
+      clientName: 'Елена',
+    });
+    await s.start();
+    await s.client(['Добрый вечер, хочу расклад, код 7']);
+    s.wait(2);
+    await s.client([
+      '05.05.1988, Самара, отношения, в браке, но муж отдалился',
+    ]);
+    s.wait(60);
+    await s.schedule('diagnostic');
+    await s.readAll();
+    s.wait(5);
+    await s.client(['да, расскажите']);
+    await s.readAll();
+    s.wait(5);
+    await s.client(['а как вообще проходит работа?']);
+    s.wait(5);
+    await s.client(['мне надо с мужем посоветоваться']);
+    s.wait(3);
+    await s.client(['ок, спасибо']);
+    s.wait(60);
+    await s.client(['а сколько это стоит?']);
     await s.finish();
   },
 };

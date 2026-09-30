@@ -1,7 +1,12 @@
 import type { Stage } from '../library/kinds.js';
 import type { Range, Timings } from '../library/timings.js';
-import { lastOutgoing, milestoneAt } from './history.js';
-import { lastIntakeQuestion, nudgesSaid } from './memory.js';
+import {
+  lastOutgoing,
+  milestoneAt,
+  milestoneMessageId,
+  repliedAfter,
+} from './history.js';
+import { lastIntakeQuestion, nudgesSaid, objectionPending } from './memory.js';
 import type { IntakeQuestionNudge } from './memory.js';
 import type { HistoryMessage, JobKind, SaidEntry } from './types.js';
 
@@ -82,11 +87,14 @@ function pick(seed: string, range: Range): number {
  *   дальше — диагностика по тому, что известно (без сферы — общая).
  * - `links`: обещанная диагностика уходит по таймеру, прочитано или нет.
  * - После диагностики и после вариантов — только напоминания: варианты и
- *   цены уходят по реакции клиента, а не по времени.
+ *   цены уходят по реакции клиента, а не по времени. Клиент уже отвечал
+ *   после вехи — напоминание через ступень и по разговору (план выберет
+ *   `follow_up`), а не быстрый вопрос-отклик.
  * - Последнее сообщение агента не прочитано — одно напоминание через
  *   `unreadReminderHours`, дальше ступени не ставятся.
  * - Напоминаний любого вида не больше `maxReminders` на чат; лимит
- *   кончился — агент ждёт клиента.
+ *   кончился или клиента отпустили после повторных возражений — агент
+ *   ждёт клиента.
  * - Последнее сообщение клиента без ответа, этап цен, агент ещё не писал —
  *   ступеней нет. Если агент на сообщения клиента сознательно промолчал
  *   («ок» во время ожидания), они обработаны: лестница идёт дальше, а
@@ -116,7 +124,12 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
     ),
     reason,
   });
-  const remindersLeft = input.remindersSent < timings.maxReminders;
+  // Клиента отпустили после повторных возражений — напоминаний больше нет,
+  // пока он не напишет сам (docs/agent-architecture.md, 2.5).
+  const released =
+    (stage === 'diagnostic' || stage === 'offer') &&
+    objectionPending(said, stage) === 'release';
+  const remindersLeft = input.remindersSent < timings.maxReminders && !released;
 
   if (stage === 'links') {
     const linksAt = milestoneAt(said, 'links');
@@ -172,6 +185,16 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
     }
     case 'diagnostic': {
       if (!remindersLeft) return null;
+      // Клиент уже отвечал после диагностики — напоминание по разговору, через ступень.
+      if (repliedAfter(history, milestoneMessageId(said, 'diagnostic'))) {
+        return step(
+          'return_question',
+          readAt,
+          timings.stepHours,
+          HOUR,
+          'клиент отвечал после диагностики и замолчал',
+        );
+      }
       // Первое напоминание после диагностики — быстрее, следующие — через ступень.
       return nudgesSaid(said, 'ask_feedback') === 0
         ? step(
@@ -196,7 +219,9 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
         readAt,
         timings.stepHours,
         HOUR,
-        'варианты прочитаны, клиент молчит',
+        repliedAfter(history, milestoneMessageId(said, 'offer'))
+          ? 'клиент отвечал после вариантов и замолчал'
+          : 'варианты прочитаны, клиент молчит',
       );
     default:
       return null;

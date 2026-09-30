@@ -9,9 +9,10 @@ import type {
   SaidEntry,
 } from './types.js';
 
-/** Ниже этих порогов пол и категория считаются неизвестными (раздел 4). */
+/** Ниже этих порогов пол, категория и сфера считаются неизвестными (раздел 4). */
 export const GENDER_CONFIDENCE = 0.8;
 export const CATEGORY_CONFIDENCE = 0.7;
+export const SPHERE_CONFIDENCE = 0.6;
 /** Сколько активных фактов идёт в промпт. */
 export const FACTS_LIMIT = 30;
 /**
@@ -80,9 +81,17 @@ export function knownCategory(card: ClientCard): string | null {
   return field && field.confidence >= CATEGORY_CONFIDENCE ? field.value : null;
 }
 
+/** Сфера, в которой анализатор достаточно уверен; догадка ниже порога — «сфера не названа». */
+export function knownSphere(card: ClientCard): string | null {
+  const field = card.sphere;
+  return field && field.confidence >= SPHERE_CONFIDENCE && isSphere(field.value)
+    ? field.value
+    : null;
+}
+
 /** Клиент назвал, с чем пришёл: сферу («финансы», «всё сразу») или ясную подкатегорию. */
 export function requestKnown(card: ClientCard): boolean {
-  return knownCategory(card) !== null || Boolean(card.sphere?.value);
+  return knownCategory(card) !== null || knownSphere(card) !== null;
 }
 
 /**
@@ -91,7 +100,7 @@ export function requestKnown(card: ClientCard): boolean {
  * null — запрос неизвестен, будет универсальная.
  */
 export function diagnosticCategory(card: ClientCard): string | null {
-  const sphere = card.sphere?.value;
+  const sphere = knownSphere(card);
   return (
     knownCategory(card) ??
     (sphere && isSphere(sphere) ? SPHERE_CATEGORY[sphere] : null)
@@ -220,20 +229,75 @@ export function applyAnalysis(
   };
 }
 
-/** Сколько раз подход по категории возражения уже использован. */
-export function argumentsUsed(
-  said: readonly SaidEntry[],
-  category: string,
-): number {
-  return said.filter(
-    (entry) =>
-      entry.kind === 'argument' && entry.key.startsWith(`${category}:`),
-  ).length;
-}
-
 export function nudgesSaid(said: readonly SaidEntry[], nudge: string): number {
   return said.filter((entry) => entry.kind === 'nudge' && entry.key === nudge)
     .length;
+}
+
+/**
+ * Что агент сказал после вехи — то есть на её этапе: записи с сообщениями
+ * позже сообщения вехи. Записи одного хода делят время, поэтому порядок
+ * решает id сообщения, а не место в реестре; у записей без id — место.
+ * Вехи в реестре нет — пусто.
+ */
+export function saidSince(
+  said: readonly SaidEntry[],
+  milestone: string,
+): SaidEntry[] {
+  let index = -1;
+  for (let i = said.length - 1; i >= 0 && index < 0; i--) {
+    const entry = said[i] as SaidEntry;
+    if (entry.kind === 'milestone' && entry.key === milestone) index = i;
+  }
+  if (index < 0) return [];
+  const mark = (said[index] as SaidEntry).messageId;
+  return said.filter((entry, i) => {
+    if (i === index) return false;
+    if (mark !== null && entry.messageId !== null)
+      return entry.messageId > mark;
+    return i > index;
+  });
+}
+
+/**
+ * Напоминания, которые возвращают к последнему вопросу, а не задают новый:
+ * после них разговор там же, где был до них.
+ */
+const RETURNING_NUDGES: readonly string[] = ['follow_up', 'unread_reminder'];
+
+/** Чем закончилась последняя отработка возражения на этапе, если после неё не было шага воронки. */
+export type ObjectionPending = 'question' | 'pause' | 'release';
+
+const OBJECTION_PENDING: Readonly<Record<string, ObjectionPending>> = {
+  clarify_objection: 'question',
+  pause_objection: 'pause',
+  release_objection: 'release',
+};
+
+/**
+ * Где разговор после возражения (docs/agent-architecture.md, 2.5): по
+ * последней отметке этапа — агент задал уточнение (`question`), оставил
+ * дверь открытой (`pause`) или отпустил клиента (`release`); после шага
+ * воронки — null. Напоминание по разговору этого не меняет. Пока отработка
+ * не закрыта шагом, ответ клиента — не согласие на следующую веху.
+ */
+export function objectionPending(
+  said: readonly SaidEntry[],
+  milestone: string,
+): ObjectionPending | null {
+  let last: SaidEntry | null = null;
+  for (const entry of saidSince(said, milestone)) {
+    if (entry.kind !== 'nudge' || RETURNING_NUDGES.includes(entry.key))
+      continue;
+    if (
+      !last ||
+      last.messageId === null ||
+      entry.messageId === null ||
+      entry.messageId >= last.messageId
+    )
+      last = entry;
+  }
+  return last ? (OBJECTION_PENDING[last.key] ?? null) : null;
 }
 
 /** Вопросы знакомства (docs/agent-architecture.md, 2.0) по старшинству. */

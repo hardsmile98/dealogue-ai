@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 const DEFAULT_BASE_URL = 'https://api.deepseek.com';
 const DEFAULT_MODEL = 'deepseek-chat';
 const DEFAULT_LLM_TIMEOUT_MS = 30_000;
+const DEFAULT_LLM_CONCURRENCY = 8;
 const DEFAULT_POLL_MS = 30_000;
 
 /**
@@ -21,6 +22,12 @@ export class BotConfig {
   readonly defaultModel: string;
   /** Таймаут одного обращения к модели — от запроса до последнего байта ответа. */
   readonly llmTimeoutMs: number;
+  /**
+   * Сколько обращений к модели идёт одновременно — на все ходы процесса.
+   * Ходы по заданиям и ответы клиентам ждут очереди здесь, а не в слотах
+   * поллера: паузы «как человек» слотов модели не занимают.
+   */
+  readonly llmConcurrency: number;
   /** Как часто поллер лестницы забирает созревшие задания; 0 и меньше — выключен. */
   readonly schedulerPollMs: number;
 
@@ -35,6 +42,14 @@ export class BotConfig {
       'BOT_LLM_TIMEOUT_MS',
       DEFAULT_LLM_TIMEOUT_MS,
       (value) => value > 0,
+    );
+    this.llmConcurrency = Math.floor(
+      readNumber(
+        config,
+        'BOT_LLM_CONCURRENCY',
+        DEFAULT_LLM_CONCURRENCY,
+        (value) => value >= 1,
+      ),
     );
     this.schedulerPollMs = readNumber(
       config,

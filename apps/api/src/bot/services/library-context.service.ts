@@ -99,9 +99,19 @@ export class LibraryContext implements LibraryAvailability {
       .map((item) => renderPersona(item.text, this.persona));
   }
 
+  /**
+   * Довести клиента на этом языке до цен можно, только если на нём есть
+   * все вехи: ссылки (или ожидание), диагностика, описание практик, цены.
+   * Иначе воронка встанет посередине — сразу менеджер.
+   */
   supportsLanguage(language: string): boolean {
-    return this.enabled('diagnostic').some(
-      (item) => item.language === language,
+    const has = (kind: LibraryKind) =>
+      this.enabled(kind).some((item) => item.language === language);
+    return (
+      (has('links') || has('wait')) &&
+      has('diagnostic') &&
+      has('offer') &&
+      has('prices')
     );
   }
 
@@ -111,8 +121,18 @@ export class LibraryContext implements LibraryAvailability {
     return item ? renderPersona(item.text, this.persona) : null;
   }
 
-  about(language: string): LibrarySample[] {
-    return this.items
+  /**
+   * Источник фактов о практике для ответчика и проверяющего: раздел «о себе
+   * и о работе», а после вариантов — и сам текст вариантов, который клиент
+   * уже получил. Иначе на «как проходит работа?» модель видит только
+   * концовку вариантов в истории и достраивает остальное сама.
+   */
+  about(
+    language: string,
+    stage: Stage = 'intake',
+    gender: 'f' | 'm' | null = null,
+  ): LibrarySample[] {
+    const samples: LibrarySample[] = this.items
       .filter(
         (item) =>
           item.enabled && item.kind === 'about' && item.language === language,
@@ -122,6 +142,22 @@ export class LibraryContext implements LibraryAvailability {
         title: item.title,
         text: renderPersona(item.text, this.persona),
       }));
+    if (stage === 'offer') {
+      const offer = this.milestone('offer', {
+        category: null,
+        gender,
+        language,
+      });
+      const text = offer ? this.body(offer.itemId) : null;
+      if (text) {
+        samples.push({
+          kind: 'offer',
+          title: 'Какие варианты работы есть (ты уже отправил их клиенту)',
+          text,
+        });
+      }
+    }
+    return samples;
   }
 
   stageExamples(stage: Stage): ExampleSample[] {
@@ -135,22 +171,15 @@ export class LibraryContext implements LibraryAvailability {
       }));
   }
 
-  /** Запасная фраза, когда текст ответчика вырезан целиком: в знакомстве — приветствие из библиотеки, дальше — короткая эмпатия. */
-  fallbackPhrase(language: string, stage: Stage): string {
-    const kinds: LibraryKind[] =
-      stage === 'intake'
-        ? ['greeting', 'empathy']
-        : stage === 'links'
-          ? ['wait', 'empathy']
-          : ['empathy'];
-    for (const kind of kinds) {
-      const item = this.enabled(kind).find(
-        (candidate) =>
-          candidate.language === language && candidate.text.length <= 300,
-      );
-      if (item) return renderPersona(item.text, this.persona);
-    }
-    return language === 'en' ? 'I hear you 🙏' : 'Понял вас 🙏';
+  /**
+   * Запасная фраза, когда текст ответчика вырезан целиком и фразы шага
+   * нет: нейтральное «понял вас» в роде образа. Фразы библиотеки для этого
+   * не годятся: приветствие здоровается второй раз, «эмпатия» в таблицах —
+   * «вы выбрали комплекс», это после цен.
+   */
+  fallbackPhrase(language: string): string {
+    if (language === 'en') return 'I hear you 🙏';
+    return this.persona.gender === 'f' ? 'Поняла вас 🙏' : 'Понял вас 🙏';
   }
 
   /** Тела вех — чтобы найти их в переписке, скопированной из реального чата. «Ожидание» уходит вместо «ссылок», когда ссылок нет. */

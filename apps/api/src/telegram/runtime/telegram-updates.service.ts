@@ -39,8 +39,11 @@ export interface UpdateHooks {
 interface Binding {
   live: LiveAccount;
   hooks: UpdateHooks;
-  /** Диалоги, для которых уже идёт догрузка истории по живому событию. */
-  pendingDialogs: Set<string>;
+  /**
+   * Диалоги, для которых уже идёт догрузка истории по живому событию, и
+   * сообщения, пришедшие за это время: их запишем и опубликуем после неё.
+   */
+  pendingDialogs: Map<string, Api.Message[]>;
   /** Идущие поиски собеседника по peerId — чтобы не дублировать getDialogs. */
   resolving: Map<string, Promise<Api.User | 'skip' | null>>;
 }
@@ -66,7 +69,7 @@ export class TelegramUpdatesService {
     const binding: Binding = {
       live,
       hooks,
-      pendingDialogs: new Set(),
+      pendingDialogs: new Map(),
       resolving: new Map(),
     };
     const messageFilter = new events.NewMessage({});
@@ -135,15 +138,28 @@ export class TelegramUpdatesService {
       }
 
       // Новый для нас диалог: истории ещё нет, первое сообщение неизвестно —
-      // забираем её целиком, но один раз, даже если сообщения сыплются пачкой.
-      if (binding.pendingDialogs.has(chat.peerId)) return;
-      binding.pendingDialogs.add(chat.peerId);
+      // забираем её целиком, но один раз, даже если сообщения сыплются
+      // пачкой. Пришедшие за время догрузки не теряются: их запишем и
+      // опубликуем следом, по порядку (раньше их подбирала только
+      // досинхронизация через пару минут).
+      const waiting = binding.pendingDialogs.get(chat.peerId);
+      if (waiting) {
+        waiting.push(message);
+        return;
+      }
+      const later: Api.Message[] = [];
+      binding.pendingDialogs.set(chat.peerId, later);
       try {
         await this.sync.syncDialog(live.id, live.client, user, chat);
       } finally {
         binding.pendingDialogs.delete(chat.peerId);
       }
       this.emitMessage(live, chat, message);
+      if (later.length > 0) {
+        // Догрузка могла уже забрать часть из них — запись идемпотентна.
+        await this.ingest.storeMessages(chat, later);
+        for (const next of later) this.emitMessage(live, chat, next);
+      }
     } catch (error) {
       await binding.hooks.fail(live, error, 'обработка сообщения');
     }

@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Semaphore } from '../../common/async.js';
 import { errorMessage } from '../../common/errors.js';
+import { BotConfig } from '../bot.config.js';
 import { AnalysisParseError, parseAnalysis } from '../core/analysis.js';
 import { throwIfInterrupted } from '../core/channel.js';
 import type { Clock } from '../core/channel.js';
@@ -38,12 +40,21 @@ export interface LlmCallContext {
  * Каждое пишет в журнал снимок промпта и ответа. Временная ошибка модели
  * (сеть, 429, 5xx, таймаут) повторяется дважды с паузой 2 и 5 с; ответ,
  * который не разобрался как JSON, запрашивается ещё раз — один раз.
+ * Одновременно идёт не больше `BOT_LLM_CONCURRENCY` обращений на процесс:
+ * после перезапуска с десятками неотвеченных чатов модель не заваливается
+ * запросами, а поллер может держать много ходов, которые ждут паузу.
  */
 @Injectable()
 export class TurnLlmService {
   private readonly logger = new Logger(TurnLlmService.name);
+  private readonly gate: Semaphore;
 
-  constructor(private readonly turns: BotTurnsRepository) {}
+  constructor(
+    private readonly turns: BotTurnsRepository,
+    config: BotConfig,
+  ) {
+    this.gate = new Semaphore(config.llmConcurrency);
+  }
 
   analyze(
     call: LlmCallContext,
@@ -137,8 +148,12 @@ export class TurnLlmService {
       throwIfInterrupted(call.signal);
       let text: string;
       try {
-        text = (await call.llm.complete({ ...request, signal: call.signal }))
-          .text;
+        text = (
+          await this.gate.run(
+            () => call.llm.complete({ ...request, signal: call.signal }),
+            call.signal,
+          )
+        ).text;
       } catch (error) {
         // Остановка API — не ошибка модели: без снимка и без повторов.
         throwIfInterrupted(call.signal);

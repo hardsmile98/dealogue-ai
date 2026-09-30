@@ -1,11 +1,11 @@
 /**
  * Справочники агента: виды элементов библиотеки, вехи воронки, категории
  * запросов. Всё, что здесь перечислено, — контракт между базой, промптами и
- * вебом; менять синхронно с apps/web/src/shared/api/contracts/bot.ts.
+ * вебом; менять синхронно с apps/web/src/shared/api/contracts/bot/kinds.ts.
  * Логика описана в docs/agent-architecture.md (разделы 2 и 6).
  */
 
-/** Вехи воронки по порядку: код отправляет их из библиотеки, LLM только обрамляет. */
+/** Вехи воронки по порядку: код отправляет их из библиотеки дословно, без обрамления. */
 export const MILESTONES = ['links', 'diagnostic', 'offer', 'prices'] as const;
 export type Milestone = (typeof MILESTONES)[number];
 
@@ -29,16 +29,12 @@ export function stageFromMilestones(delivered: readonly string[]): Stage {
   return stage;
 }
 
-/** Следующая веха после этапа; null — воронка пройдена. */
-export function nextMilestone(stage: Stage): Milestone | null {
-  const index = STAGES.indexOf(stage);
-  return (STAGES[index + 1] as Milestone | undefined) ?? null;
-}
-
 /**
  * Виды элементов библиотеки. Тела вех (`links`, `diagnostic`, `offer`,
- * `prices`) уходят дословно; остальное — образцы тона, которые ответчик
- * пересказывает.
+ * `prices`) уходят дословно; остальное — образцы тона: по ним ответчик
+ * пишет своё сообщение, а не копирует их. Возражений два плейбука:
+ * `diagnostic_objection` — на диагностику, пока вариантов работы не было,
+ * `objection` — на варианты работы.
  */
 export const LIBRARY_KINDS = [
   'greeting',
@@ -50,6 +46,7 @@ export const LIBRARY_KINDS = [
   'links',
   'diagnostic',
   'return_question',
+  'diagnostic_objection',
   'offer',
   'prices',
   'nudge',
@@ -59,25 +56,46 @@ export const LIBRARY_KINDS = [
 ] as const;
 export type LibraryKind = (typeof LIBRARY_KINDS)[number];
 
-export const MILESTONE_KINDS: readonly LibraryKind[] = MILESTONES;
-
 export const GENDERS = ['f', 'm'] as const;
 export type Gender = (typeof GENDERS)[number];
 
 export const LANGUAGES = ['ru', 'en'] as const;
 export type Language = (typeof LANGUAGES)[number];
 
-/** Категории возражений — плейбук (элементы вида `objection`). */
+/** Категории возражений — плейбуки (элементы видов `OBJECTION_KINDS`). */
 export const OBJECTION_CATEGORIES = [
   'expensive',
   'think_about_it',
   'dont_believe',
+  'not_resonate',
   'no_time',
   'ask_partner',
   'tried_before',
   'later',
 ] as const;
 export type ObjectionCategory = (typeof OBJECTION_CATEGORIES)[number];
+
+export function isObjectionCategory(value: string): value is ObjectionCategory {
+  return (OBJECTION_CATEGORIES as readonly string[]).includes(value);
+}
+
+/** Как возражение называется в плане хода. */
+export const OBJECTION_TITLES: Readonly<Record<ObjectionCategory, string>> = {
+  expensive: 'дорого',
+  think_about_it: 'подумаю, надо разобраться',
+  dont_believe: 'не верит, что это работает',
+  not_resonate: 'не про меня, не откликается, не подходит',
+  no_time: 'нет времени',
+  ask_partner: 'посоветуюсь с близкими',
+  tried_before: 'уже пробовал похожее',
+  later: 'потом, не сейчас',
+};
+
+/** Плейбуки возражений: на диагностику (вариантов ещё не было) и на варианты работы. */
+export const OBJECTION_KINDS: readonly LibraryKind[] = [
+  'diagnostic_objection',
+  'objection',
+];
 
 export interface RequestCategory {
   key: string;

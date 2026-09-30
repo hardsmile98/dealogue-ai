@@ -42,7 +42,9 @@ export class BotChatStateRepository {
    * Ставит режим руками. Строки ещё нет — заводит (владелец выключил агент
    * в чате заранее или вернул чат агенту). Возврат в `auto` снимает
    * передачу менеджеру и ярлык; `off` их сохраняет — видно, почему чат
-   * ушёл менеджеру, даже если агент в нём выключен.
+   * ушёл менеджеру, даже если агент в нём выключен. Чат переходит к агенту
+   * — всё, на что уже ответил человек (сообщения до последнего исходящего),
+   * считается обработанным: агент отвечает только на неотвеченное после.
    */
   async setMode(
     chatId: string,
@@ -51,13 +53,21 @@ export class BotChatStateRepository {
   ): Promise<BotChatStateEntity> {
     const { rows } = await execute(
       this.states.manager,
-      `INSERT INTO bot_chat_state (chat_id, account_id, mode)
-       VALUES ($1::uuid, $2::uuid, $3::varchar)
+      `INSERT INTO bot_chat_state (chat_id, account_id, mode, last_handled_message_id)
+       VALUES ($1::uuid, $2::uuid, $3::varchar,
+         CASE WHEN $3::varchar = 'auto' THEN (
+           SELECT COALESCE(MAX(message.telegram_message_id), 0)::int FROM telegram_messages message
+           WHERE message.chat_id = $1::uuid AND message.direction = 'out'
+         ) ELSE 0 END)
        ON CONFLICT (chat_id) DO UPDATE SET
          mode = EXCLUDED.mode,
          handoff_reason = CASE WHEN EXCLUDED.mode = 'auto' THEN NULL ELSE bot_chat_state.handoff_reason END,
          handoff_at = CASE WHEN EXCLUDED.mode = 'auto' THEN NULL ELSE bot_chat_state.handoff_at END,
          label = CASE WHEN EXCLUDED.mode = 'auto' THEN NULL ELSE bot_chat_state.label END,
+         last_handled_message_id = CASE
+           WHEN EXCLUDED.mode = 'auto' AND bot_chat_state.mode <> 'auto'
+             THEN GREATEST(bot_chat_state.last_handled_message_id, EXCLUDED.last_handled_message_id)
+           ELSE bot_chat_state.last_handled_message_id END,
          updated_at = now()
        RETURNING *`,
       [chatId, accountId, mode],

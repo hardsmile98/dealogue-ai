@@ -4,6 +4,8 @@ import type { Channel, Clock } from './channel.js';
 import { deliver, planDelays } from './delivery.js';
 import {
   containsMoney,
+  countQuestions,
+  draftViolations,
   endsWithQuestion,
   extractUrls,
   hardChecks,
@@ -14,7 +16,7 @@ import { TurnCollector } from './turn-collector.js';
 import { WriterParseError, parseWriterOutput } from './writer-output.js';
 
 describe('разбор ответа писателя', () => {
-  it('сообщения и мета — из JSON, пустое и не-строки отбрасываются', () => {
+  it('сообщения и пояснение — из JSON, пустое и не-строки отбрасываются', () => {
     const draft = parseWriterOutput(`{
       "messages": ["Понимаю вас 🙏", "Смотрите, чистка как раз с этим работает.\\n\\nСкажите, что бы вы хотели изменить?", "  ", 5],
       "arguments": ["expensive:0"], "notes": "ответил"
@@ -23,10 +25,7 @@ describe('разбор ответа писателя', () => {
       'Понимаю вас 🙏',
       'Смотрите, чистка как раз с этим работает.\n\nСкажите, что бы вы хотели изменить?',
     ]);
-    expect(draft.meta).toEqual({
-      arguments: ['expensive:0'],
-      notes: 'ответил',
-    });
+    expect(draft.notes).toBe('ответил');
   });
 
   it('ограждения ```json допустимы, не-JSON — ошибка разбора (ход запросит ответ ещё раз)', () => {
@@ -35,10 +34,64 @@ describe('разбор ответа писателя', () => {
     ).toEqual(['Текст']);
     expect(parseWriterOutput('{}')).toEqual({
       parts: [],
-      meta: { arguments: [], notes: '' },
+      notes: '',
     });
     expect(() => parseWriterOutput('Просто текст')).toThrow(WriterParseError);
     expect(() => parseWriterOutput('["a"]')).toThrow(WriterParseError);
+  });
+});
+
+describe('проверки черновика кодом', () => {
+  const previous = [
+    'Рассказать вам, как это можно проработать?',
+    'Понял вас 🙏',
+  ];
+
+  it('вопросов больше, чем разрешает план, — замечание; «??» — один вопрос', () => {
+    expect(countQuestions(['Как вы?? Всё хорошо?', 'Точно?'])).toBe(3);
+    expect(
+      draftViolations({
+        parts: [
+          'Понимаю вас. Как давно это началось? Рассказать, как проработать?',
+        ],
+        maxQuestions: 1,
+        previous: [],
+      }).map((violation) => violation.code),
+    ).toEqual(['extra_question']);
+    expect(
+      draftViolations({
+        parts: ['Понял вас) Займусь анализом, хорошо?'],
+        maxQuestions: 0,
+        previous: [],
+      })[0]?.detail,
+    ).toContain('план вопросов не просит');
+    expect(
+      draftViolations({
+        parts: ['Понимаю вас. Рассказать, как проработать?'],
+        maxQuestions: 1,
+        previous: [],
+      }),
+    ).toEqual([]);
+  });
+
+  it('слово в слово своё прошлое сообщение — повтор; короткие реплики и другие слова — нет', () => {
+    expect(
+      draftViolations({
+        parts: ['рассказать вам как это можно проработать'],
+        maxQuestions: 1,
+        previous,
+      }).map((violation) => violation.code),
+    ).toEqual(['self_repeat']);
+    expect(
+      draftViolations({ parts: ['Понял вас 🙏'], maxQuestions: 0, previous }),
+    ).toEqual([]);
+    expect(
+      draftViolations({
+        parts: ['Хотите, покажу, как это прорабатывается?'],
+        maxQuestions: 1,
+        previous,
+      }),
+    ).toEqual([]);
   });
 });
 
@@ -269,6 +322,30 @@ describe('задержки доставки', () => {
       random: fixed,
     });
     expect(scheduled.initialMs).toBe(0);
+    // Ответ по заданию после сбоя: клиент уже ждёт — пауза считается от его сообщения.
+    const retried = planDelays({
+      trigger: 'client',
+      isNewLead: false,
+      lastOutgoingAt: new Date(now.getTime() - 3 * 3_600_000),
+      now,
+      parts,
+      timings: DEFAULT_TIMINGS,
+      waitedMs: 5 * 60_000,
+      random: fixed,
+    });
+    expect(retried.initialMs).toBe(150_000);
+    expect(
+      planDelays({
+        trigger: 'client',
+        isNewLead: true,
+        lastOutgoingAt: null,
+        now,
+        parts,
+        timings: DEFAULT_TIMINGS,
+        waitedMs: 20 * 60_000,
+        random: fixed,
+      }).initialMs,
+    ).toBe(0);
   });
 
   it('«печатает» по длине, веха как вставка, паузы между частями', () => {

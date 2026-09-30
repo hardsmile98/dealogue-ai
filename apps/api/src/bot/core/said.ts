@@ -1,34 +1,42 @@
-import type { FinalPart, Plan, SaidEntry, SentPart } from './types.js';
-
-/** Длина ключа в реестре сказанного (bot_chat_said.key). */
-const KEY_MAX_LENGTH = 64;
+import { OBJECTION_MARKERS } from './types.js';
+import type {
+  FinalPart,
+  ObjectionEnd,
+  Plan,
+  SaidEntry,
+  SentPart,
+} from './types.js';
 
 export interface SaidInput {
   /** `coveredNudges` может не быть у ходов, записанных до его появления. */
   plan: Pick<Plan, 'milestone' | 'nudge' | 'objection'> &
     Partial<Pick<Plan, 'coveredNudges'>>;
-  /** Аргументы плейбука, которые ответчик назвал использованными. */
-  writerArguments: readonly string[];
   /** Части к отправке — по ним находится тело вехи. */
   parts: readonly FinalPart[];
   /** Что реально ушло; часть с тем же индексом, что в `parts`. */
   sent: readonly SentPart[];
   /** Вместо текста ответчика ушла запасная фраза — шага воронки она не делает. */
   fallback: boolean;
+  /**
+   * Вместо текста ответчика ушла фраза шага из таблиц как есть: шаг сделан,
+   * а отработки возражения в ней не было.
+   */
+  stepOnly?: boolean;
 }
 
 /**
- * Реестр сказанного по итогу хода (docs/agent-architecture.md, 3.9 и 4):
- * доставленная веха (и ссылки вместе с вехой `links`), подталкивание
- * (и шаги, которые оно сделало заодно), подход к возражению и аргументы ответчика. Ничего не ушло — ничего не
- * сказано. Запасная фраза шага воронки не делает: подталкивание, подход и
- * аргументы в реестр не попадают, веха (она уходит сама) — попадает.
+ * Реестр сказанного по итогу хода (docs/agent-architecture.md, 3.9 и 4) —
+ * только то, что реально ушло: веха (и ссылки вместе с вехой `links`) —
+ * если ушло её тело; шаг воронки (и шаги, которые он сделал заодно) — если
+ * ушло последнее сообщение ответчика, в нём шаг; подход к возражению и
+ * отметка его исхода (`OBJECTION_MARKERS`) — если ушло первое. Ход
+ * прервали посередине — несделанный шаг не считается сделанным. Запасная
+ * фраза шага воронки не делает; фраза шага из таблиц — шаг без отработки.
  */
 export function saidEntries(input: SaidInput): Omit<SaidEntry, 'at'>[] {
   const { plan, parts, sent, fallback } = input;
   const entries: Omit<SaidEntry, 'at'>[] = [];
-  const lastSent = sent[sent.length - 1];
-  if (!lastSent) return entries;
+  if (sent.length === 0) return entries;
 
   const blockSent = sent[parts.findIndex((part) => part.block)];
   if (plan.milestone && blockSent) {
@@ -47,28 +55,30 @@ export function saidEntries(input: SaidInput): Omit<SaidEntry, 'at'>[] {
   }
   if (fallback) return entries;
 
-  if (plan.nudge) {
+  // Сообщения ответчика по порядку: ответы и возражение — первое, шаг — последнее.
+  const own = parts.flatMap((part, index) => (part.block ? [] : [index]));
+  const stepPart = sent[own[own.length - 1] ?? sent.length];
+  const answerPart = sent[own[0] ?? sent.length];
+  if (plan.nudge && stepPart) {
     for (const key of [plan.nudge, ...(plan.coveredNudges ?? [])]) {
-      entries.push({ kind: 'nudge', key, messageId: lastSent.messageId });
+      entries.push({ kind: 'nudge', key, messageId: stepPart.messageId });
     }
   }
-  if (plan.objection) {
+  if (plan.objection && !input.stepOnly && answerPart) {
     entries.push({
       kind: 'argument',
       key: `${plan.objection.category}:${plan.objection.approach}`,
-      messageId: lastSent.messageId,
+      messageId: answerPart.messageId,
     });
-  }
-  for (const argument of input.writerArguments) {
-    if (
-      !entries.some(
-        (entry) => entry.kind === 'argument' && entry.key === argument,
-      )
-    ) {
+    // Чем кончилась отработка: следующий ответ клиента читается по ней
+    // (раздел 2.5). У ходов, собранных до 30.09, исхода нет.
+    const ends = plan.objection.ends as ObjectionEnd | undefined;
+    const marker = ends && ends !== 'step' ? OBJECTION_MARKERS[ends] : null;
+    if (marker) {
       entries.push({
-        kind: 'argument',
-        key: argument.slice(0, KEY_MAX_LENGTH),
-        messageId: lastSent.messageId,
+        kind: 'nudge',
+        key: marker,
+        messageId: answerPart.messageId,
       });
     }
   }

@@ -24,7 +24,6 @@ const record = (patch: Partial<DeliveryRecord> = {}): DeliveryRecord => ({
   },
   firstPartAt: at(160).toISOString(),
   baselineMessageId: 10,
-  writerArguments: [],
   fallback: false,
   stage: 'diagnostic',
   markRead: true,

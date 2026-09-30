@@ -125,6 +125,10 @@ class EnvironmentVariables {
   @OptionalPositive()
   BOT_LLM_TIMEOUT_MS?: number;
 
+  /** Сколько обращений к модели идёт одновременно, остальные ждут очереди. */
+  @OptionalPositive()
+  BOT_LLM_CONCURRENCY?: number;
+
   /** 0 — поллер лестницы выключен. */
   @Min(0, { message: 'не меньше 0' })
   @Type(() => Number)

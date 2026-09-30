@@ -217,10 +217,10 @@ export class TurnDeliveryService {
     const { plan, delivery } = turn;
     const said = saidEntries({
       plan,
-      writerArguments: delivery.writerArguments,
       parts: delivery.parts,
       sent,
       fallback: delivery.fallback,
+      stepOnly: delivery.stepOnly,
     });
     // Шаг воронки сделан, если ушло подталкивание или веха; запасная фраза шагом не считается.
     const milestoneDelivered = said.some((entry) => entry.kind === 'milestone');
@@ -251,7 +251,10 @@ export class TurnDeliveryService {
             milestoneDelivered ||
             (plan.nudge !== null && !aborted && !delivery.fallback),
           reminders: aborted ? 0 : plan.reminders,
-          lastHandledMessageId: turn.lastMessageId,
+          // Прервали, ничего не отправив (клиент дописал во время паузы), —
+          // его сообщения не отвечены: их соберёт следующий ход вместе с новыми.
+          lastHandledMessageId:
+            aborted && sent.length === 0 ? null : turn.lastMessageId,
         },
         db,
       );

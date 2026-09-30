@@ -63,11 +63,12 @@ export const LIBRARY_KIND_LABELS: Record<LibraryKind, string> = {
   links: 'Ссылки',
   diagnostic: 'Диагностики',
   return_question: 'Вопрос после диагностики',
+  diagnostic_objection: 'Возражения после диагностики',
   offer: 'Описание услуг',
   prices: 'Цены',
   nudge: 'Связки и вопросы воронки',
   price_deflect: 'Цена раньше времени',
-  objection: 'Возражения',
+  objection: 'Возражения после вариантов',
   about: 'О себе и о работе',
 };
 
@@ -75,6 +76,7 @@ export const OBJECTION_LABELS: Record<ObjectionCategory, string> = {
   expensive: 'Дорого',
   think_about_it: 'Подумаю',
   dont_believe: 'Не верю',
+  not_resonate: 'Не про меня, не подходит',
   no_time: 'Нет времени',
   ask_partner: 'Посоветуюсь с партнёром',
   tried_before: 'Уже пробовал',

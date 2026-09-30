@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextMilestone, stageFromMilestones } from './kinds.js';
+import { stageFromMilestones } from './kinds.js';
 import {
   defaultPersona,
   readPersona,
@@ -22,12 +22,6 @@ describe('этап по вехам', () => {
     expect(stageFromMilestones(['links', 'diagnostic'])).toBe('diagnostic');
     // Порядок записи не важен, лишние ключи игнорируются.
     expect(stageFromMilestones(['offer', 'links', 'nudge'])).toBe('offer');
-  });
-
-  it('следующая веха', () => {
-    expect(nextMilestone('intake')).toBe('links');
-    expect(nextMilestone('offer')).toBe('prices');
-    expect(nextMilestone('prices')).toBeNull();
   });
 });
 

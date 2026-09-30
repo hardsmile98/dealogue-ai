@@ -101,17 +101,6 @@ export function lastOutgoing(
   return null;
 }
 
-/** Последнее сообщение клиента или null. */
-export function lastIncoming(
-  history: readonly HistoryMessage[],
-): HistoryMessage | null {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const message = history[i] as HistoryMessage;
-    if (message.direction === 'in') return message;
-  }
-  return null;
-}
-
 /**
  * Сколько наших ответов было после сообщения вехи `messageId` (или с начала
  * переписки, если null). Ответ — непрерывная серия исходящих; серия, в
@@ -187,6 +176,25 @@ export function seenByClient(
   if (index < 0) return false;
   if ((history[index] as HistoryMessage).readAt) return true;
   return history.slice(index + 1).some((item) => item.direction === 'in');
+}
+
+/**
+ * Писал ли клиент после нашего сообщения с таким id — например, после
+ * диагностики. Тогда напоминание идёт по разговору, а не вопросом-откликом
+ * «жду обратную связь»: отклик уже был.
+ */
+export function repliedAfter(
+  history: readonly HistoryMessage[],
+  messageId: number | null,
+): boolean {
+  if (messageId === null) return false;
+  const index = history.findIndex(
+    (item) => item.direction === 'out' && item.id === messageId,
+  );
+  return (
+    index >= 0 &&
+    history.slice(index + 1).some((item) => item.direction === 'in')
+  );
 }
 
 /** Сообщение, которым доставлена веха, — из реестра сказанного. */

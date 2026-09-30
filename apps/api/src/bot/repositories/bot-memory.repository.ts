@@ -185,7 +185,12 @@ export class BotMemoryRepository {
     );
   }
 
-  /** Передача менеджеру: режим, причина, ярлык — одним UPDATE. */
+  /**
+   * Передача менеджеру: режим, причина, ярлык — одним UPDATE. Только из
+   * режима агента: чат, который уже у менеджера (человек ответил сам) или
+   * выключен, сохраняет свою причину и ярлык — закрытие запоздавшего хода
+   * их не перетирает.
+   */
   async setHandoff(
     chatId: string,
     reason: HandoffReason,
@@ -195,7 +200,7 @@ export class BotMemoryRepository {
     await execute(
       db,
       `UPDATE bot_chat_state SET mode = 'manager', handoff_reason = $2::varchar, handoff_at = now(), label = $3::varchar, updated_at = now()
-       WHERE chat_id = $1::uuid`,
+       WHERE chat_id = $1::uuid AND mode = 'auto'`,
       [chatId, reason, label],
     );
   }

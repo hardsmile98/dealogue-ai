@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_TIMINGS } from '../library/timings.js';
 import { buildPlan, needsWriter } from './plan.js';
+import { fallbackStepPhrase } from './steps.js';
 import type { LibraryAvailability, PlanInput } from './plan.js';
 import type {
   Analysis,
@@ -39,6 +40,9 @@ const PHRASES: Record<string, string[]> = {
   'objection:think_about_it': [
     'Может, есть вопросы по работе?',
     'Что смутило?',
+  ],
+  'diagnostic_objection:not_resonate': [
+    'Понимаю) А что у вас сейчас на самом деле происходит?',
   ],
 };
 
@@ -240,6 +244,25 @@ describe('план: знакомство', () => {
     expect(plan.constraints.maxParts).toBe(2);
   });
 
+  it('рассказ о беде в первом сообщении — отклик в начале просьбы о данных, отдельного ответа нет', () => {
+    const plan = buildPlan(
+      input({
+        analysis: analysis({
+          intents: ['shares_story'],
+          answerPoints: [
+            point('request', 'diagnostic', 'хочет расклад'),
+            point('story', 'client', 'муж ушёл, с деньгами тяжело'),
+          ],
+        }),
+      }),
+    );
+    expect(plan.nudge).toBe('ask_birth_data');
+    expect(plan.answer).toEqual([]);
+    expect(plan.react).toEqual(['муж ушёл, с деньгами тяжело']);
+    expect(plan.constraints.maxParts).toBe(1);
+    expect(plan.goal).toContain('Клиент рассказал: муж ушёл');
+  });
+
   it('клиент сразу прислал всё — ссылки в первом же ходе; «займусь анализом» без «хорошо?»', () => {
     const plan = buildPlan(
       input({
@@ -257,8 +280,20 @@ describe('план: знакомство', () => {
     expect(plan.nudge).toBe('start_analysis');
     expect(plan.phrases).toEqual(PHRASES['wait:-']);
     expect(plan.answer).toEqual([]);
+    // Рассказ — отклик в сообщении «займусь анализом», а не отдельный ответ.
+    expect(plan.react).toEqual(['стал мало зарабатывать']);
     expect(plan.goal).toContain('Шаг — утверждение');
     expect(plan.goal).toContain('«хорошо?»');
+    expect(plan.constraints.maxQuestions).toBe(0);
+    expect(plan.goal).toContain('Вопросов клиенту в ответе нет');
+    // Не прошёл текст — уходит фраза шага без «хорошо?», а такой нет — нейтральная.
+    expect(fallbackStepPhrase(plan)).toBeNull();
+    expect(
+      fallbackStepPhrase({
+        ...plan,
+        phrases: ['Понял вас) Вернусь, хорошо?', 'Понял вас) Скоро вернусь!'],
+      }),
+    ).toBe('Понял вас) Скоро вернусь!');
   });
 
   it('в первом сообщении дата без места и сферы — приветствие и вопрос о сфере: место необязательно', () => {
@@ -494,6 +529,10 @@ describe('план: знакомство', () => {
     expect(plan.nudge).toBe('clarify_request');
     expect(plan.phrases).toEqual(PHRASES['ask_request:relationships']);
     expect(plan.constraints.maxParts).toBe(1);
+    // Образцы — тон, но смысл уточняющего вопроса держим: по ответу выбирается диагностика.
+    expect(plan.goal).toContain(
+      'Уточняющий вопрос из образца сохрани по смыслу',
+    );
 
     // «Нет» — анализатор назвал подкатегорию; дальше ссылки.
     const single = {
@@ -632,7 +671,7 @@ describe('план: знакомство', () => {
     expect(plan.constraints.maxParts).toBe(2);
   });
 
-  it('ранний вопрос о цене — ответ по фразе из таблиц, без цен', () => {
+  it('ранний вопрос о цене — «к стоимости вернусь позже»: фраза «стоимость обсуждаемая» из таблиц — для этапа после диагностики', () => {
     const plan = buildPlan(
       input({
         analysis: analysis({
@@ -643,7 +682,8 @@ describe('план: знакомство', () => {
         }),
       }),
     );
-    expect(plan.answer[0]?.hold).toContain('Стоимость — вопрос обсуждаемый.');
+    expect(plan.answer[0]?.hold).toContain('вернёшься чуть позже');
+    expect(plan.answer[0]?.hold).not.toContain('Стоимость');
     expect(plan.constraints.doNotMention[0]).toContain('можно');
   });
 });
@@ -804,7 +844,7 @@ describe('план: ожидание диагностики', () => {
       }),
     );
     expect(plan.milestone).toBeNull();
-    expect(plan.answer[0]?.hold).toContain('Стоимость');
+    expect(plan.answer[0]?.hold).toContain('к стоимости');
     expect(plan.answer[1]?.hold).toContain('пришлёшь');
     expect(plan.answer[2]?.hold).toBeNull();
   });
@@ -938,7 +978,7 @@ describe('план: после диагностики', () => {
     expect(reacting({ answerPoints: [reply] }).milestone?.key).toBe('offer');
   });
 
-  it('вопрос или сомнение — ответ и один раз предложить рассказать о вариантах', () => {
+  it('вопрос или сомнение — ответ и предложить рассказать о вариантах, но не больше двух раз за этап', () => {
     const doubt = {
       intents: ['doubts' as const],
       answerPoints: [point('question', 'practice', 'а это правда работает?')],
@@ -946,28 +986,292 @@ describe('план: после диагностики', () => {
     const first = reacting(doubt);
     expect(first.milestone).toBeNull();
     expect(first.answer).toHaveLength(1);
+    // О практиках до вариантов — только общо.
+    expect(first.answer[0]?.hold).toContain('без подробностей');
     expect(first.nudge).toBe('ask_want_options');
     expect(first.afterBlock).toBe(false);
     expect(first.constraints.maxParts).toBe(2);
-    const again = reacting(doubt, {
+    const askedOnce = [
+      ...diagnosticSaid,
+      said('nudge', 'ask_want_options', 11, 20),
+    ];
+    expect(reacting(doubt, { memory: memory({ said: askedOnce }) }).nudge).toBe(
+      'ask_want_options',
+    );
+    const twice = reacting(doubt, {
       memory: memory({
-        said: [...diagnosticSaid, said('nudge', 'ask_want_options', 11, 20)],
+        said: [...askedOnce, said('nudge', 'ask_want_options', 13, 10)],
       }),
     });
-    expect(again.nudge).toBeNull();
-    expect(again.answer).toHaveLength(1);
-    // Фраза плейбука сама предлагает рассказать подробнее — второй вопрос не нужен.
-    const playbook = reacting({
-      intents: ['doubts'],
-      objection: 'think_about_it',
-      answerPoints: [point('objection', 'other', 'не уверена')],
-    });
-    expect(playbook.objection?.phrase).toBe('Может, есть вопросы по работе?');
-    expect(playbook.nudge).toBeNull();
-    expect(playbook.constraints.maxParts).toBe(1);
+    expect(twice.nudge).toBeNull();
+    expect(twice.answer).toHaveLength(1);
   });
 
-  it('молчит — напоминание по фразе из таблиц; следующее — другим вариантом', () => {
+  it('вопрос о цене после диагностики — варианты и перед ними «стоимость обсуждаемая» из таблиц', () => {
+    const plan = reacting({
+      intents: ['asks_price'],
+      answerPoints: [point('question', 'price', 'спросила, сколько стоит')],
+    });
+    expect(plan.milestone?.key).toBe('offer');
+    expect(plan.answer[0]?.hold).toContain('Стоимость — вопрос обсуждаемый.');
+  });
+
+  it('«не знаю, мне надо изучить» — отработка без вопроса и следом вопрос о вариантах; фразы плейбука вариантов сюда не попадают', () => {
+    const plan = reacting(
+      {
+        intents: ['objects'],
+        objection: 'think_about_it',
+        answerPoints: [
+          point('objection', 'practice', 'не знаю, мне надо изучить'),
+        ],
+      },
+      {
+        memory: memory({
+          said: [...diagnosticSaid, said('nudge', 'ask_want_options', 9, 100)],
+        }),
+      },
+    );
+    expect(plan.milestone).toBeNull();
+    expect(plan.objection).toMatchObject({
+      category: 'think_about_it',
+      approach: 0,
+      ends: 'step',
+      phrases: [],
+    });
+    // Возражение закрывает его отработка — отдельным пунктом оно не идёт.
+    expect(plan.answer).toEqual([]);
+    expect(plan.nudge).toBe('ask_want_options');
+    expect(plan.constraints.maxParts).toBe(2);
+    expect(plan.goal).toContain('«подумаю, надо разобраться»');
+    expect(plan.goal).not.toContain('Может, есть вопросы по работе?');
+  });
+
+  const notMe = {
+    intents: ['objects' as const],
+    objection: 'not_resonate',
+    answerPoints: [point('objection', 'diagnostic', 'вообще не про меня')],
+  };
+  const clarified = [
+    ...diagnosticSaid,
+    said('argument', 'not_resonate:0', 11, 20),
+    said('nudge', 'clarify_objection', 11, 20),
+  ];
+  const clarifiedHistory = [
+    out(9, 100, true),
+    incoming(10, 30),
+    out(11, 20, true),
+    incoming(12, 1),
+  ];
+
+  it('«вообще не про меня» — спокойно принять и уточнить своим вопросом, без шага; образцы — из плейбука диагностики', () => {
+    const plan = reacting(notMe);
+    expect(plan.milestone).toBeNull();
+    expect(plan.objection).toMatchObject({
+      category: 'not_resonate',
+      approach: 0,
+      ends: 'question',
+      phrases: PHRASES['diagnostic_objection:not_resonate'],
+    });
+    expect(plan.nudge).toBeNull();
+    expect(plan.constraints.maxParts).toBe(1);
+    expect(plan.goal).toContain('не узнаёт себя в диагностике');
+    expect(plan.goal).toContain('не шаблон');
+  });
+
+  it('ответ на уточнение — отклик и снова вопрос о вариантах, а не варианты; «да» — варианты', () => {
+    const story = reacting(
+      {
+        intents: ['shares_story'],
+        answerPoints: [
+          point('story', 'client', 'на самом деле проблемы с работой'),
+        ],
+      },
+      { memory: memory({ said: clarified }), history: clarifiedHistory },
+    );
+    expect(story.milestone).toBeNull();
+    expect(story.nudge).toBe('ask_want_options');
+    // На рассказ — отклик в начале сообщения шага, отдельного ответа нет.
+    expect(story.react).toEqual(['на самом деле проблемы с работой']);
+    expect(story.answer).toEqual([]);
+    expect(story.constraints.maxParts).toBe(1);
+    expect(story.constraints.maxQuestions).toBe(1);
+    expect(story.goal).toContain('Начни сообщение шага с короткого отклика');
+    const yes = reacting(
+      {
+        intents: ['asks_practice'],
+        answerPoints: [point('answer', 'other', 'да, расскажите')],
+      },
+      { memory: memory({ said: clarified }), history: clarifiedHistory },
+    );
+    expect(yes.milestone?.key).toBe('offer');
+    // Вопрос о вариантах задан — дальше отклик без возражения снова ведёт к ним.
+    const asked = [...clarified, said('nudge', 'ask_want_options', 13, 5)];
+    expect(
+      reacting(
+        { answerPoints: [point('story', 'client', 'хочу всё изменить')] },
+        {
+          memory: memory({ said: asked }),
+          history: [...clarifiedHistory, out(13, 5, true), incoming(14, 1)],
+        },
+      ).milestone?.key,
+    ).toBe('offer');
+  });
+
+  it('напоминание об уточнении его не закрывает: ответ после напоминания — снова вопрос о вариантах, а не варианты', () => {
+    // Песочница 30.09: уточнение → напоминание по разговору → ответ клиента ушёл в варианты, «ну давайте» — в цены.
+    const reminded = [...clarified, said('nudge', 'follow_up', 13, 10)];
+    const plan = reacting(
+      {
+        intents: ['shares_story', 'answers_question'],
+        answerPoints: [
+          point(
+            'story',
+            'client',
+            'с деньгами нормально, работу найти не могу',
+          ),
+        ],
+      },
+      {
+        memory: memory({ said: reminded }),
+        history: [
+          ...clarifiedHistory.slice(0, 3),
+          out(13, 10, true),
+          incoming(14, 1),
+        ],
+      },
+    );
+    expect(plan.milestone).toBeNull();
+    expect(plan.nudge).toBe('ask_want_options');
+    expect(plan.react).toEqual(['с деньгами нормально, работу найти не могу']);
+  });
+
+  it('«Расскажите про себя» — не согласие на варианты: ответ и вопрос, рассказать ли, как проработать', () => {
+    const plan = reacting({
+      intents: ['asks_about_practitioner'],
+      answerPoints: [
+        point('request', 'practitioner', 'просит рассказать о себе'),
+      ],
+    });
+    expect(plan.milestone).toBeNull();
+    expect(plan.answer.map((item) => item.text)).toEqual([
+      'просит рассказать о себе',
+    ]);
+    expect(plan.nudge).toBe('ask_want_options');
+    expect(plan.constraints.maxQuestions).toBe(1);
+  });
+
+  it('отклик без вопроса о другом уводит к вариантам без обрамления: рассказу вехи отклик не нужен', () => {
+    const plan = reacting({
+      intents: ['shares_story'],
+      answerPoints: [point('story', 'client', 'хочет изменить всё')],
+    });
+    expect(plan.milestone?.key).toBe('offer');
+    expect(plan.react).toEqual([]);
+    expect(needsWriter(plan)).toBe(false);
+  });
+
+  it('«расскажите, хотя сомневаюсь» — варианты, отработка без своего вопроса: веха и есть ответ', () => {
+    const plan = reacting({
+      intents: ['asks_practice', 'doubts'],
+      objection: 'dont_believe',
+      answerPoints: [
+        point('objection', 'practice', 'расскажите, хотя сомневаюсь'),
+      ],
+    });
+    expect(plan.milestone?.key).toBe('offer');
+    expect(plan.objection?.ends).toBe('open');
+    expect(plan.constraints.maxQuestions).toBe(0);
+    expect(plan.goal).not.toContain('шаг воронки отдельным сообщением');
+  });
+
+  it('уточнение по возражению — отметка, а не шаг: в «не повторять» его нет', () => {
+    const plan = reacting(notMe, { memory: memory({ said: clarified }) });
+    expect(plan.constraints.doNotRepeat).not.toContain(
+      'уточняющий вопрос по возражению',
+    );
+    expect(plan.constraints.doNotRepeat).toContain(
+      'твоя прошлая отработка возражения «не про меня, не откликается, не подходит»',
+    );
+  });
+
+  it('снова «не про меня» — второй подход и вопрос о вариантах; после двух возражений на этапе — не уговаривать', () => {
+    const second = reacting(notMe, { memory: memory({ said: clarified }) });
+    expect(second.objection).toMatchObject({ approach: 1, ends: 'step' });
+    expect(second.nudge).toBe('ask_want_options');
+    expect(second.goal).toContain('не так, как в прошлый');
+    expect(second.goal).not.toContain('Такой шаг уже был');
+    // Вопрос о вариантах уже задавали — второй раз другими словами.
+    const repeatedStep = reacting(notMe, {
+      memory: memory({
+        said: [...clarified, said('nudge', 'ask_want_options', 9, 100)],
+      }),
+    });
+    expect(repeatedStep.goal).toContain('Такой шаг уже был');
+    const third = reacting(notMe, {
+      memory: memory({
+        said: [
+          ...clarified,
+          said('argument', 'not_resonate:1', 13, 5),
+          said('nudge', 'ask_want_options', 13, 5),
+        ],
+      }),
+    });
+    expect(third.objection).toMatchObject({ ends: 'release', phrases: [] });
+    expect(third.objection?.task).toContain('не первый раз');
+    expect(third.nudge).toBeNull();
+    expect(third.constraints.maxQuestions).toBe(0);
+  });
+
+  it('подходы категории кончились — не повторять прошлый, а отпустить', () => {
+    const plan = reacting(
+      {
+        intents: ['objects'],
+        objection: 'tried_before',
+        answerPoints: [
+          point('objection', 'other', 'уже пробовала, не помогло'),
+        ],
+      },
+      {
+        memory: memory({
+          said: [...diagnosticSaid, said('argument', 'tried_before:0', 11, 20)],
+        }),
+      },
+    );
+    expect(plan.objection).toMatchObject({ approach: 1, ends: 'release' });
+  });
+
+  it('пауза после возражения («посоветуюсь с мужем» → «я на связи»): «ок, спасибо» — не согласие на варианты, агент молчит', () => {
+    const paused = [
+      ...diagnosticSaid,
+      said('argument', 'ask_partner:0', 11, 20),
+      said('nudge', 'pause_objection', 11, 20),
+    ];
+    const history = [
+      out(9, 100, true),
+      incoming(10, 30),
+      out(11, 20, true),
+      incoming(12, 1),
+    ];
+    const ok = reacting(
+      { answerPoints: [point('ack', 'other', 'ок, спасибо')] },
+      { memory: memory({ said: paused }), history },
+    );
+    expect(ok.milestone).toBeNull();
+    expect(ok.nudge).toBeNull();
+    expect(needsWriter(ok)).toBe(false);
+    // Сам попросил — варианты.
+    expect(
+      reacting(
+        {
+          intents: ['asks_practice'],
+          answerPoints: [point('request', 'practice', 'расскажите всё-таки')],
+        },
+        { memory: memory({ said: paused }), history },
+      ).milestone?.key,
+    ).toBe('offer');
+  });
+
+  it('молчит — напоминание по образцам из таблиц; следующее — первым другой вариант', () => {
     const first = buildPlan(
       scheduled('return_question', {
         stage: 'diagnostic',
@@ -976,7 +1280,10 @@ describe('план: после диагностики', () => {
       }),
     );
     expect(first.nudge).toBe('ask_feedback');
-    expect(first.phrases).toEqual(['Что бы вы хотели изменить?']);
+    expect(first.phrases).toEqual([
+      'Что бы вы хотели изменить?',
+      'Жду обратную связь по раскладу)',
+    ]);
     expect(first.reminders).toBe(1);
     const second = buildPlan(
       scheduled('return_question', {
@@ -987,7 +1294,32 @@ describe('план: после диагностики', () => {
         history: [out(9, 100, true), out(11, 60, true)],
       }),
     );
-    expect(second.phrases).toEqual(['Жду обратную связь по раскладу)']);
+    expect(second.phrases).toEqual([
+      'Жду обратную связь по раскладу)',
+      'Что бы вы хотели изменить?',
+    ]);
+  });
+
+  it('клиент отвечал после диагностики и замолчал — напоминание по разговору, а не «жду обратную связь»', () => {
+    const plan = buildPlan(
+      scheduled('return_question', {
+        stage: 'diagnostic',
+        memory: memory({ said: clarified }),
+        history: clarifiedHistory.slice(0, 3),
+      }),
+    );
+    expect(plan.nudge).toBe('follow_up');
+    expect(plan.phrases).toEqual([]);
+    expect(plan.reminders).toBe(1);
+    expect(plan.goal).toContain('последний вопрос');
+    // Проверяющий историю не видит — конец нашего последнего сообщения идёт в план.
+    expect(plan.goal).toContain(
+      'Твоё последнее сообщение клиенту (конец): «…»',
+    );
+    // Напоминание по сути возвращается к уточнению — это не «повтор».
+    expect(plan.constraints.doNotRepeat).not.toContain(
+      'уточняющий вопрос по возражению',
+    );
   });
 
   it('варианты по таймеру больше не уходят: старое задание закрывается без текста', () => {
@@ -1070,7 +1402,7 @@ describe('план: после вариантов', () => {
     expect(plan.answer).toHaveLength(1);
   });
 
-  it('возражение: первый подход из таблиц, при повторе — следующий; цен нет', () => {
+  it('возражение на варианты: подход этапа и образцы плейбука вариантов; при повторе — следующий подход, образцы по кругу; цен нет', () => {
     const objecting = {
       intents: ['objects' as const],
       objection: 'think_about_it',
@@ -1078,24 +1410,75 @@ describe('план: после вариантов', () => {
     };
     const first = reacting(objecting);
     expect(first.milestone).toBeNull();
-    expect(first.objection).toEqual({
+    expect(first.nudge).toBeNull();
+    expect(first.objection).toMatchObject({
       category: 'think_about_it',
       approach: 0,
-      phrase: 'Может, есть вопросы по работе?',
+      ends: 'question',
+      phrases: ['Может, есть вопросы по работе?', 'Что смутило?'],
     });
+    expect(first.objection?.task).toContain('что именно заставляет задуматься');
     const repeated = reacting(objecting, {
       memory: memory({
-        said: [...offerSaid, said('argument', 'think_about_it:0', 14, 10)],
+        said: [
+          ...offerSaid,
+          said('argument', 'think_about_it:0', 14, 10),
+          said('nudge', 'clarify_objection', 14, 10),
+        ],
       }),
     });
-    expect(repeated.objection?.phrase).toBe('Что смутило?');
-    expect(repeated.goal).toContain('не так, как раньше');
+    expect(repeated.objection).toMatchObject({
+      approach: 1,
+      phrases: ['Что смутило?', 'Может, есть вопросы по работе?'],
+    });
+    expect(repeated.goal).toContain('не так, как в прошлый');
     expect(
-      reacting({ ...objecting, objection: 'expensive' }).objection?.phrase,
-    ).toBeNull();
+      reacting({ ...objecting, objection: 'expensive' }).objection,
+    ).toMatchObject({ ends: 'open', phrases: [] });
   });
 
-  it('молчит — напоминание по фразе из таблиц; цены по таймеру не уходят', () => {
+  it('«ничего не подходит» — уточнить; ответ на уточнение — отклик и вопрос по направлениям, а не цены', () => {
+    const first = reacting({
+      intents: ['objects'],
+      objection: 'not_resonate',
+      answerPoints: [point('objection', 'practice', 'ничего не подходит')],
+    });
+    expect(first.milestone).toBeNull();
+    expect(first.objection).toMatchObject({
+      category: 'not_resonate',
+      ends: 'question',
+    });
+    expect(first.objection?.task).toContain('что именно не подошло');
+    const clarified = [
+      ...offerSaid,
+      said('argument', 'not_resonate:0', 14, 10),
+      said('nudge', 'clarify_objection', 14, 10),
+    ];
+    const answer = reacting(
+      {
+        answerPoints: [
+          point('answer', 'client', 'хочу разобраться с деньгами'),
+        ],
+      },
+      {
+        memory: memory({ said: clarified }),
+        history: [
+          out(12, 30, true),
+          incoming(13, 20),
+          out(14, 10, true),
+          incoming(15, 1),
+        ],
+      },
+    );
+    expect(answer.milestone).toBeNull();
+    expect(answer.nudge).toBe('ask_offer_questions');
+    // Клиент сказал, что ему на самом деле нужно, — на это откликаются, потом шаг.
+    expect(answer.react).toEqual(['хочу разобраться с деньгами']);
+    expect(answer.answer).toEqual([]);
+    expect(answer.constraints.maxParts).toBe(1);
+  });
+
+  it('молчит — напоминание по образцам из таблиц, первым следующий вариант; цены по таймеру не уходят', () => {
     const reminder = buildPlan(
       scheduled('offer_nudge', {
         stage: 'offer',
@@ -1106,8 +1489,21 @@ describe('план: после вариантов', () => {
       }),
     );
     expect(reminder.nudge).toBe('ask_offer_questions');
-    expect(reminder.phrases).toEqual(['Всё ли понятно или есть вопросы?']);
+    expect(reminder.phrases).toEqual([
+      'Всё ли понятно или есть вопросы?',
+      'Всё ли понятно по направлениям?',
+    ]);
     expect(reminder.reminders).toBe(1);
+    // Клиент уже отвечал после вариантов — напоминание по разговору.
+    expect(
+      buildPlan(
+        scheduled('offer_nudge', {
+          stage: 'offer',
+          memory: memory({ said: offerSaid }),
+          history: [out(12, 30, true), incoming(13, 20), out(14, 10, true)],
+        }),
+      ).nudge,
+    ).toBe('follow_up');
     expect(
       buildPlan(
         scheduled('prices', {
