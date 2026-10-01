@@ -46,6 +46,7 @@ function input(stage: Stage, patch: Partial<LadderInput> = {}): LadderInput {
     lastHandledMessageId: 1,
     remindersSent: 0,
     timings: DEFAULT_TIMINGS,
+    dateKnown: false,
     ...patch,
   };
 }
@@ -157,7 +158,8 @@ describe('лестница молчания', () => {
     ).toBe(true);
   });
 
-  it('после диагностики — только напоминания: первое быстро, следующие через 12–16 ч; вариантов по таймеру нет', () => {
+  it('после диагностики молчит — вопрос-отклик через несколько часов, потом варианты по таймеру через сутки после диагностики', () => {
+    // Решение владельца 01.10.2026: как в реальной переписке.
     const base = [
       said('milestone', 'links', 2, 1),
       said('milestone', 'diagnostic', 2, 1),
@@ -172,21 +174,53 @@ describe('лестница молчания', () => {
     ).toBe(true);
     const second = nextLadderStep(
       input('diagnostic', {
-        said: [...base, said('nudge', 'ask_feedback', 2, 1)],
+        said: [...base, said('nudge', 'ask_feedback', 3, 200)],
+        history: [incoming(1, 0), outgoing(2, 1, 5), outgoing(3, 200, 210)],
         remindersSent: 1,
       }),
     );
-    expect(second?.kind).toBe('return_question');
+    expect(second?.kind).toBe('offer');
     expect(
       within(
-        minutesAfter(second!.runAt, at(5)) / 60,
-        DEFAULT_TIMINGS.stepHours,
+        minutesAfter(second!.runAt, at(1)) / 60,
+        DEFAULT_TIMINGS.offerAfterSilenceHours,
       ),
     ).toBe(true);
+    // Напоминание прочитали поздно — варианты не раньше часа после прочтения.
+    const late = nextLadderStep(
+      input('diagnostic', {
+        said: [...base, said('nudge', 'ask_feedback', 3, 1300)],
+        history: [incoming(1, 0), outgoing(2, 1, 5), outgoing(3, 1300, 1500)],
+        remindersSent: 1,
+      }),
+    );
+    expect(late?.kind).toBe('offer');
+    expect(minutesAfter(late!.runAt, at(1500))).toBe(60);
     // Лимит кончился — агент ждёт клиента.
     expect(
       nextLadderStep(input('diagnostic', { said: base, remindersSent: 3 })),
     ).toBeNull();
+  });
+
+  it('знакомство: дата есть, молчит на вопрос о том, что беспокоит, — диагностика без напоминания', () => {
+    const asked = [
+      said('nudge', 'ask_birth_data', 2, 1),
+      said('nudge', 'ask_sphere', 3, 20),
+    ];
+    const step = nextLadderStep(
+      input('intake', {
+        said: asked,
+        history: [incoming(1, 0), outgoing(2, 1, 5), outgoing(3, 20, 25)],
+        dateKnown: true,
+      }),
+    );
+    expect(step?.kind).toBe('diagnostic');
+    expect(
+      within(
+        minutesAfter(step!.runAt, at(25)),
+        DEFAULT_TIMINGS.diagnosticDelayMin,
+      ),
+    ).toBe(true);
   });
 
   it('клиент отвечал после диагностики и замолчал — первое напоминание не быстро, а через 12–16 ч', () => {

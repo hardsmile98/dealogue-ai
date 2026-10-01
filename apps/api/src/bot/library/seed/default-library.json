@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source": "docs/source/funnel.xlsx (лист «воронка ру»), docs/source/diagnostics.xlsx — снимки от 17.09.2026",
+  "source": "docs/source/funnel.xlsx (лист «воронка ру»), docs/source/diagnostics.xlsx — снимки от 17.09.2026; фразы real.* — из реальной переписки 01.10.2026 (docs/real-dialogs-report.md)",
   "persona": {
     "gender": "m",
     "bio": "Я сам родился и вырос в Киеве, потом родители увезли на Бали. Сейчас вот обитаю во Франции, в городке Шамони-Монблан."
@@ -1090,10 +1090,10 @@
       "language": "ru",
       "gender": null,
       "category": "sphere",
-      "title": "Вопрос о сфере (данные пришли без неё)",
+      "title": "Вопрос о том, что беспокоит (данные пришли без сферы)",
       "sort": 98,
       "enabled": true,
-      "text": "Подскажите, на какую сферу жизни сделать упор в анализе? Отношения, финансы, здоровье или самореализация?"
+      "text": "Расскажите коротко, что вас сейчас больше всего беспокоит и в какой сфере трудности?"
     },
     {
       "seedKey": "agent.clarify.relationships",
@@ -1127,6 +1127,336 @@
       "sort": 101,
       "enabled": true,
       "text": "Пришлите, пожалуйста, вашу дату рождения — по ней я сделаю для вас анализ."
+    },
+    {
+      "seedKey": "real.about.free",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Это правда бесплатно?",
+      "sort": 102,
+      "enabled": true,
+      "text": "Да, диагностика бесплатная — вы ничего за неё не платите."
+    },
+    {
+      "seedKey": "real.about.how_diagnostic",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Как проходит диагностика и сколько её ждать?",
+      "sort": 103,
+      "enabled": true,
+      "text": "По дате рождения я настраиваюсь на вас и смотрю ваше энергетическое поле и состояние по основным сферам жизни. Обычно это занимает около часа, результат пришлю сюда."
+    },
+    {
+      "seedKey": "real.about.why_birth_data",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Зачем дата и место рождения? Нужно ли время рождения?",
+      "sort": 104,
+      "enabled": true,
+      "text": "По дате рождения я делаю анализ, место — для знакомства и точности. Время рождения не обязательно: если помните — напишите, будет точнее."
+    },
+    {
+      "seedKey": "real.about.other_person",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Можно посмотреть другого человека — сына, дочь, мужа?",
+      "sort": 105,
+      "enabled": true,
+      "text": "Разбор я делаю только лично для того, кто мне пишет. Если близкий человек захочет, пусть напишет мне сам."
+    },
+    {
+      "seedKey": "real.about.predictions",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Скажете, вернётся ли он, будем ли мы вместе, жив ли человек?",
+      "sort": 106,
+      "enabled": true,
+      "text": "Я не предсказываю события и не отвечаю «да» или «нет» на такие вопросы. Я смотрю ваше состояние и энергетику — то, с чем можно работать."
+    },
+    {
+      "seedKey": "real.about.love_spells",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Делаете привороты? Можно вернуть человека?",
+      "sort": 107,
+      "enabled": true,
+      "text": "Привороты и воздействие на чужую волю я не делаю. Работаю экологично: с вашим состоянием, блоками и энергией — так меняются и отношения."
+    },
+    {
+      "seedKey": "real.about.online",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Работаете онлайн? Важно ли, где я нахожусь?",
+      "sort": 108,
+      "enabled": true,
+      "text": "Работаю онлайн: расстояние значения не имеет, энергия не имеет границ."
+    },
+    {
+      "seedKey": "real.about.who",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Кто вы, чем занимаетесь?",
+      "sort": 109,
+      "enabled": true,
+      "text": "Я энергопрактик: работаю с энергетическим полем и подсознанием, в работе совмещаю практики и терапию."
+    },
+    {
+      "seedKey": "real.about.age",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "С какого возраста вы работаете?",
+      "sort": 110,
+      "enabled": true,
+      "text": "Я работаю с клиентами с 21 года."
+    },
+    {
+      "seedKey": "real.about.effort",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Нужно ли мне самой много делать, медитировать?",
+      "sort": 111,
+      "enabled": true,
+      "text": "Основную часть работы делаю я. От вас — согласие, обратная связь и мои рекомендации в удобном вам ритме, долгие медитации не нужны."
+    },
+    {
+      "seedKey": "real.diag_objection.not_resonate.1",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "not_resonate",
+      "title": "Не про меня: с чем не согласны",
+      "sort": 112,
+      "enabled": true,
+      "text": "Подскажите, с чем именно вы не согласны?"
+    },
+    {
+      "seedKey": "real.diag_objection.not_resonate.2",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "not_resonate",
+      "title": "Не про меня: что не совпало",
+      "sort": 113,
+      "enabled": true,
+      "text": "Что именно не совпало? Поделитесь, пожалуйста, мне важно это понять 🙏"
+    },
+    {
+      "seedKey": "real.diag_objection.think_about_it.1",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "think_about_it",
+      "title": "Подумаю: что заставляет задуматься",
+      "sort": 114,
+      "enabled": true,
+      "text": "Что заставляет вас задуматься?"
+    },
+    {
+      "seedKey": "real.diag_objection.think_about_it.2",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "think_about_it",
+      "title": "Подумаю: что смутило",
+      "sort": 115,
+      "enabled": true,
+      "text": "Вас что-то смутило? Поделитесь, пожалуйста, для меня это важно 🩷"
+    },
+    {
+      "seedKey": "real.diag_objection.dont_believe.1",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "dont_believe",
+      "title": "Не верит: сомневаться нормально",
+      "sort": 116,
+      "enabled": true,
+      "text": "Я понимаю ваши сомнения, и это нормально — сомневаться, когда сталкиваешься с чем-то новым. Решать в любом случае вам."
+    },
+    {
+      "seedKey": "real.diag_objection.expensive.1",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "expensive",
+      "title": "Нет денег: сначала рассказать",
+      "sort": 117,
+      "enabled": true,
+      "text": "Давайте я вам всё подробно расскажу, а после вы решите?"
+    },
+    {
+      "seedKey": "real.diag_objection.self_help.1",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "self_help",
+      "title": "Справлюсь сам: работает ли сам",
+      "sort": 118,
+      "enabled": true,
+      "text": "Скажите, вы работаете с этим самостоятельно? Что уже удалось изменить?"
+    },
+    {
+      "seedKey": "real.diag_objection.no_need.1",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "no_need",
+      "title": "Не нужно: почему остановились",
+      "sort": 119,
+      "enabled": true,
+      "text": "Почему решили остановиться? Как вам в целом диагностика?"
+    },
+    {
+      "seedKey": "real.objection.no_time.1",
+      "kind": "objection",
+      "language": "ru",
+      "gender": null,
+      "category": "no_time",
+      "title": "Нет времени: работу делаю я",
+      "sort": 120,
+      "enabled": true,
+      "text": "Понимаю, ритм плотный. Но долгие медитации здесь не нужны — основную часть работы делаю я и подстраиваюсь под ваш график."
+    },
+    {
+      "seedKey": "real.objection.self_help.1",
+      "kind": "objection",
+      "language": "ru",
+      "gender": null,
+      "category": "self_help",
+      "title": "Справлюсь сам: что уже получается",
+      "sort": 121,
+      "enabled": true,
+      "text": "Скажите, вы работаете с этим самостоятельно? Каких результатов уже удалось достичь?"
+    },
+    {
+      "seedKey": "real.objection.no_need.1",
+      "kind": "objection",
+      "language": "ru",
+      "gender": null,
+      "category": "no_need",
+      "title": "Не нужно: что смутило",
+      "sort": 122,
+      "enabled": true,
+      "text": "Вас что-то конкретное смутило? Поделитесь, пожалуйста 🩷"
+    },
+    {
+      "seedKey": "real.no_birth_data.1",
+      "kind": "no_birth_data",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Не прислал дату: без неё не начать",
+      "sort": 123,
+      "enabled": true,
+      "text": "Вижу, вы пришли за бесплатным анализом, но дату рождения так и не прислали. Без неё я не смогу настроиться на вас и начать разбор. Пришлите, пожалуйста, полную дату рождения 🙏"
+    },
+    {
+      "seedKey": "real.return_question.1",
+      "kind": "return_question",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "После диагностики: успели ознакомиться?",
+      "sort": 124,
+      "enabled": true,
+      "text": "Успели ознакомиться? Я с радостью расскажу, как мягко и бережно наладить эти сферы, хотите?"
+    },
+    {
+      "seedKey": "real.about.birth_place",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Что писать в месте рождения?",
+      "sort": 125,
+      "enabled": true,
+      "text": "Город или страна — как вам удобнее."
+    },
+    {
+      "seedKey": "real.about.spheres",
+      "kind": "about",
+      "language": "ru",
+      "gender": null,
+      "category": null,
+      "title": "Какие сферы вы смотрите?",
+      "sort": 126,
+      "enabled": true,
+      "text": "Отношения, финансы, здоровье, самореализация — или могу посмотреть всё в целом."
+    },
+    {
+      "seedKey": "real.diag_objection.not_resonate.3",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "not_resonate",
+      "title": "Не про меня, снова: что показывает диагностика",
+      "sort": 127,
+      "enabled": true,
+      "text": "Понимаю вас 🙏 Я описал то, что увидел и почувствовал: диагностика показывает глубинные настройки, которые не всегда заметны снаружи, и с вашей ситуацией можно работать."
+    },
+    {
+      "seedKey": "real.diag_objection.dont_believe.2",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "dont_believe",
+      "title": "Не верит, снова: общее и ваше",
+      "sort": 128,
+      "enabled": true,
+      "text": "Понимаю, что это смущает 🙏 Общие черты у людей бывают похожи, а в работе разбирается уже ваша конкретная ситуация."
+    },
+    {
+      "seedKey": "real.diag_objection.tried_before.1",
+      "kind": "diagnostic_objection",
+      "language": "ru",
+      "gender": null,
+      "category": "tried_before",
+      "title": "Уже пробовал: что именно",
+      "sort": 129,
+      "enabled": true,
+      "text": "Понимаю ваши сомнения, особенно после такого опыта 🙏 Скажите, что именно вы пробовали и что не сработало?"
+    },
+    {
+      "seedKey": "real.objection.tried_before.1",
+      "kind": "objection",
+      "language": "ru",
+      "gender": null,
+      "category": "tried_before",
+      "title": "Уже пробовал: что именно",
+      "sort": 130,
+      "enabled": true,
+      "text": "Понимаю ваши сомнения, особенно после такого опыта 🙏 Скажите, что именно вы пробовали и что не сработало?"
+    },
+    {
+      "seedKey": "real.objection.self_help.2",
+      "kind": "objection",
+      "language": "ru",
+      "gender": null,
+      "category": "self_help",
+      "title": "Справлюсь сам: где застреваете",
+      "sort": 131,
+      "enabled": true,
+      "text": "Понимаю вас 🙏 Скажите, вы уже работаете с этим самостоятельно? Что получается, а где застреваете?"
     }
   ]
 }

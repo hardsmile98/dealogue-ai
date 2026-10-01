@@ -50,6 +50,12 @@ export interface ClientCard {
   name?: CardField<string>;
   gender?: CardField<Gender>;
   birthDate?: CardField<string>;
+  /**
+   * Год рождения четырьмя цифрами: из даты с годом или из возраста, который
+   * назвал клиент. Без года дата не считается полученной (агент просит год),
+   * по нему проверяется возраст.
+   */
+  birthYear?: CardField<string>;
   /** Клиент сказал, что даты рождения не даст (`BIRTH_DATE_DECLINES`). */
   birthDateDeclined?: CardField<BirthDateDecline>;
   birthPlace?: CardField<string>;
@@ -115,6 +121,8 @@ export const MOODS = [
   'anxious',
   'skeptical',
   'irritated',
+  /** Горе: клиент пишет о смерти или потере близкого. */
+  'grieving',
 ] as const;
 export type Mood = (typeof MOODS)[number];
 
@@ -145,6 +153,8 @@ export const ANSWER_KINDS = [
   'emotion',
   'data',
   'answer',
+  /** Отзыв о том, что прислал практик: «всё совпало», «очень точно», «впечатлили». */
+  'feedback',
   'greeting',
   'ack',
   'other',
@@ -191,6 +201,10 @@ export interface Analysis {
  * (уточнение внутри сферы, «Вы состоите в отношениях?»); на молчание после
  * них — `birth_data_reminder` или `clarify_reminder`. `follow_up` —
  * напоминание по разговору, когда клиент уже отвечал после вехи.
+ * `offer_intro` — короткий отклик на отзыв или рассказ перед вариантами,
+ * `offer_after_silence` — связка к вариантам, которые уходят по таймеру после
+ * суток молчания, `age_refusal` — вежливый отказ клиенту младше
+ * `MIN_CLIENT_AGE` (решения владельца 01.10.2026).
  * `clarify_objection`, `pause_objection`, `release_objection` — не шаги
  * хода, а отметки в реестре: чем закончилась отработка возражения (раздел
  * 2.5).
@@ -209,6 +223,9 @@ export const NUDGES = [
   'ask_offer_questions',
   'follow_up',
   'unread_reminder',
+  'offer_intro',
+  'offer_after_silence',
+  'age_refusal',
   'clarify_objection',
   'pause_objection',
   'release_objection',
@@ -240,9 +257,10 @@ export const OBJECTION_MARKERS: Readonly<
  * Виды заданий планировщика: ступени лестницы молчания (раздел 2.4),
  * `reply` — повтор ответа клиенту после сбоя (раздел 10) и `resume` —
  * досылка хода, текст которого уже собран и проверен (после перезапуска
- * API или сбоя отправки; `payload.turnId`). `offer` и `prices` лестница
- * больше не ставит (с 28.09 они уходят только по реакции клиента): виды
- * остались ради старых заданий, план закрывает их без текста.
+ * API или сбоя отправки; `payload.turnId`). `offer` — варианты по таймеру
+ * после суток молчания после диагностики (решение владельца 01.10.2026);
+ * `prices` лестница не ставит (цены — только по реакции клиента): вид
+ * остался ради старых заданий, план закрывает их без текста.
  */
 export const JOB_KINDS = [
   'diagnostic',
@@ -269,13 +287,16 @@ export interface PlanMilestone {
   title: string;
   /** Вид элемента: у «ссылок» без страниц в образе телом уходит `wait`. */
   kind: LibraryKind;
-  /** Текст заканчивается вопросом клиенту («Рассказать подробнее?»). */
-  asks: boolean;
 }
 
 /** План хода — собирает код, LLM пишет текст под него (раздел 3.4). */
 export interface Plan {
   handoff: { reason: HandoffReason; detail: string } | null;
+  /**
+   * После отправки хода чат уходит менеджеру с этой причиной, а агент больше
+   * не пишет (вежливый отказ клиенту младше `MIN_CLIENT_AGE`). null — ход как обычно.
+   */
+  close: HandoffReason | null;
   /** Пункты, на которые нужен отдельный ответ; остальное закрывают шаг, веха и отработка возражения. */
   answer: PlannedAnswer[];
   /**
@@ -297,8 +318,6 @@ export interface Plan {
    * по задаче.
    */
   phrases: string[];
-  /** Текст ответчика идёт после тела вехи (вопрос после диагностики), а не перед ним. */
-  afterBlock: boolean;
   /**
    * Отработка возражения (раздел 2.5): категория, номер подхода на этапе
    * (0 — первый), задача словами, чем заканчивается и образцы тона из
@@ -329,6 +348,11 @@ export interface Plan {
    * данные пришли, этап сменился). Ход закрывается без обращения к модели.
    */
   idle: string | null;
+  /**
+   * Клиент пишет о горе (`mood: grieving`): сообщение начинается с
+   * соболезнования, без пересказа его слов. Нет у ходов до 01.10.
+   */
+  condolences?: boolean;
 }
 
 export interface Draft {

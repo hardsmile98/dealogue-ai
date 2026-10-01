@@ -234,11 +234,13 @@ export class TurnDeliveryService {
       : sent.length === 0
         ? 'skipped'
         : 'sent';
+    // Отказ по возрасту ушёл — агент больше не пишет (у ходов до 01.10 поля нет).
+    const closing = sent.length > 0 && !aborted ? (plan.close ?? null) : null;
     const handoff: HandoffReason | null = failure
       ? 'agent_unavailable'
       : stage === 'prices'
         ? 'prices_sent'
-        : null;
+        : closing;
     const now = env.clock.now();
 
     const closed = await this.dataSource.transaction(async (db) => {

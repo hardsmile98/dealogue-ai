@@ -61,6 +61,40 @@ export function findMilestones(
   return [...found.values()].sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
+/** Просьба о данных из копии чата — запись реестра сказанного. */
+export interface CopiedRequest {
+  key: 'ask_birth_data' | 'ask_birth_date';
+  messageId: number;
+  at: Date;
+}
+
+/**
+ * Просьбы о данных в копии чата: каждое исходящее до первой вехи — вопрос
+ * знакомства (первое — просьба о дате, месте и сфере, следующие —
+ * повторные), не больше `limit`. Решение по месту сообщения, а не по
+ * тексту: иначе агент в копии чата, который вёл человек, здоровается и
+ * просит данные заново.
+ */
+export function copiedIntakeRequests(
+  history: readonly HistoryMessage[],
+  milestones: readonly FoundMilestone[],
+  limit: number,
+): CopiedRequest[] {
+  const firstMilestone = milestones[0]?.messageId ?? Number.POSITIVE_INFINITY;
+  const requests: CopiedRequest[] = [];
+  for (const message of history) {
+    if (message.id >= firstMilestone) break;
+    if (message.direction !== 'out' || message.mediaKind) continue;
+    if (requests.length >= limit) break;
+    requests.push({
+      key: requests.length === 0 ? 'ask_birth_data' : 'ask_birth_date',
+      messageId: message.id,
+      at: message.sentAt,
+    });
+  }
+  return requests;
+}
+
 /**
  * Последнее сообщение клиента, на которое уже ответили: входящие после
  * последнего нашего сообщения — это новый ход, остальные обработаны.

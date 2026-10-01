@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -9,16 +9,10 @@ import {
   getApiErrorMessage,
   useInfiniteScroll,
 } from '@/shared/lib';
-import {
-  useGetChatBotStateQuery,
-  useGetChatJournalQuery,
-} from '@/entities/bot';
+import { useGetChatJournalQuery } from '@/entities/bot';
 import { MessageBubble, useGetMessagesInfiniteQuery } from '@/entities/chat';
 import type { Chat, Message } from '@/entities/chat';
-import { AddExampleDialog } from '@/features/bot-examples';
-import type { ExampleDraft } from '@/features/bot-examples';
 import { useContinueInSandbox } from '@/features/bot-sandbox';
-import { clientBefore } from '../lib/clientBefore';
 import { groupByDay } from '../lib/groupByDay';
 import { MESSAGE_ANCHOR_ATTR, useFeedScroll } from '../lib/useFeedScroll';
 import { chatThreadStyles as styles } from './ChatThread.styles';
@@ -80,14 +74,11 @@ export function MessageFeed({
   const groups = useMemo(() => groupByDay(messages), [messages]);
 
   const agentTurns = useAgentTurns(accountId, chatId);
-  const { data: botState } = useGetChatBotStateQuery({ accountId, chatId });
-  const stage = botState?.state?.stage ?? 'intake';
 
   const { continueFrom, isLoading: copying } = useContinueInSandbox({
     accountId,
     chatId,
   });
-  const [exampleDraft, setExampleDraft] = useState<ExampleDraft | null>(null);
 
   const toSandbox = useCallback(
     (messageId: string) => {
@@ -95,20 +86,6 @@ export function MessageFeed({
       if (message) void continueFrom(message.telegramMessageId);
     },
     [messages, continueFrom],
-  );
-
-  const toExamples = useCallback(
-    (messageId: string) => {
-      const index = messages.findIndex((item) => item.id === messageId);
-      const message = messages[index];
-      if (!message) return;
-      setExampleDraft({
-        client: clientBefore(messages, index),
-        practitioner: message.text,
-        stage,
-      });
-    },
-    [messages, stage],
   );
 
   const { rootRef: feedRef, sentinelRef } = useInfiniteScroll<HTMLDivElement>({
@@ -182,9 +159,7 @@ export function MessageFeed({
                   actions={
                     <MessageActions
                       messageId={message.id}
-                      outgoing={message.direction === 'out'}
                       onToSandbox={toSandbox}
-                      onToExamples={toExamples}
                       disabled={copying}
                     />
                   }
@@ -194,12 +169,6 @@ export function MessageFeed({
           })}
         </Box>
       ))}
-
-      <AddExampleDialog
-        accountId={accountId}
-        draft={exampleDraft}
-        onClose={() => setExampleDraft(null)}
-      />
     </Box>
   );
 }

@@ -21,7 +21,12 @@ import {
 import type { SandboxSessionDto, SandboxSummaryDto } from '../bot.types.js';
 import { VirtualClock } from '../core/channel.js';
 import type { Channel } from '../core/channel.js';
-import { findMilestones, lastAnsweredIncoming } from '../core/copied-chat.js';
+import {
+  copiedIntakeRequests,
+  findMilestones,
+  lastAnsweredIncoming,
+} from '../core/copied-chat.js';
+import { MAX_DATA_REQUESTS } from '../core/plan.js';
 import { HISTORY_LIMIT } from '../core/history.js';
 import type { HistoryMessage, TurnResult } from '../core/types.js';
 import type { ManualChatMode } from '../dto/chat.dto.js';
@@ -166,16 +171,26 @@ export class BotSandboxService {
     }));
 
     const milestones = findMilestones(history, library.milestoneBodies());
+    const requests = copiedIntakeRequests(
+      history,
+      milestones,
+      MAX_DATA_REQUESTS,
+    );
     await Promise.all([
-      this.memories.addSaidEntries(
-        session.chatId,
-        milestones.map((milestone) => ({
-          kind: 'milestone',
+      this.memories.addSaidEntries(session.chatId, [
+        ...requests.map((request) => ({
+          kind: 'nudge' as const,
+          key: request.key,
+          messageId: request.messageId,
+          at: request.at,
+        })),
+        ...milestones.map((milestone) => ({
+          kind: 'milestone' as const,
           key: milestone.key,
           messageId: milestone.messageId,
           at: milestone.at,
         })),
-      ),
+      ]),
       this.states.setLastHandled(
         session.chatId,
         lastAnsweredIncoming(history) ?? 0,

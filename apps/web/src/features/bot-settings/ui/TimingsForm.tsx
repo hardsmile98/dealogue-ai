@@ -31,6 +31,11 @@ const RANGES: { key: RangeKey; label: string; unit: string }[] = [
     unit: 'мин',
   },
   { key: 'stepHours', label: 'Следующие напоминания', unit: 'ч' },
+  {
+    key: 'offerAfterSilenceHours',
+    label: 'Варианты, если молчит после диагностики',
+    unit: 'ч',
+  },
 ];
 
 const NUMBERS: { key: NumberKey; label: string; unit: string }[] = [

@@ -3,7 +3,6 @@ import { BotAccountSettingsEntity } from '../bot/entities/bot-account-settings.e
 import { BotChatSaidEntity } from '../bot/entities/bot-chat-said.entity.js';
 import { BotChatStateEntity } from '../bot/entities/bot-chat-state.entity.js';
 import { BotClientFactEntity } from '../bot/entities/bot-client-fact.entity.js';
-import { BotExampleEntity } from '../bot/entities/bot-example.entity.js';
 import { BotJobEntity } from '../bot/entities/bot-job.entity.js';
 import { BotLibraryItemEntity } from '../bot/entities/bot-library-item.entity.js';
 import { BotPromptSnapshotEntity } from '../bot/entities/bot-prompt-snapshot.entity.js';
@@ -39,6 +38,8 @@ import { BotForeignKeyIndexes1700000000019 } from './migrations/1700000000019-Bo
 import { BotResumableTurns1700000000020 } from './migrations/1700000000020-BotResumableTurns.js';
 import { BotSandboxClientName1700000000021 } from './migrations/1700000000021-BotSandboxClientName.js';
 import { BotLongerQuietWindow1700000000022 } from './migrations/1700000000022-BotLongerQuietWindow.js';
+import { BotRealDialogs1700000000023 } from './migrations/1700000000023-BotRealDialogs.js';
+import { BotDropExamples1700000000024 } from './migrations/1700000000024-BotDropExamples.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -127,7 +128,6 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       TelegramDialogStartEntity,
       BotAccountSettingsEntity,
       BotLibraryItemEntity,
-      BotExampleEntity,
       BotChatStateEntity,
       BotClientFactEntity,
       BotChatSaidEntity,
@@ -161,6 +161,8 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       BotResumableTurns1700000000020,
       BotSandboxClientName1700000000021,
       BotLongerQuietWindow1700000000022,
+      BotRealDialogs1700000000023,
+      BotDropExamples1700000000024,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

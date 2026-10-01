@@ -51,6 +51,7 @@ export const HANDOFF_REASON_LABELS: Record<HandoffReason, string> = {
   prices_sent: 'Цены отправлены',
   foreign_outgoing: 'В чат написал человек',
   agent_unavailable: 'Агент недоступен',
+  underage: 'Клиенту меньше 21 года: агент вежливо отказал',
 };
 
 export const LIBRARY_KIND_LABELS: Record<LibraryKind, string> = {
@@ -81,6 +82,8 @@ export const OBJECTION_LABELS: Record<ObjectionCategory, string> = {
   ask_partner: 'Посоветуюсь с партнёром',
   tried_before: 'Уже пробовал',
   later: 'Потом',
+  self_help: 'Справлюсь сам',
+  no_need: 'Не нужно, достаточно',
 };
 
 export const SPHERE_LABELS: Record<Sphere, string> = {
@@ -104,7 +107,7 @@ export const JOB_KIND_LABELS: Record<string, string> = {
   diagnostic: 'Отправить диагностику',
   birth_data_reminder: 'Напомнить о вопросе знакомства',
   return_question: 'Вопрос после диагностики',
-  offer: 'Отправить предложение',
+  offer: 'Варианты: клиент молчит после диагностики',
   offer_nudge: 'Вопрос после предложения',
   prices: 'Отправить цены',
   unread_reminder: 'Напомнить о себе',

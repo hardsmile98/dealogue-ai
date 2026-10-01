@@ -30,6 +30,7 @@ export function readCard(raw: unknown): ClientCard {
     'name',
     'gender',
     'birthDate',
+    'birthYear',
     'birthDateDeclined',
     'birthPlace',
     'sphere',
@@ -108,12 +109,71 @@ export function diagnosticCategory(card: ClientCard): string | null {
 }
 
 /**
- * Дату рождения больше не просим: она известна или клиент сказал, что её
- * не будет. Место рождения необязательно (решение владельца 30.09): его
- * просят только в первом сообщении вместе с датой.
+ * Год рождения: из поля анализатора или из самой даты (четыре цифры или
+ * «дд.мм.гг»). Это разбор поля карточки, которое уже заполнил анализатор, а
+ * не текста клиента: только цифры. null — года нет («12.03»).
+ */
+export function birthYearOf(
+  card: ClientCard,
+  now: Date = new Date(),
+): number | null {
+  const thisYear = now.getUTCFullYear();
+  const fromField = Number(card.birthYear?.value);
+  if (Number.isInteger(fromField) && fromField > 1900 && fromField <= thisYear)
+    return fromField;
+  const date = card.birthDate?.value ?? '';
+  const full = /(?:^|\D)(19\d\d|20\d\d)(?!\d)/.exec(date);
+  if (full) {
+    const year = Number(full[1]);
+    return year <= thisYear ? year : null;
+  }
+  const short = /^\s*\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*(\d{2})\s*$/.exec(
+    date,
+  );
+  if (!short) return null;
+  const yy = Number(short[1]);
+  return yy <= thisYear % 100 ? 2000 + yy : 1900 + yy;
+}
+
+/** Возраст ниже этого — скорее опечатка в дате, чем ребёнок: по нему не отказываем. */
+const IMPLAUSIBLE_AGE = 10;
+
+/**
+ * Клиент младше `minAge` по дате рождения: при полной дате — точно, при
+ * одном годе — только если младше при любом дне рождения. Неизвестно или
+ * похоже на опечатку — false.
+ */
+export function isUnderage(
+  card: ClientCard,
+  now: Date,
+  minAge: number,
+): boolean {
+  const year = birthYearOf(card, now);
+  if (year === null) return false;
+  let age = now.getUTCFullYear() - year;
+  const dayMonth = /^\s*(\d{1,2})\s*[./-]\s*(\d{1,2})/.exec(
+    card.birthDate?.value ?? '',
+  );
+  const day = Number(dayMonth?.[1]);
+  const month = Number(dayMonth?.[2]);
+  if (dayMonth && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+    const beforeBirthday =
+      now.getUTCMonth() + 1 < month ||
+      (now.getUTCMonth() + 1 === month && now.getUTCDate() < day);
+    if (beforeBirthday) age -= 1;
+  }
+  return age >= IMPLAUSIBLE_AGE && age < minAge;
+}
+
+/**
+ * Дату рождения больше не просим: она известна с годом или клиент сказал,
+ * что её не будет. День и месяц без года — не дата: агент просит год, как
+ * человек в реальной переписке. Место рождения необязательно (решение
+ * владельца 30.09): его просят только в первом сообщении вместе с датой.
  */
 export function birthDateSettled(card: ClientCard): boolean {
-  return Boolean(card.birthDate?.value || card.birthDateDeclined?.value);
+  if (card.birthDateDeclined?.value) return true;
+  return Boolean(card.birthDate?.value) && birthYearOf(card) !== null;
 }
 
 export function clientLanguage(card: ClientCard, fallback = 'ru'): string {

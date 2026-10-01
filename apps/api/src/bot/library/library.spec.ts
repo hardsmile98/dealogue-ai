@@ -97,7 +97,10 @@ describe('тайминги', () => {
       junk: 1,
       typingMaxSec: 'x',
     });
-    expect(timings.stepHours).toEqual({ min: 10, max: 16 });
+    expect(timings.stepHours).toEqual({
+      min: 10,
+      max: DEFAULT_TIMINGS.stepHours.max,
+    });
     expect(timings.maxReminders).toBe(2);
     expect(timings.typingMaxSec).toBe(DEFAULT_TIMINGS.typingMaxSec);
     expect('junk' in timings).toBe(false);

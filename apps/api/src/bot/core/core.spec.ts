@@ -9,6 +9,8 @@ import {
 import {
   applyAnalysis,
   birthDateSettled,
+  birthYearOf,
+  isUnderage,
   dataRequestsSent,
   diagnosticCategory,
   knownCategory,
@@ -444,5 +446,61 @@ describe('память', () => {
     expect(first.card.language?.value).toBe('en');
     expect(first.summary).toBe('старое');
     expect(letterCount('ok 👍 12!')).toBe(2);
+  });
+});
+
+describe('год рождения и возраст (реальная переписка, 01.10.2026)', () => {
+  const now = new Date(Date.UTC(2026, 9, 1));
+  const card = (birthDate?: string, birthYear?: string) => ({
+    ...(birthDate ? { birthDate: { value: birthDate, confidence: 1 } } : {}),
+    ...(birthYear ? { birthYear: { value: birthYear, confidence: 1 } } : {}),
+  });
+
+  it('год берётся из поля анализатора или из самой даты', () => {
+    expect(birthYearOf(card('04.01.1999'), now)).toBe(1999);
+    expect(birthYearOf(card('4 января 1999 г.'), now)).toBe(1999);
+    expect(birthYearOf(card('04.01.99'), now)).toBe(1999);
+    expect(birthYearOf(card('04.01.05'), now)).toBe(2005);
+    expect(birthYearOf(card('12.03'), now)).toBeNull();
+    expect(birthYearOf(card(undefined, '1987'), now)).toBe(1987);
+  });
+
+  it('дата без года не считается полученной', () => {
+    expect(birthDateSettled(card('12.03'))).toBe(false);
+    expect(birthDateSettled(card('12.03.1990'))).toBe(true);
+    expect(
+      birthDateSettled({
+        birthDateDeclined: { value: 'unknown', confidence: 1 },
+      }),
+    ).toBe(true);
+  });
+
+  it('младше 21: по полной дате точно, по году — только если младше при любом дне рождения; опечатку не считаем', () => {
+    expect(isUnderage(card('02.10.2005'), now, 21)).toBe(true);
+    expect(isUnderage(card('30.09.2005'), now, 21)).toBe(false);
+    expect(isUnderage(card(undefined, '2006'), now, 21)).toBe(true);
+    expect(isUnderage(card(undefined, '2005'), now, 21)).toBe(false);
+    expect(isUnderage(card('01.01.2024'), now, 21)).toBe(false);
+    expect(isUnderage(card('12.03'), now, 21)).toBe(false);
+  });
+
+  it('анализатор: год, отзыв и горе — из закрытых списков', () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        card: { birthYear: { value: 1990, confidence: 0.9 } },
+        mood: 'grieving',
+        answerPoints: [
+          { text: 'всё совпало', kind: 'feedback', topic: 'diagnostic' },
+        ],
+      }),
+      7,
+    );
+    expect(analysis.card.birthYear?.value).toBe('1990');
+    expect(analysis.mood).toBe('grieving');
+    expect(analysis.answerPoints[0]?.kind).toBe('feedback');
+    expect(
+      parseAnalysis(JSON.stringify({ card: { birthYear: 'около 90' } }), 7).card
+        .birthYear,
+    ).toBeUndefined();
   });
 });

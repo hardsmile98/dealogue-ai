@@ -35,8 +35,6 @@ export const BOT_SANDBOX_LIST_TAG = 'BotSandboxList' as const;
 export const BOT_SANDBOX_TAG = 'BotSandbox' as const;
 /** Библиотека агента (id = accountId). */
 export const BOT_LIBRARY_TAG = 'BotLibrary' as const;
-/** Примеры диалогов агента (id = accountId). */
-export const BOT_EXAMPLES_TAG = 'BotExamples' as const;
 
 /** Все теги — для `createApi({ tagTypes })`. */
 export const TAG_TYPES = [
@@ -51,5 +49,4 @@ export const TAG_TYPES = [
   BOT_SANDBOX_LIST_TAG,
   BOT_SANDBOX_TAG,
   BOT_LIBRARY_TAG,
-  BOT_EXAMPLES_TAG,
 ] as const;

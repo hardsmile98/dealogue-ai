@@ -46,24 +46,19 @@ const PHRASES: Record<string, string[]> = {
   ],
 };
 
-/** Библиотека; `diagnosticAsks` — заканчивается ли диагностика вопросом. */
-function libraryWith(diagnosticAsks = true): LibraryAvailability {
-  return {
-    milestone: (key, query) =>
-      query.language === 'ru' || key !== 'diagnostic'
-        ? {
-            key,
-            itemId: `item-${key}`,
-            title: `${key} ${query.category ?? 'universal'} ${query.gender ?? 'any'}`,
-            kind: key,
-            asks: key === 'diagnostic' ? diagnosticAsks : true,
-          }
-        : null,
-    phrases: (kind, query) => PHRASES[`${kind}:${query.category ?? '-'}`] ?? [],
-    supportsLanguage: (language) => language === 'ru' || language === 'en',
-  };
-}
-const library = libraryWith();
+const library: LibraryAvailability = {
+  milestone: (key, query) =>
+    query.language === 'ru' || key !== 'diagnostic'
+      ? {
+          key,
+          itemId: `item-${key}`,
+          title: `${key} ${query.category ?? 'universal'} ${query.gender ?? 'any'}`,
+          kind: key,
+        }
+      : null,
+  phrases: (kind, query) => PHRASES[`${kind}:${query.category ?? '-'}`] ?? [],
+  supportsLanguage: (language) => language === 'ru' || language === 'en',
+};
 
 const point = (
   kind: AnswerPoint['kind'],
@@ -235,13 +230,14 @@ describe('план: знакомство', () => {
     expect(plan.goal).not.toContain('сфере');
   });
 
-  it('вопрос в первом сообщении: ответ и шаг — два сообщения', () => {
+  it('вопрос в первом сообщении: ответ и шаг — одним сообщением, как у человека', () => {
     const plan = buildPlan(input());
     expect(plan.answer.map((item) => item.text)).toEqual([
       'спросил, где ты живёшь',
     ]);
     expect(plan.nudge).toBe('ask_birth_data');
-    expect(plan.constraints.maxParts).toBe(2);
+    expect(plan.constraints.maxParts).toBe(1);
+    expect(plan.goal).toContain('в том же сообщении, после ответа');
   });
 
   it('рассказ о беде в первом сообщении — отклик в начале просьбы о данных, отдельного ответа нет', () => {
@@ -365,7 +361,7 @@ describe('план: знакомство', () => {
     expect(plan.answer.map((item) => item.text)).toEqual([
       'спросил, где ты живёшь',
     ]);
-    expect(plan.constraints.maxParts).toBe(2);
+    expect(plan.constraints.maxParts).toBe(1);
 
     const last = buildPlan(
       input({
@@ -654,7 +650,7 @@ describe('план: знакомство', () => {
     expect(next.milestone?.key).toBe('links');
   });
 
-  it('данные просили, а клиент только спрашивает — ответ и ещё раз просьба о дате и сфере', () => {
+  it('данные просили, а клиент только спрашивает — ответ и ещё раз просьба о дате и о том, что беспокоит', () => {
     const plan = buildPlan(
       input({
         analysis: analysis({ intents: ['asks_about_practitioner'] }),
@@ -664,11 +660,12 @@ describe('план: знакомство', () => {
     );
     expect(plan.milestone).toBeNull();
     expect(plan.nudge).toBe('ask_birth_date');
+    // Сферу повторно спрашиваем открыто (решение владельца 01.10.2026).
     expect(plan.goal).toContain(
-      'ещё раз попроси прислать дату рождения и в какой сфере вопрос',
+      'ещё раз попроси прислать дату рождения и что сейчас беспокоит больше всего',
     );
     expect(plan.answer).toHaveLength(1);
-    expect(plan.constraints.maxParts).toBe(2);
+    expect(plan.constraints.maxParts).toBe(1);
   });
 
   it('ранний вопрос о цене — «к стоимости вернусь позже»: фраза «стоимость обсуждаемая» из таблиц — для этапа после диагностики', () => {
@@ -685,6 +682,82 @@ describe('план: знакомство', () => {
     expect(plan.answer[0]?.hold).toContain('вернёшься чуть позже');
     expect(plan.answer[0]?.hold).not.toContain('Стоимость');
     expect(plan.constraints.doNotMention[0]).toContain('можно');
+  });
+});
+
+describe('план: решения по реальной переписке (01.10.2026)', () => {
+  it('клиенту младше 21 — вежливый отказ одним сообщением, после него чат закрывается', () => {
+    const plan = buildPlan(
+      input({
+        analysis: analysis({ answerPoints: [point('data', 'client', 'дата')] }),
+        memory: memory({
+          card: { birthDate: { value: '07.12.2008', confidence: 1 } },
+          said: asked,
+        }),
+      }),
+    );
+    expect(plan.nudge).toBe('age_refusal');
+    expect(plan.close).toBe('underage');
+    expect(plan.milestone).toBeNull();
+    expect(plan.constraints.maxQuestions).toBe(0);
+    expect(plan.phrases).toEqual([
+      'К сожалению, я работаю только с 21 года 🙏',
+    ]);
+    expect(fallbackStepPhrase(plan)).toBe(
+      'К сожалению, я работаю только с 21 года 🙏',
+    );
+    // Взрослому — как обычно; по одному году — только если младше при любом дне рождения.
+    const adult = buildPlan(
+      input({
+        memory: memory({
+          card: { birthDate: { value: '07.12.1990', confidence: 1 } },
+          said: asked,
+        }),
+      }),
+    );
+    expect(adult.close).toBeNull();
+    const borderline = buildPlan(
+      input({
+        memory: memory({
+          card: { birthYear: { value: '2005', confidence: 1 } },
+          said: asked,
+        }),
+      }),
+    );
+    expect(borderline.close).toBeNull();
+  });
+
+  it('день и месяц без года — дата не получена: просим год', () => {
+    const plan = buildPlan(
+      input({
+        analysis: analysis({
+          answerPoints: [point('data', 'client', 'прислала день и месяц')],
+        }),
+        memory: memory({
+          card: { birthDate: { value: '12.03', confidence: 1 }, ...money },
+          said: asked,
+        }),
+        state: { remindersSent: 0, turnsInStage: 1 },
+      }),
+    );
+    expect(plan.milestone).toBeNull();
+    expect(plan.nudge).toBe('ask_birth_date');
+    expect(plan.goal).toContain('ещё раз попроси прислать год рождения');
+  });
+
+  it('нет сферы — открытый вопрос о том, что беспокоит, без списка сфер', () => {
+    const plan = buildPlan(
+      input({
+        analysis: analysis({
+          answerPoints: [point('data', 'client', 'прислал дату')],
+        }),
+        memory: memory({ card: withBirth, said: asked }),
+        state: { remindersSent: 0, turnsInStage: 1 },
+      }),
+    );
+    expect(plan.nudge).toBe('ask_sphere');
+    expect(plan.goal).toContain('что его сейчас больше всего беспокоит');
+    expect(plan.goal).toContain('список сфер не перечисляй');
   });
 });
 
@@ -720,34 +793,44 @@ describe('план: клиент молчит на знакомстве', () => 
     expect(plan.phrases).toEqual([
       'Не увидел вашего запроса и сделал вам общий анализ, результаты ниже❤️',
     ]);
-    expect(plan.afterBlock).toBe(false);
-    // Диагностика без вопроса в конце — важнее вопрос после неё.
-    const noQuestion = buildPlan(
-      scheduled('diagnostic', { memory: silent, library: libraryWith(false) }),
-    );
-    expect(noQuestion.nudge).toBe('ask_want_options');
-    expect(noQuestion.afterBlock).toBe(true);
   });
 
-  it('молчит после вопроса о сфере — напоминание о сфере, хотя о данных уже напоминали', () => {
+  it('дата есть, молчит после вопроса о том, что беспокоит, — без напоминания: старое задание закрывается, уходит диагностика', () => {
+    // Как в реальной переписке (решение владельца 01.10.2026): человек через
+    // час делает анализ по тому, что известно, а не напоминает.
+    const sphereAsked = [
+      ...asked,
+      said('nudge', 'birth_data_reminder', 4, 200),
+      said('nudge', 'ask_sphere', 6, 100),
+    ];
     const plan = buildPlan(
       scheduled('birth_data_reminder', {
-        memory: memory({
-          card: withBirth,
-          said: [
-            ...asked,
-            said('nudge', 'birth_data_reminder', 4, 200),
-            said('nudge', 'ask_sphere', 6, 100),
-          ],
-        }),
+        memory: memory({ card: withBirth, said: sphereAsked }),
         state: { remindersSent: 1, turnsInStage: 2 },
       }),
     );
-    expect(plan.nudge).toBe('birth_data_reminder');
-    expect(plan.phrases).toEqual(PHRASES['no_birth_data:-']);
-    expect(plan.goal).toContain('нужно знать в какой сфере вопрос');
-    expect(plan.goal).toContain('общий анализ');
-    expect(plan.constraints.doNotRepeat).toEqual([]);
+    expect(plan.nudge).toBeNull();
+    expect(plan.idle).not.toBeNull();
+    expect(plan.reminders).toBe(0);
+    const diagnostic = buildPlan(
+      scheduled('diagnostic', {
+        memory: memory({ card: withBirth, said: sphereAsked }),
+      }),
+    );
+    expect(diagnostic.milestone?.title).toBe('diagnostic universal any');
+    expect(diagnostic.nudge).toBe('general_analysis');
+  });
+
+  it('нет даты и молчит после уточнения — напоминание тем же уточняющим вопросом', () => {
+    const card = { ...relationships };
+    const clarified = [...asked, said('nudge', 'clarify_request', 4, 100)];
+    const plan = buildPlan(
+      scheduled('birth_data_reminder', {
+        memory: memory({ card, said: clarified }),
+      }),
+    );
+    expect(plan.nudge).toBe('clarify_reminder');
+    expect(plan.phrases).toEqual(PHRASES['ask_request:relationships']);
     expect(plan.reminders).toBe(1);
   });
 
@@ -785,7 +868,7 @@ describe('план: клиент молчит на знакомстве', () => 
     expect(diagnostic.nudge).toBeNull();
   });
 
-  it('молчит после уточнения — повторяет уточняющий вопрос, потом диагностика по сфере', () => {
+  it('дата есть, молчит после уточнения — без напоминания, диагностика по сфере', () => {
     const card = { ...withBirth, ...relationships };
     const clarified = [...asked, said('nudge', 'clarify_request', 4, 100)];
     const plan = buildPlan(
@@ -793,22 +876,9 @@ describe('план: клиент молчит на знакомстве', () => 
         memory: memory({ card, said: clarified }),
       }),
     );
-    expect(plan.nudge).toBe('clarify_reminder');
-    expect(plan.phrases).toEqual(PHRASES['ask_request:relationships']);
-    expect(plan.constraints.doNotRepeat).toEqual([
-      'просьба о дате, месте рождения и сфере',
-    ]);
-    expect(plan.reminders).toBe(1);
-
-    const reminded = [...clarified, said('nudge', 'clarify_reminder', 6, 60)];
-    const again = buildPlan(
-      scheduled('birth_data_reminder', {
-        memory: memory({ card, said: reminded }),
-      }),
-    );
-    expect(again.idle).not.toBeNull();
+    expect(plan.idle).not.toBeNull();
     const diagnostic = buildPlan(
-      scheduled('diagnostic', { memory: memory({ card, said: reminded }) }),
+      scheduled('diagnostic', { memory: memory({ card, said: clarified }) }),
     );
     expect(diagnostic.milestone?.title).toBe(
       'diagnostic relationships.couple any',
@@ -910,22 +980,18 @@ describe('план: ожидание диагностики', () => {
     expect(plan.answer[0]?.hold).toContain('пришлёшь');
   });
 
-  it('диагностика по таймеру: по сфере «финансы» — финансовая; без вопроса в конце — вопрос после неё', () => {
-    const timer = (asks: boolean) =>
-      buildPlan(
-        scheduled('diagnostic', {
-          stage: 'links',
-          memory: memory({ card: { ...withBirth, ...money }, said: links }),
-          library: libraryWith(asks),
-        }),
-      );
-    const asking = timer(true);
-    expect(asking.milestone?.title).toBe('diagnostic money.instability any');
-    expect(needsWriter(asking)).toBe(false);
-    const silent = timer(false);
-    expect(silent.nudge).toBe('ask_want_options');
-    expect(silent.afterBlock).toBe(true);
-    expect(silent.goal).toContain('твоё сообщение уйдёт сразу после неё');
+  it('диагностика по таймеру: по сфере «финансы» — финансовая, уходит одна, без своего вопроса после неё', () => {
+    // Диагностика сама кончается вопросом или приглашением — второй вопрос
+    // следом не нужен (решение владельца 01.10.2026).
+    const plan = buildPlan(
+      scheduled('diagnostic', {
+        stage: 'links',
+        memory: memory({ card: { ...withBirth, ...money }, said: links }),
+      }),
+    );
+    expect(plan.milestone?.title).toBe('diagnostic money.instability any');
+    expect(plan.nudge).toBeNull();
+    expect(needsWriter(plan)).toBe(false);
   });
 
   it('нет диагностики на языке клиента — менеджер', () => {
@@ -989,8 +1055,7 @@ describe('план: после диагностики', () => {
     // О практиках до вариантов — только общо.
     expect(first.answer[0]?.hold).toContain('без подробностей');
     expect(first.nudge).toBe('ask_want_options');
-    expect(first.afterBlock).toBe(false);
-    expect(first.constraints.maxParts).toBe(2);
+    expect(first.constraints.maxParts).toBe(1);
     const askedOnce = [
       ...diagnosticSaid,
       said('nudge', 'ask_want_options', 11, 20),
@@ -1016,7 +1081,7 @@ describe('план: после диагностики', () => {
     expect(plan.answer[0]?.hold).toContain('Стоимость — вопрос обсуждаемый.');
   });
 
-  it('«не знаю, мне надо изучить» — отработка без вопроса и следом вопрос о вариантах; фразы плейбука вариантов сюда не попадают', () => {
+  it('«не знаю, мне надо изучить» — уточняющий вопрос, что заставляет задуматься, без шага; фразы плейбука вариантов сюда не попадают', () => {
     const plan = reacting(
       {
         intents: ['objects'],
@@ -1032,16 +1097,19 @@ describe('план: после диагностики', () => {
       },
     );
     expect(plan.milestone).toBeNull();
+    // Как человек в реальной переписке: «Что заставляет вас задуматься?».
     expect(plan.objection).toMatchObject({
       category: 'think_about_it',
       approach: 0,
-      ends: 'step',
+      ends: 'question',
       phrases: [],
     });
+    expect(plan.objection?.task).toContain('что заставляет задуматься');
     // Возражение закрывает его отработка — отдельным пунктом оно не идёт.
     expect(plan.answer).toEqual([]);
-    expect(plan.nudge).toBe('ask_want_options');
-    expect(plan.constraints.maxParts).toBe(2);
+    expect(plan.nudge).toBeNull();
+    expect(plan.constraints.maxParts).toBe(1);
+    expect(plan.constraints.maxQuestions).toBe(1);
     expect(plan.goal).toContain('«подумаю, надо разобраться»');
     expect(plan.goal).not.toContain('Может, есть вопросы по работе?');
   });
@@ -1075,6 +1143,7 @@ describe('план: после диагностики', () => {
     expect(plan.nudge).toBeNull();
     expect(plan.constraints.maxParts).toBe(1);
     expect(plan.goal).toContain('не узнаёт себя в диагностике');
+    expect(plan.goal).toContain('что именно не совпало');
     expect(plan.goal).toContain('не шаблон');
   });
 
@@ -1095,7 +1164,7 @@ describe('план: после диагностики', () => {
     expect(story.answer).toEqual([]);
     expect(story.constraints.maxParts).toBe(1);
     expect(story.constraints.maxQuestions).toBe(1);
-    expect(story.goal).toContain('Начни сообщение шага с короткого отклика');
+    expect(story.goal).toContain('Начни сообщение с короткого отклика');
     const yes = reacting(
       {
         intents: ['asks_practice'],
@@ -1160,15 +1229,100 @@ describe('план: после диагностики', () => {
     expect(plan.constraints.maxQuestions).toBe(1);
   });
 
-  it('отклик без вопроса о другом уводит к вариантам без обрамления: рассказу вехи отклик не нужен', () => {
+  it('отзыв или рассказ без вопроса о другом — варианты и перед ними одна фраза-отклик', () => {
+    // Решение владельца 01.10.2026: как человек («Благодарю за обратную связь 🩷» + варианты).
     const plan = reacting({
       intents: ['shares_story'],
       answerPoints: [point('story', 'client', 'хочет изменить всё')],
     });
     expect(plan.milestone?.key).toBe('offer');
-    expect(plan.react).toEqual([]);
-    expect(needsWriter(plan)).toBe(false);
+    expect(plan.nudge).toBe('offer_intro');
+    expect(plan.react).toEqual(['хочет изменить всё']);
+    expect(plan.constraints.maxQuestions).toBe(0);
+    expect(plan.goal).toContain('поблагодари за обратную связь');
+    const feedback = reacting({
+      answerPoints: [
+        point('feedback', 'diagnostic', 'всё совпало, очень точно'),
+      ],
+    });
+    expect(feedback.milestone?.key).toBe('offer');
+    expect(feedback.nudge).toBe('offer_intro');
+    expect(feedback.react).toEqual(['всё совпало, очень точно']);
+    // «Да» или «расскажите» — варианты без обрамления.
+    const yes = reacting({
+      answerPoints: [point('answer', 'client', 'да')],
+    });
+    expect(yes.milestone?.key).toBe('offer');
+    expect(yes.nudge).toBeNull();
+    expect(needsWriter(yes)).toBe(false);
   });
+
+  it('горе после диагностики — слова поддержки без вариантов и без вопроса о них', () => {
+    const plan = reacting({
+      intents: ['shares_story'],
+      mood: 'grieving',
+      answerPoints: [point('story', 'client', 'потеряла сына')],
+    });
+    expect(plan.milestone).toBeNull();
+    expect(plan.nudge).toBeNull();
+    expect(plan.answer.map((item) => item.text)).toEqual(['потеряла сына']);
+    expect(plan.condolences).toBe(true);
+    expect(plan.goal).toContain('Примите мои соболезнования');
+    // Сама попросит рассказать — варианты.
+    const asks = reacting({
+      intents: ['shares_story', 'asks_practice'],
+      mood: 'grieving',
+      answerPoints: [
+        point('request', 'practice', 'расскажите, как помочь себе'),
+      ],
+    });
+    expect(asks.milestone?.key).toBe('offer');
+  });
+
+  it('вопрос, на который разбор не отвечает («жив ли он?»), — ответ и вопрос о вариантах, а не варианты', () => {
+    const plan = reacting({
+      intents: ['shares_story'],
+      answerPoints: [
+        point('story', 'client', 'бывший муж пропал без вести'),
+        point('question', 'other', 'хочет знать, жив ли он'),
+      ],
+    });
+    expect(plan.milestone).toBeNull();
+    expect(plan.answer.map((item) => item.text)).toContain(
+      'хочет знать, жив ли он',
+    );
+    expect(plan.nudge).toBe('ask_want_options');
+  });
+
+  it('«нет денег» после диагностики — рассказать, а решать клиенту: отработка и вопрос о вариантах одним сообщением', () => {
+    const plan = reacting({
+      intents: ['objects'],
+      objection: 'expensive',
+      answerPoints: [point('objection', 'price', 'с финансами плохо')],
+    });
+    expect(plan.milestone).toBeNull();
+    expect(plan.objection?.ends).toBe('step');
+    expect(plan.objection?.task).toContain('решать — ему');
+    expect(plan.nudge).toBe('ask_want_options');
+    expect(plan.constraints.maxParts).toBe(1);
+  });
+
+  it.each([
+    ['self_help', 'работает ли он с этим сам'],
+    ['no_need', 'что повлияло на решение'],
+  ])(
+    '«%s» после диагностики — один мягкий уточняющий вопрос',
+    (category, task) => {
+      const plan = reacting({
+        intents: ['objects'],
+        objection: category,
+        answerPoints: [point('objection', 'other', 'возражение')],
+      });
+      expect(plan.objection?.ends).toBe('question');
+      expect(plan.objection?.task).toContain(task);
+      expect(plan.nudge).toBeNull();
+    },
+  );
 
   it('«расскажите, хотя сомневаюсь» — варианты, отработка без своего вопроса: веха и есть ответ', () => {
     const plan = reacting({
@@ -1322,16 +1476,46 @@ describe('план: после диагностики', () => {
     );
   });
 
-  it('варианты по таймеру больше не уходят: старое задание закрывается без текста', () => {
+  it('клиент молчит после диагностики — варианты по таймеру со связкой «жду обратную связь», это напоминание', () => {
+    // Решение владельца 01.10.2026: как в реальной переписке, через сутки молчания.
     const plan = buildPlan(
       scheduled('offer', {
         stage: 'diagnostic',
-        memory: memory({ said: diagnosticSaid }),
-        history: [out(9, 100, true)],
+        memory: memory({
+          said: [...diagnosticSaid, said('nudge', 'ask_feedback', 11, 600)],
+        }),
+        history: [out(9, 1400, true), out(11, 600, true)],
+        state: { remindersSent: 1, turnsInStage: 0 },
       }),
     );
-    expect(plan.milestone).toBeNull();
-    expect(plan.idle).toContain('offer');
+    expect(plan.milestone?.key).toBe('offer');
+    expect(plan.nudge).toBe('offer_after_silence');
+    expect(plan.phrases).toEqual(['Жду обратную связь по раскладу)']);
+    expect(plan.reminders).toBe(1);
+    expect(plan.constraints.maxQuestions).toBe(0);
+    expect(plan.goal).toContain('Ход по расписанию');
+    expect(fallbackStepPhrase(plan)).toBe('Жду обратную связь по раскладу)');
+  });
+
+  it('варианты по таймеру не уходят, если клиент отвечал после диагностики или лимит напоминаний вышел', () => {
+    const answered = buildPlan(
+      scheduled('offer', {
+        stage: 'diagnostic',
+        memory: memory({ said: diagnosticSaid }),
+        history: [out(9, 1400, true), incoming(10, 1000)],
+      }),
+    );
+    expect(answered.milestone).toBeNull();
+    expect(answered.idle).toContain('offer');
+    const limit = buildPlan(
+      scheduled('offer', {
+        stage: 'diagnostic',
+        memory: memory({ said: diagnosticSaid }),
+        history: [out(9, 1400, true)],
+        state: { remindersSent: 3, turnsInStage: 0 },
+      }),
+    );
+    expect(limit.milestone).toBeNull();
   });
 });
 
@@ -1402,7 +1586,7 @@ describe('план: после вариантов', () => {
     expect(plan.answer).toHaveLength(1);
   });
 
-  it('возражение на варианты: подход этапа и образцы плейбука вариантов; при повторе — следующий подход, образцы по кругу; цен нет', () => {
+  it('возражение на варианты: подход этапа и образцы плейбука вариантов; при повторе — следующий подход, образцы по кругу', () => {
     const objecting = {
       intents: ['objects' as const],
       objection: 'think_about_it',
@@ -1417,7 +1601,7 @@ describe('план: после вариантов', () => {
       ends: 'question',
       phrases: ['Может, есть вопросы по работе?', 'Что смутило?'],
     });
-    expect(first.objection?.task).toContain('что именно заставляет задуматься');
+    expect(first.objection?.task).toContain('о чём именно хочется подумать');
     const repeated = reacting(objecting, {
       memory: memory({
         said: [
@@ -1432,9 +1616,38 @@ describe('план: после вариантов', () => {
       phrases: ['Что смутило?', 'Может, есть вопросы по работе?'],
     });
     expect(repeated.goal).toContain('не так, как в прошлый');
-    expect(
-      reacting({ ...objecting, objection: 'expensive' }).objection,
-    ).toMatchObject({ ends: 'open', phrases: [] });
+  });
+
+  it('«дорого», «нет денег» до цен — цены и перед ними спокойная фраза: решать клиенту', () => {
+    // Как в реальной переписке: человек показывает стоимость, а не откладывает разговор.
+    const plan = reacting({
+      intents: ['objects'],
+      objection: 'expensive',
+      answerPoints: [point('objection', 'price', 'финансово не потяну')],
+    });
+    expect(plan.milestone?.key).toBe('prices');
+    expect(plan.objection).toMatchObject({
+      category: 'expensive',
+      ends: 'open',
+    });
+    expect(plan.objection?.task).toContain('ниже расскажешь о стоимости');
+    expect(plan.nudge).toBeNull();
+    expect(plan.constraints.maxQuestions).toBe(0);
+  });
+
+  it('«нет времени на практики» — ответ по сути и вопрос по направлениям, а не «вернёмся позже»', () => {
+    const plan = reacting({
+      intents: ['objects'],
+      objection: 'no_time',
+      answerPoints: [
+        point('objection', 'practice', 'нет времени на медитации'),
+      ],
+    });
+    expect(plan.milestone).toBeNull();
+    expect(plan.objection?.ends).toBe('step');
+    expect(plan.objection?.task).toContain('основную часть работы делаешь ты');
+    expect(plan.nudge).toBe('ask_offer_questions');
+    expect(plan.constraints.maxParts).toBe(1);
   });
 
   it('«ничего не подходит» — уточнить; ответ на уточнение — отклик и вопрос по направлениям, а не цены', () => {

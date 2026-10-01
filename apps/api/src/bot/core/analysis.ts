@@ -100,6 +100,16 @@ function parseCard(raw: unknown, sourceMessageId: number | null): ClientCard {
     );
   card.name = text('name');
   card.birthDate = text('birthDate') ?? text('birth_date');
+  // Год — четыре цифры, числом или строкой; остальное отбрасывается.
+  card.birthYear = field(
+    source.birthYear ?? source.birth_year,
+    sourceMessageId,
+    (v) =>
+      (typeof v === 'number' || typeof v === 'string') &&
+      /^(19|20)\d\d$/.test(String(v).trim())
+        ? String(v).trim()
+        : null,
+  );
   card.birthDateDeclined = field(
     source.birthDateDeclined,
     sourceMessageId,

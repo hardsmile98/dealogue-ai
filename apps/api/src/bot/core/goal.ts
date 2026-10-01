@@ -26,6 +26,11 @@ export interface GoalContext {
   firstReply: boolean;
   memory: Memory;
   history: readonly HistoryMessage[];
+  /**
+   * Диагностика уже у клиента: тогда за отзыв или рассказ можно
+   * поблагодарить. На знакомстве человек в реальной переписке не благодарит.
+   */
+  afterDiagnostic?: boolean;
 }
 
 /** Шаг хода — разрешённая связка к вехе («не увидел запроса, результаты ниже»). */
@@ -50,7 +55,7 @@ export function needsWriter(
 /** Чем закончить отработку возражения — словами для ответчика. */
 const OBJECTION_ENDS: Record<ObjectionEnd, string> = {
   question: 'Этот вопрос — единственный в ответе.',
-  step: 'Без вопросов: к вариантам ведёт шаг воронки отдельным сообщением.',
+  step: 'Своих вопросов в отработке нет: к вариантам ведёт шаг воронки в конце сообщения.',
   open: 'Без вопросов и без призыва к действию.',
   release: 'Без вопросов и без призыва к действию.',
 };
@@ -111,9 +116,9 @@ export function describeGoal(plan: Plan, context: GoalContext): string {
       'Это первый ответ клиенту: начни с приветствия — просто поздоровайся («Здравствуйте!») и сразу переходи к делу, без любезностей («рад, что написали», «рад, что вы заглянули», «спасибо за обращение»).',
     );
   }
-  if (plan.milestone && plan.afterBlock) {
+  if (plan.condolences) {
     lines.push(
-      `Сначала система отправит «${MILESTONE_TITLES[plan.milestone.key]}» (${plan.milestone.title}) текстом из библиотеки, твоё сообщение уйдёт сразу после неё. Её не пересказывай и не комментируй.`,
+      'Клиент пишет о горе — смерти или потере близкого. Начни с простых слов соболезнования («Примите мои соболезнования 🙏»), коротко и без пересказа его слов; о работе, вариантах и ценах не говори, если план этого не просит.',
     );
   }
   if (plan.answer.length > 0) {
@@ -122,7 +127,7 @@ export function describeGoal(plan: Plan, context: GoalContext): string {
       return `${index + 1}) ${point.text}${hold}`;
     });
     lines.push(
-      `Ответить коротко, по существу, одним сообщением, в этом порядке: ${items.join('; ')}.`,
+      `Ответить коротко, по существу, в этом порядке: ${items.join('; ')}.`,
     );
   }
   if (plan.objection) {
@@ -154,12 +159,14 @@ export function describeGoal(plan: Plan, context: GoalContext): string {
       nudgesSaid(context.memory.said, plan.nudge) > 0
         ? ' Такой шаг уже был в разговоре — скажи другими словами, не так, как в прошлый раз.'
         : '';
-    lines.push(
-      `Шаг воронки (отдельным сообщением): ${task}.${statement}${keep}${again}`,
-    );
+    const together =
+      plan.answer.length > 0 || plan.objection
+        ? ' (в том же сообщении, после ответа)'
+        : '';
+    lines.push(`Шаг воронки${together}: ${task}.${statement}${keep}${again}`);
     if (plan.react.length > 0) {
       lines.push(
-        `Клиент рассказал: ${plan.react.join('; ')}. Начни сообщение шага с короткого отклика на это по сути — одно предложение, отдельного ответа не нужно.`,
+        `Клиент рассказал: ${plan.react.join('; ')}. Начни сообщение с короткого отклика на это по сути — одно предложение${context.afterDiagnostic ? ' (можно поблагодарить за обратную связь или за то, что поделился)' : ''}, отдельного ответа не нужно.`,
       );
     }
     if (plan.nudge === 'follow_up') {
@@ -169,7 +176,7 @@ export function describeGoal(plan: Plan, context: GoalContext): string {
     }
     lines.push(...samples(plan.phrases, 'так этот шаг звучит у практика'));
   }
-  if (plan.milestone && !plan.afterBlock) {
+  if (plan.milestone) {
     const intro = introducesMilestone(plan)
       ? 'Шаг и есть короткая связка к ней — кроме неё о ней не пиши: ни пересказа, ни продолжения.'
       : 'О ней не пиши: ни вступления, ни пересказа, ни продолжения.';

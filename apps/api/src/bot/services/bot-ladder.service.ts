@@ -3,6 +3,7 @@ import type { Channel } from '../core/channel.js';
 import { HISTORY_LIMIT } from '../core/history.js';
 import { LADDER_KINDS, nextLadderStep } from '../core/ladder.js';
 import type { LadderStep } from '../core/ladder.js';
+import { birthDateSettled } from '../core/memory.js';
 import type { JobKind } from '../core/types.js';
 import type { BotChatStateEntity } from '../entities/bot-chat-state.entity.js';
 import { stageFromMilestones } from '../library/kinds.js';
@@ -115,6 +116,7 @@ export class BotLadderService {
       lastHandledMessageId: state.lastHandledMessageId,
       remindersSent: state.remindersSent,
       timings: agent.timings,
+      dateKnown: birthDateSettled(memory.card),
     });
   }
 }

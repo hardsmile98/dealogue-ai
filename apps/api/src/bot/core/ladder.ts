@@ -22,8 +22,9 @@ const INTAKE_QUESTION_TITLES: Record<IntakeQuestionNudge, string> = {
 };
 
 /**
- * Задания лестницы — пересчёт заменяет все ожидающие этих видов. `offer` и
- * `prices` она больше не ставит, но держит в списке, чтобы снять старые.
+ * Задания лестницы — пересчёт заменяет все ожидающие этих видов. `offer` —
+ * варианты по таймеру после молчания; `prices` она больше не ставит, но
+ * держит в списке, чтобы снять старые.
  * `reply` (повтор ответа после сбоя) ей не принадлежит.
  */
 export const LADDER_KINDS: readonly JobKind[] = [
@@ -47,6 +48,12 @@ export interface LadderInput {
   lastHandledMessageId: number;
   remindersSent: number;
   timings: Timings;
+  /**
+   * Дата рождения известна (с годом) или её не будет. Тогда молчание на
+   * знакомстве (вопрос о сфере, уточнение) ведёт сразу к диагностике, без
+   * напоминания — как в реальной переписке (решение владельца 01.10.2026).
+   */
+  dateKnown: boolean;
 }
 
 export interface LadderStep {
@@ -82,14 +89,17 @@ function pick(seed: string, range: Range): number {
  * все ожидающие ступени после каждого хода и каждого «прочитано», поэтому
  * отмена и перепостановка — это просто пересчёт.
  *
- * - `intake`: после каждого вопроса знакомства (дата, место и сфера;
- *   сфера; уточнение внутри сферы) клиент молчит — одно напоминание,
- *   дальше — диагностика по тому, что известно (без сферы — общая).
+ * - `intake`: клиент молчит после вопроса знакомства. Даты ещё нет — одно
+ *   напоминание, дальше диагностика по тому, что известно (без сферы —
+ *   общая). Дата есть, а молчит на вопрос о том, что беспокоит, или на
+ *   уточнение — диагностика сразу, без напоминания (решение 01.10.2026).
  * - `links`: обещанная диагностика уходит по таймеру, прочитано или нет.
- * - После диагностики и после вариантов — только напоминания: варианты и
- *   цены уходят по реакции клиента, а не по времени. Клиент уже отвечал
- *   после вехи — напоминание через ступень и по разговору (план выберет
- *   `follow_up`), а не быстрый вопрос-отклик.
+ * - После диагностики: вопрос-отклик, а если клиент молчит и дальше —
+ *   варианты по таймеру через `offerAfterSilenceHours` после диагностики
+ *   (решение владельца 01.10.2026). Клиент уже отвечал после диагностики —
+ *   напоминание по разговору (план выберет `follow_up`), вариантов по
+ *   таймеру нет. После вариантов — только напоминания: цены уходят по
+ *   реакции клиента.
  * - Последнее сообщение агента не прочитано — одно напоминание через
  *   `unreadReminderHours`, дальше ступени не ставятся.
  * - Напоминаний любого вида не больше `maxReminders` на чат; лимит
@@ -166,6 +176,15 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
     case 'intake': {
       const question = lastIntakeQuestion(said);
       if (!question) return null;
+      if (input.dateKnown) {
+        return step(
+          'diagnostic',
+          readAt,
+          timings.diagnosticDelayMin,
+          MINUTE,
+          `${INTAKE_QUESTION_TITLES[question.nudge]} прочитан, дата есть — диагностика по тому, что известно`,
+        );
+      }
       if (remindersLeft && !question.reminded) {
         return step(
           'birth_data_reminder',
@@ -195,22 +214,31 @@ export function nextLadderStep(input: LadderInput): LadderStep | null {
           'клиент отвечал после диагностики и замолчал',
         );
       }
-      // Первое напоминание после диагностики — быстрее, следующие — через ступень.
-      return nudgesSaid(said, 'ask_feedback') === 0
-        ? step(
-            'return_question',
-            readAt,
-            timings.returnQuestionMin,
-            MINUTE,
-            'диагностика прочитана, клиент молчит',
-          )
-        : step(
-            'return_question',
-            readAt,
-            timings.stepHours,
-            HOUR,
-            'клиент молчит и после напоминания',
-          );
+      // Первое касание после диагностики — вопрос-отклик; молчит и дальше —
+      // варианты по таймеру, примерно через сутки после диагностики.
+      if (nudgesSaid(said, 'ask_feedback') === 0) {
+        return step(
+          'return_question',
+          readAt,
+          timings.returnQuestionMin,
+          MINUTE,
+          'диагностика прочитана, клиент молчит',
+        );
+      }
+      const diagnosticAt = milestoneAt(said, 'diagnostic');
+      if (!diagnosticAt) return null;
+      const timer = step(
+        'offer',
+        diagnosticAt,
+        timings.offerAfterSilenceHours,
+        HOUR,
+        'клиент молчит после диагностики и напоминания — варианты по таймеру',
+      );
+      // Не раньше часа после прочтения напоминания: одно касание за раз.
+      const earliest = readAt.getTime() + HOUR;
+      return timer.runAt.getTime() >= earliest
+        ? timer
+        : { ...timer, runAt: new Date(earliest) };
     }
     case 'offer':
       if (!remindersLeft) return null;

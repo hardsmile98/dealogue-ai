@@ -6,7 +6,6 @@ import {
   containsMoney,
   countQuestions,
   draftViolations,
-  endsWithQuestion,
   extractUrls,
   hardChecks,
   splitLong,
@@ -177,30 +176,6 @@ describe('жёсткие проверки', () => {
     const alone = hardChecks({ ...base, block, parts: ['Стоит 300€'] });
     expect(alone.parts).toEqual([{ text: block, block: true }]);
     expect(alone.blocked).toBe(false);
-    // Вопрос после диагностики — после тела вехи.
-    expect(
-      hardChecks({
-        ...base,
-        block: 'Диагностика…',
-        afterBlock: true,
-        parts: ['Рассказать, как это можно проработать?'],
-      }).parts.map((part) => part.text),
-    ).toEqual(['Диагностика…', 'Рассказать, как это можно проработать?']);
-  });
-
-  it('текст заканчивается вопросом — по хвосту после последней буквы', () => {
-    for (const text of [
-      'Рассказать подробнее?',
-      'Рассказать вам подробнее? 🙏🏻',
-      'Какое направление больше нравится? Или подходят все?\n',
-    ])
-      expect(endsWithQuestion(text), text).toBe(true);
-    for (const text of [
-      'решение за вами, но рекомендую не затягивать.',
-      'Чтобы следующие 7 лет прошли успешно 🧡',
-      'Что делать? Работать с блоками.',
-    ])
-      expect(endsWithQuestion(text), text).toBe(false);
   });
 
   it('письменность: только явный промах на длинном тексте, адреса не считаются', () => {
@@ -260,6 +235,25 @@ describe('жёсткие проверки', () => {
     expect(splitLong('короткий')).toEqual(['короткий']);
     const huge = splitLong('б'.repeat(9000), 4096);
     expect(huge.length).toBe(3);
+    expect(huge.join('')).toBe('б'.repeat(9000));
+  });
+
+  it('длинная веха делится поровну: вопрос в её конце не уходит отдельным сообщением', () => {
+    // Как «Универсальная 2»: 8 тыс. знаков, в конце — короткий вопрос.
+    const paragraphs = [
+      ...Array.from({ length: 10 }, (_, index) => String(index).repeat(810)),
+      'Рассказать вам подробности о моих практиках?',
+    ];
+    const text = paragraphs.join('\n\n');
+    const chunks = splitLong(text, 4096);
+    expect(chunks).toHaveLength(3);
+    expect(chunks.every((chunk) => chunk.length <= 4096)).toBe(true);
+    expect(chunks.join('\n\n')).toBe(text);
+    const last = chunks[chunks.length - 1] as string;
+    expect(last.endsWith('Рассказать вам подробности о моих практиках?')).toBe(
+      true,
+    );
+    expect(last.length).toBeGreaterThan(2000);
   });
 });
 

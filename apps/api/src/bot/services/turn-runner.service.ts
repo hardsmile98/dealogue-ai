@@ -374,6 +374,7 @@ export class TurnRunnerService implements OnModuleDestroy {
         history: formatHistory(history, memory.said, MILESTONE_TITLES),
         messages,
         historyLimit: HISTORY_LIMIT,
+        now: env.clock.now(),
       });
       const analysis = await this.model.analyze(
         { llm, turnId, model, clock: env.clock, signal: this.stopping.signal },
@@ -697,6 +698,7 @@ export class TurnRunnerService implements OnModuleDestroy {
       clientName: context.clientName,
       history: context.historyLines,
       messages: request.messages,
+      now: context.now,
     });
     const analysis = await this.model.analyze(
       context.llm,
@@ -799,7 +801,6 @@ export class TurnRunnerService implements OnModuleDestroy {
     const writerInput: WriterPromptInput = {
       persona: context.persona,
       stage,
-      examples: library.stageExamples(stage),
       about: library.about(language, stage, knownGender(memory.card)),
       history: context.historyLines,
       memory,
@@ -871,7 +872,6 @@ export class TurnRunnerService implements OnModuleDestroy {
       hardChecks({
         parts: text,
         block,
-        afterBlock: plan.afterBlock,
         allowedUrls,
         language,
         maxParts: plan.constraints.maxParts,

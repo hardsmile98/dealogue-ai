@@ -38,6 +38,8 @@ export interface Timings {
   birthDataReminderMin: Range;
   returnQuestionMin: Range;
   stepHours: Range;
+  /** Варианты по таймеру: столько часов после диагностики, если клиент молчит. */
+  offerAfterSilenceHours: Range;
   unreadReminderHours: number;
   maxReminders: number;
 }

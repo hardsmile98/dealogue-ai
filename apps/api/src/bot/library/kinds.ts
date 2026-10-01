@@ -72,6 +72,8 @@ export const OBJECTION_CATEGORIES = [
   'ask_partner',
   'tried_before',
   'later',
+  'self_help',
+  'no_need',
 ] as const;
 export type ObjectionCategory = (typeof OBJECTION_CATEGORIES)[number];
 
@@ -89,6 +91,8 @@ export const OBJECTION_TITLES: Readonly<Record<ObjectionCategory, string>> = {
   ask_partner: 'посоветуюсь с близкими',
   tried_before: 'уже пробовал похожее',
   later: 'потом, не сейчас',
+  self_help: 'справлюсь сам, работаю над собой, и так всё знаю',
+  no_need: 'не нужно, мне достаточно, остановимся',
 };
 
 /** Плейбуки возражений: на диагностику (вариантов ещё не было) и на варианты работы. */
@@ -270,6 +274,13 @@ export function isSphere(value: string): value is Sphere {
  */
 export const SPHERE_QUESTION = 'sphere';
 
+/**
+ * С какого возраста практик работает (решение владельца 01.10.2026: как в
+ * реальной переписке — «работаю с 21 года»). Младше — вежливый отказ, дальше
+ * агент молчит.
+ */
+export const MIN_CLIENT_AGE = 21;
+
 /** Режим чата: агент ведёт сам, чат у менеджера, агент выключен в этом чате. */
 export const CHAT_MODES = ['auto', 'manager', 'off'] as const;
 export type ChatMode = (typeof CHAT_MODES)[number];
@@ -294,6 +305,7 @@ export const HANDOFF_REASONS = [
   'prices_sent',
   'foreign_outgoing',
   'agent_unavailable',
+  'underage',
 ] as const;
 export type HandoffReason = (typeof HANDOFF_REASONS)[number];
 
@@ -310,4 +322,6 @@ export const HANDOFF_LABELS: Readonly<Record<HandoffReason, ChatLabel | null>> =
     prices_sent: 'prices_silent',
     foreign_outgoing: null,
     agent_unavailable: 'agent_unavailable',
+    // Агент уже вежливо отказал (младше порога): ждать ответа менеджера не нужно.
+    underage: null,
   };

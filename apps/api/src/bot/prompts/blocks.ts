@@ -24,12 +24,6 @@ export interface LibrarySample {
   text: string;
 }
 
-export interface ExampleSample {
-  situation: string;
-  client: string;
-  practitioner: string;
-}
-
 export function personaBlock(persona: Persona): string {
   const lines = [
     `Имя: ${persona.name}. Пол: ${persona.gender === 'f' ? 'женский — о себе пишешь в женском роде («я поняла», «рада»)' : 'мужской — о себе пишешь в мужском роде («я понял», «рад»)'}.`,
@@ -129,18 +123,13 @@ export function turnBlock(messages: readonly IncomingMessage[]): string {
 export const BLOCK_PREVIEW_LENGTH = 400;
 
 /**
- * Кусок тела вехи для промпта: смысл понятен, целиком текст не нужен.
- * Начало — когда текст ответчика идёт перед вехой, конец — когда после неё.
+ * Начало тела вехи для промпта: смысл понятен, целиком текст не нужен.
+ * Текст ответчика всегда идёт перед вехой.
  */
-export function blockPreview(
-  block: string,
-  part: 'start' | 'end' = 'start',
-): string {
+export function blockPreview(block: string): string {
   const text = block.replace(/\s+/g, ' ').trim();
   if (text.length <= BLOCK_PREVIEW_LENGTH) return text;
-  return part === 'start'
-    ? `${text.slice(0, BLOCK_PREVIEW_LENGTH)}…`
-    : `…${text.slice(-BLOCK_PREVIEW_LENGTH)}`;
+  return `${text.slice(0, BLOCK_PREVIEW_LENGTH)}…`;
 }
 
 export function aboutBlock(samples: readonly LibrarySample[]): string {
@@ -148,16 +137,6 @@ export function aboutBlock(samples: readonly LibrarySample[]): string {
     return 'Раздел «о себе и о работе» пуст: на вопросы о практике отвечай общо, без конкретных цифр, сроков и фактов.';
   return samples
     .map((sample) => `Вопрос: ${sample.title}\nОтвет: ${sample.text}`)
-    .join('\n\n');
-}
-
-export function examplesBlock(examples: readonly ExampleSample[]): string {
-  if (examples.length === 0) return '';
-  return examples
-    .map(
-      (example) =>
-        `Ситуация: ${example.situation}\nКлиент: ${example.client}\nТы: ${example.practitioner}`,
-    )
     .join('\n\n');
 }
 

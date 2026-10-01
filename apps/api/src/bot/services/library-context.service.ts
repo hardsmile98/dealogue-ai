@@ -1,20 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import type { MilestoneBody } from '../core/copied-chat.js';
-import {
-  endsWithQuestion,
-  extractUrls,
-  normalizeUrl,
-} from '../core/hard-checks.js';
+import { extractUrls, normalizeUrl } from '../core/hard-checks.js';
 import type { LibraryAvailability, PhraseQuery } from '../core/plan.js';
 import type { PlanMilestone } from '../core/types.js';
-import type { BotExampleEntity } from '../entities/bot-example.entity.js';
 import type { BotLibraryItemEntity } from '../entities/bot-library-item.entity.js';
 import type { LibraryKind, Milestone, Stage } from '../library/kinds.js';
 import { renderPersona } from '../library/persona.js';
 import type { Persona } from '../library/persona.js';
 import { selectDiagnostic } from '../library/select-diagnostic.js';
-import type { ExampleSample, LibrarySample } from '../prompts/blocks.js';
-import { BotExamplesRepository } from '../repositories/bot-examples.repository.js';
+import type { LibrarySample } from '../prompts/blocks.js';
 import { BotLibraryRepository } from '../repositories/bot-library.repository.js';
 
 /** Сколько вариантов фразы шага видит ответчик. */
@@ -27,7 +21,6 @@ const PHRASE_VARIANTS = 3;
 export class LibraryContext implements LibraryAvailability {
   constructor(
     private readonly items: readonly BotLibraryItemEntity[],
-    private readonly examples: readonly BotExampleEntity[],
     private readonly persona: Persona,
   ) {}
 
@@ -70,18 +63,12 @@ export class LibraryContext implements LibraryAvailability {
     return this.planMilestone(key, pool[0] as BotLibraryItemEntity);
   }
 
-  /** Веха для плана: что за элемент и спрашивает ли его текст клиента в конце. */
+  /** Веха для плана: какой элемент библиотеки уйдёт её телом. */
   private planMilestone(
     key: Milestone,
     item: BotLibraryItemEntity,
   ): PlanMilestone {
-    return {
-      key,
-      itemId: item.id,
-      title: item.title,
-      kind: item.kind,
-      asks: endsWithQuestion(renderPersona(item.text, this.persona)),
-    };
+    return { key, itemId: item.id, title: item.title, kind: item.kind };
   }
 
   phrases(kind: LibraryKind, query: PhraseQuery): string[] {
@@ -160,17 +147,6 @@ export class LibraryContext implements LibraryAvailability {
     return samples;
   }
 
-  stageExamples(stage: Stage): ExampleSample[] {
-    return this.examples
-      .filter((example) => example.enabled && example.stage === stage)
-      .slice(0, 5)
-      .map((example) => ({
-        situation: example.situation,
-        client: example.client,
-        practitioner: example.practitioner,
-      }));
-  }
-
   /**
    * Запасная фраза, когда текст ответчика вырезан целиком и фразы шага
    * нет: нейтральное «понял вас» в роде образа. Фразы библиотеки для этого
@@ -214,19 +190,12 @@ export class LibraryContext implements LibraryAvailability {
   }
 }
 
-/** Загрузка библиотеки и примеров аккаунта на один ход — двумя параллельными запросами. */
+/** Загрузка библиотеки аккаунта на один ход. */
 @Injectable()
 export class LibraryContextService {
-  constructor(
-    private readonly items: BotLibraryRepository,
-    private readonly examples: BotExamplesRepository,
-  ) {}
+  constructor(private readonly items: BotLibraryRepository) {}
 
   async load(accountId: string, persona: Persona): Promise<LibraryContext> {
-    const [items, examples] = await Promise.all([
-      this.items.list(accountId),
-      this.examples.listEnabled(accountId),
-    ]);
-    return new LibraryContext(items, examples, persona);
+    return new LibraryContext(await this.items.list(accountId), persona);
   }
 }

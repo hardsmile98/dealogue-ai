@@ -4,12 +4,10 @@ import type { FinalPart, ReviewViolation } from './types.js';
 export const MESSAGE_MAX_LENGTH = 4096;
 
 export interface HardCheckInput {
-  /** Сообщения ответчика; тело вехи встаёт после них (или перед ними — `afterBlock`). */
+  /** Сообщения ответчика; тело вехи встаёт после них. */
   parts: readonly string[];
   /** Тело вехи, если она в плане: уходит побайтно, как в библиотеке. */
   block: string | null;
-  /** Текст ответчика идёт после тела вехи (вопрос после диагностики). */
-  afterBlock?: boolean;
   /** Адреса из образа и библиотеки. */
   allowedUrls: ReadonlySet<string>;
   language: string;
@@ -39,14 +37,6 @@ const MARKUP = ['{{', '}}', '"messages"', '"after_block"'];
 /** Есть ли в тексте сумма с валютой. Ответчик не называет сумм никогда — цены уходят только телом вехи. */
 export function containsMoney(text: string): boolean {
   return MONEY_RE.test(text);
-}
-
-/** Хвост после последней буквы или цифры, в котором есть «?»: «…подробнее? 🙏🏻». */
-const QUESTION_END_RE = /\?[^\p{L}\p{N}]*$/u;
-
-/** Текст заканчивается вопросом клиенту — после него агенту не нужен свой вопрос. */
-export function endsWithQuestion(text: string): boolean {
-  return QUESTION_END_RE.test(text.trim());
 }
 
 export function extractUrls(text: string): string[] {
@@ -148,37 +138,89 @@ export function wrongScript(text: string, language: string): boolean {
   return letters >= SCRIPT_MIN_LETTERS && own / letters < SCRIPT_MIN_SHARE;
 }
 
-/** Длинный текст режется по абзацам, чтобы каждая часть влезла в лимит Telegram. */
+const PARAGRAPH_BREAK = '\n\n';
+
+/**
+ * Длинный текст режется по абзацам на наименьшее число частей, каждая из
+ * которых влезает в лимит Telegram, и части выходят примерно поровну. Иначе
+ * последний абзац вехи — её вопрос клиенту («Рассказать подробнее?») — уходил
+ * отдельным коротким сообщением, как будто агент спрашивает ещё раз.
+ */
 export function splitLong(text: string, limit = MESSAGE_MAX_LENGTH): string[] {
   if (text.length <= limit) return [text];
+  const pieces = text
+    .split(/\n\n+/)
+    .flatMap((paragraph) => splitParagraph(paragraph, limit));
+  const greedy = packGreedy(pieces, limit);
+  return packEvenly(pieces, greedy.length, limit) ?? greedy;
+}
+
+/** Абзац длиннее лимита — по предложениям, в крайнем случае по символам. */
+function splitParagraph(paragraph: string, limit: number): string[] {
+  const chunks: string[] = [];
+  let rest = paragraph;
+  while (rest.length > limit) {
+    const cut = Math.max(
+      rest.lastIndexOf('. ', limit),
+      rest.lastIndexOf('\n', limit),
+      limit - 1,
+    );
+    chunks.push(rest.slice(0, cut + 1).trim());
+    rest = rest.slice(cut + 1).trim();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+/** Каждая часть набирается до лимита — так частей меньше всего. */
+function packGreedy(pieces: readonly string[], limit: number): string[] {
   const chunks: string[] = [];
   let current = '';
-  for (const paragraph of text.split(/\n\n+/)) {
-    const candidate = current ? `${current}\n\n${paragraph}` : paragraph;
+  for (const piece of pieces) {
+    const candidate = current ? `${current}${PARAGRAPH_BREAK}${piece}` : piece;
     if (candidate.length <= limit) {
       current = candidate;
       continue;
     }
     if (current) chunks.push(current);
-    if (paragraph.length <= limit) {
-      current = paragraph;
-    } else {
-      // Абзац длиннее лимита — режем по предложениям, в крайнем случае по символам.
-      let rest = paragraph;
-      while (rest.length > limit) {
-        const cut = Math.max(
-          rest.lastIndexOf('. ', limit),
-          rest.lastIndexOf('\n', limit),
-          limit - 1,
-        );
-        chunks.push(rest.slice(0, cut + 1).trim());
-        rest = rest.slice(cut + 1).trim();
-      }
-      current = rest;
-    }
+    current = piece;
   }
   if (current) chunks.push(current);
   return chunks;
+}
+
+/**
+ * Столько же частей, но поровну: каждая заканчивается на границе абзаца,
+ * ближайшей к её доле оставшегося текста. Не уложилось в `count` частей —
+ * null, остаётся раскладка «до лимита».
+ */
+function packEvenly(
+  pieces: readonly string[],
+  count: number,
+  limit: number,
+): string[] | null {
+  const chunks: string[] = [];
+  let rest = [...pieces];
+  for (let left = count; left > 1 && rest.length > 0; left--) {
+    const target = rest.join(PARAGRAPH_BREAK).length / left;
+    let current = rest[0] as string;
+    let taken = 1;
+    for (const piece of rest.slice(1)) {
+      const candidate = `${current}${PARAGRAPH_BREAK}${piece}`;
+      if (candidate.length > limit) break;
+      if (
+        Math.abs(candidate.length - target) > Math.abs(current.length - target)
+      )
+        break;
+      current = candidate;
+      taken += 1;
+    }
+    chunks.push(current);
+    rest = rest.slice(taken);
+  }
+  const last = rest.join(PARAGRAPH_BREAK);
+  if (!last || last.length > limit) return null;
+  return [...chunks, last];
 }
 
 /**
@@ -206,7 +248,7 @@ export function hardChecks(input: HardCheckInput): HardCheckResult {
   const own: FinalPart[] = merged.flatMap((part) =>
     splitLong(part).map((chunk) => ({ text: chunk, block: false })),
   );
-  const parts = input.afterBlock ? [...block, ...own] : [...own, ...block];
+  const parts = [...own, ...block];
   return { parts, removed, blocked: parts.length === 0 };
 }
 

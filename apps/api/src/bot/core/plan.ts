@@ -1,5 +1,6 @@
 import {
   MILESTONE_TITLES,
+  MIN_CLIENT_AGE,
   OBJECTION_TITLES,
   STAGES,
   isObjectionCategory,
@@ -24,6 +25,7 @@ import {
   clientLanguage,
   dataRequestsSent,
   diagnosticCategory,
+  isUnderage,
   knownCategory,
   knownGender,
   knownSphere,
@@ -124,13 +126,22 @@ const JOB_NUDGE: Partial<Record<JobKind, Nudge>> = {
 };
 
 /**
- * Веха по расписанию — только диагностика: таймер после «займусь
- * анализом» или общая диагностика клиенту, который молчит и после
- * напоминания. Варианты и цены уходят только по реакции клиента.
+ * Вехи по расписанию: диагностика (таймер после «займусь анализом» или
+ * клиенту, который молчит на знакомстве) и варианты — клиент молчит почти
+ * сутки после диагностики (решение владельца 01.10.2026, как в реальной
+ * переписке). Цены уходят только по реакции клиента.
  */
 const JOB_MILESTONE: Partial<Record<JobKind, Milestone>> = {
   diagnostic: 'diagnostic',
+  offer: 'offer',
 };
+
+/** Пункты, на которые перед вариантами уместна фраза-отклик (`offer_intro`). */
+const REACTABLE_KINDS: readonly AnswerPoint['kind'][] = [
+  'story',
+  'emotion',
+  'feedback',
+];
 
 /**
  * Темы, которые раскрываются только вехой: до этапа `opensAt` на такой
@@ -241,13 +252,13 @@ export function buildPlan(input: PlanInput): Plan {
 
   const plan: Plan = {
     handoff: null,
+    close: null,
     answer: [],
     react: [],
     milestone: null,
     nudge: null,
     coveredNudges: [],
     phrases: [],
-    afterBlock: false,
     objection: null,
     constraints: {
       doNotRepeat: [],
@@ -276,10 +287,33 @@ export function buildPlan(input: PlanInput): Plan {
     );
   }
 
-  // 2. Веха — по реакции клиента; по расписанию — только диагностика.
   const category = diagnosticCategory(card);
   const gender = knownGender(card);
   const query = { category, gender, language };
+
+  // Младше порога — вежливый отказ одним сообщением, после него чат уходит
+  // менеджеру, агент больше не пишет (решение владельца 01.10.2026).
+  if (isUnderage(card, input.now, MIN_CLIENT_AGE)) {
+    plan.nudge = 'age_refusal';
+    plan.close = 'underage';
+    plan.phrases = stepPhrases('age_refusal', input, query);
+    plan.constraints.maxParts = 1;
+    plan.constraints.doNotMention.push(
+      'цены и суммы своими словами',
+      'содержание и выводы диагностики',
+    );
+    plan.goal = describeGoal(plan, {
+      trigger,
+      firstReply: false,
+      memory,
+      history: input.history,
+      afterDiagnostic: !before(stage, 'diagnostic'),
+    });
+    return plan;
+  }
+
+  // 2. Веха — по реакции клиента; по расписанию — диагностика и варианты
+  // после суток молчания.
   // Клиент рассказал о своей ситуации: сферу всё равно спрашиваем
   // (решение 30.09), но «не увидел вашего запроса» ему не говорим.
   const told =
@@ -310,6 +344,13 @@ export function buildPlan(input: PlanInput): Plan {
     pending === null &&
     !reaction.resists &&
     !reaction.asksBeyond(topic);
+  // Горе: варианты не шлём, пока клиент сам о них не попросит (в реальной
+  // переписке после соболезнований человек не продаёт).
+  const grieving = analysis?.mood === 'grieving';
+  plan.condolences = grieving;
+  const remindersLeft =
+    input.state.remindersSent < timings.maxReminders && pending !== 'release';
+  const diagnosticId = milestoneMessageId(said, 'diagnostic');
 
   const wantMilestone = (key: Milestone): boolean => {
     switch (key) {
@@ -335,22 +376,35 @@ export function buildPlan(input: PlanInput): Plan {
         return due('diagnostic') || asked;
       }
       case 'offer':
+        if (stage !== 'diagnostic') return false;
+        // Клиент молчит почти сутки после диагностики и напоминания —
+        // варианты по таймеру; отвечал после неё — нет, там свой разговор.
+        if (trigger === 'schedule')
+          return (
+            job?.kind === 'offer' &&
+            remindersLeft &&
+            !repliedAfter(input.history, diagnosticId)
+          );
         // Хочет узнать варианты или откликнулся без возражения и без
         // вопроса о другом («да», «ок», «хочу всё изменить») — варианты сразу.
         return (
-          stage === 'diagnostic' &&
           reaction !== null &&
-          seenByClient(input.history, milestoneMessageId(said, 'diagnostic')) &&
-          (reaction.explicit('offer') || agrees(MILESTONE_ANSWERS.offer))
+          seenByClient(input.history, diagnosticId) &&
+          (reaction.explicit('offer') ||
+            (!grieving && agrees(MILESTONE_ANSWERS.offer)))
         );
       case 'prices':
         // Выбрал вариант, спросил цену, готов или ответил без возражения и
-        // без вопроса («да, всё понятно») — цены сразу.
+        // без вопроса («да, всё понятно») — цены сразу. «Дорого», «нет
+        // денег» до цен — тоже цены: как в реальной переписке, клиенту
+        // показывают стоимость, а решать ему.
         return (
           stage === 'offer' &&
           reaction !== null &&
           seenByClient(input.history, milestoneMessageId(said, 'offer')) &&
-          (reaction.explicit('prices') || agrees(MILESTONE_ANSWERS.prices))
+          (reaction.explicit('prices') ||
+            agrees(MILESTONE_ANSWERS.prices) ||
+            (analysis?.objection === 'expensive' && pending !== 'release'))
         );
       default:
         return false;
@@ -401,12 +455,28 @@ export function buildPlan(input: PlanInput): Plan {
   }
 
   // 4. Шаг воронки — один за ход. У вехи свой шаг: перед ссылками —
-  // «займусь анализом»; после диагностики без вопроса в конце — вопрос,
-  // рассказать ли о вариантах; перед общей диагностикой — «не увидел запроса».
+  // «займусь анализом»; перед общей диагностикой — «не увидел запроса».
+  // После диагностики своего вопроса нет: она сама кончается вопросом.
   if (plan.milestone) {
-    plan.nudge = milestoneNudge(plan.milestone, stage, category, told);
+    plan.nudge = milestoneNudge(plan.milestone, stage, category, told, {
+      trigger,
+      reacts:
+        analysis?.answerPoints.some(
+          (point) => !point.skip && REACTABLE_KINDS.includes(point.kind),
+        ) ?? false,
+      objection: plan.objection !== null,
+    });
+    // Варианты по таймеру заменяют второе напоминание — и считаются им.
+    if (trigger === 'schedule' && plan.milestone.key === 'offer')
+      plan.reminders = 1;
   } else if (trigger === 'schedule' && job) {
-    plan.nudge = scheduledNudge(job.kind, stage, said, input.history);
+    plan.nudge = scheduledNudge(
+      job.kind,
+      stage,
+      said,
+      input.history,
+      birthDateSettled(card),
+    );
     if (plan.nudge && REMINDER_JOBS.includes(job.kind)) {
       // Лимит напоминаний и «отпустили» проверяются и здесь: повтор
       // упавшего напоминания лестница не пересчитывает.
@@ -420,7 +490,7 @@ export function buildPlan(input: PlanInput): Plan {
     plan.nudge = intake.nudge;
     if (intake.withClarify) plan.coveredNudges = ['clarify_request'];
   } else if (trigger === 'client') {
-    plan.nudge = clientNudge(stage, said, move, pending);
+    plan.nudge = clientNudge(stage, said, move, pending, grieving);
   }
   // Условие задания проверяется в момент срабатывания, а не при постановке.
   if (trigger === 'schedule' && !plan.milestone && !plan.nudge) {
@@ -438,7 +508,6 @@ export function buildPlan(input: PlanInput): Plan {
           ? plan.phrases.map((phrase) => `${phrase} ${withClarify}`)
           : [withClarify];
     }
-    plan.afterBlock = Boolean(STEPS[plan.nudge].after && plan.milestone);
   }
   // Отработка не может обещать того, чего в ходе нет: уходит веха — она и
   // ответ, своего вопроса и паузы не нужно; шага нет — нечем «вести к
@@ -486,10 +555,11 @@ export function buildPlan(input: PlanInput): Plan {
     (point) => point.topic === 'price' && point.hold,
   );
 
-  // 6. Ограничения. Сообщений ответчика: одно на ответы и возражение, одно
-  // на шаг (отклик — в нём же). Вопросы — только те, что просит план.
+  // 6. Ограничения. Ответчик пишет одно сообщение: ответ, отработка
+  // возражения и шаг — вместе, как человек в реальной переписке (86% ответов
+  // одним сообщением). Вопросы — только те, что просит план.
   plan.constraints.maxParts =
-    (plan.answer.length > 0 || plan.objection ? 1 : 0) + (plan.nudge ? 1 : 0);
+    plan.answer.length > 0 || plan.objection || plan.nudge ? 1 : 0;
   plan.constraints.maxQuestions =
     (plan.nudge ? stepQuestions(plan.nudge, plan) : 0) +
     (plan.objection?.ends === 'question' ? 1 : 0);
@@ -514,10 +584,12 @@ export function buildPlan(input: PlanInput): Plan {
       trigger === 'client',
     memory,
     history: input.history,
+    afterDiagnostic: !before(stage, 'diagnostic'),
   });
   return plan;
 }
 
+/** Шаги знакомства: в примерах им соответствует повод «нехватка данных». */
 function handoff(plan: Plan, reason: HandoffReason, detail: string): Plan {
   plan.handoff = { reason, detail };
   plan.goal = `Передать менеджеру: ${detail}.`;
@@ -595,6 +667,7 @@ function answerMode(
       return turn.answersQuestion ? story() : null;
     case 'story':
     case 'emotion':
+    case 'feedback':
       return story();
     case 'objection':
       return turn.objection ? null : 'answer';
@@ -683,21 +756,29 @@ function clarifyPhrases(
 }
 
 /**
- * Шаг вместе с вехой: перед ссылками, после диагностики без вопроса, перед
- * общей диагностикой. «Не увидел вашего запроса» — только если клиент и
- * правда ничего не рассказал, и только если диагностика спрашивает сама:
- * шаг за ход — один, а вопрос после диагностики обязателен.
+ * Шаг вместе с вехой: перед ссылками, перед общей диагностикой, перед
+ * вариантами. «Не увидел вашего запроса» — только если клиент и правда
+ * ничего не рассказал. После диагностики шага нет: каждая диагностика
+ * кончается своим вопросом или приглашением («Если вам интересно, могу
+ * рассказать…»), второй вопрос следом — лишний (решение владельца 01.10.2026).
+ * Перед вариантами (решения владельца 01.10.2026): по таймеру — связка «жду
+ * обратную связь по раскладу», по ответу клиента с отзывом или рассказом —
+ * короткая фраза-отклик; на возражение отвечает его отработка.
  */
 function milestoneNudge(
   milestone: PlanMilestone,
   stage: Stage,
   category: string | null,
   told: boolean,
+  turn: { trigger: TurnTrigger; reacts: boolean; objection: boolean },
 ): Nudge | null {
   if (milestone.key === 'links')
     return milestone.kind === 'links' ? 'start_analysis' : null;
+  if (milestone.key === 'offer') {
+    if (turn.trigger === 'schedule') return 'offer_after_silence';
+    return turn.reacts && !turn.objection ? 'offer_intro' : null;
+  }
   if (milestone.key !== 'diagnostic') return null;
-  if (!milestone.asks) return 'ask_want_options';
   return stage === 'intake' && category === null && !told
     ? 'general_analysis'
     : null;
@@ -714,7 +795,10 @@ function stepPhrases(
   query: { category: string | null; gender: Gender | null; language: string },
 ): string[] {
   const step = STEPS[nudge];
-  if (!step.kind) return [];
+  if (!step.kind) {
+    const own = step.defaultPhrase?.[query.language] ?? step.defaultPhrase?.ru;
+    return own ? [own] : [];
+  }
   const find = (category: string | null) =>
     input.library.phrases(step.kind as LibraryKind, { ...query, category });
   let phrases: string[];
@@ -733,6 +817,12 @@ function stepPhrases(
       .map((phrase) => phrase.split(/\n\s*\n/)[0]?.trim() ?? '')
       .filter(Boolean);
   }
+  // Шаг-утверждение: образцы без вопроса, если такие есть («жду обратную
+  // связь по раскладу», а не «что бы вы хотели изменить?»).
+  if (step.statement) {
+    const statements = phrases.filter((phrase) => !phrase.includes('?'));
+    if (statements.length > 0) phrases = statements;
+  }
   return step.rotate
     ? rotated(phrases, nudgesSaid(input.memory.said, nudge))
     : phrases;
@@ -750,6 +840,7 @@ function scheduledNudge(
   stage: Stage,
   said: Memory['said'],
   history: readonly HistoryMessage[],
+  dateKnown: boolean,
 ): Nudge | null {
   const nudge = JOB_NUDGE[kind];
   if (!nudge) return null;
@@ -758,6 +849,9 @@ function scheduledNudge(
       // Одно напоминание после каждого вопроса знакомства: об уточнении —
       // тем же уточняющим вопросом, о данных и сфере — фразой из таблиц.
       if (stage !== 'intake') return null;
+      // Дата есть — на молчание о сфере или уточнении уходит диагностика, без
+      // напоминания (решение владельца 01.10.2026).
+      if (dateKnown) return null;
       const question = lastIntakeQuestion(said);
       if (!question || question.reminded) return null;
       return question.nudge === 'clarify_request'
@@ -802,11 +896,14 @@ function clientNudge(
   said: Memory['said'],
   move: ObjectionMove | null,
   pending: ObjectionPending | null,
+  grieving: boolean,
 ): Nudge | null {
   const at = objectionStage(stage);
   if (!at) return null;
   const back = RETURN_STEPS[at];
   if (move) return move.ends === 'step' ? back : null;
+  // Горе: только слова поддержки, без вопросов о работе.
+  if (grieving) return null;
   if (pending === 'question') return back;
   if (pending) return null;
   return at === 'diagnostic' && nudgesSaid(said, back) < MAX_OPTIONS_QUESTIONS

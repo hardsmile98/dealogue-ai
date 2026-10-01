@@ -3,25 +3,23 @@ import Stack from '@mui/material/Stack';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import { SectionCard } from '@/shared/ui';
-import { ExamplesEditor } from '@/features/bot-examples';
 import { LibraryEditor } from '@/features/bot-library';
 import { BotSettingsSection } from './BotSettingsSection';
 
-type Section = 'settings' | 'library' | 'examples';
+type Section = 'settings' | 'library';
 
 const SECTIONS: { value: Section; label: string }[] = [
   { value: 'settings', label: 'Настройки' },
   { value: 'library', label: 'Библиотека' },
-  { value: 'examples', label: 'Примеры' },
 ];
 
 function readSection(value: string | null): Section {
-  return value === 'library' || value === 'examples' ? value : 'settings';
+  return value === 'library' ? value : 'settings';
 }
 
 /**
- * Вкладка «Агент»: настройки, библиотека текстов, примеры диалогов. Раздел
- * — в `?section=`, чтобы ссылка открывала нужный.
+ * Вкладка «Агент»: настройки и библиотека текстов. Раздел — в `?section=`,
+ * чтобы ссылка открывала нужный.
  */
 export function AccountBotPage() {
   const { accountId = '' } = useParams<{ accountId: string }>();
@@ -52,15 +50,6 @@ export function AccountBotPage() {
           subtitle="Тексты, из которых агент берёт вехи (ссылки, диагностики, описание услуг, цены), фразы шагов воронки, по которым агент пишет свои сообщения, и подходы к возражениям."
         >
           <LibraryEditor accountId={accountId} />
-        </SectionCard>
-      )}
-
-      {section === 'examples' && (
-        <SectionCard
-          title="Примеры диалогов"
-          subtitle="Удачные ответы из реальных чатов: агент видит их на своём этапе как образец. Отметить ответ можно и прямо в чате."
-        >
-          <ExamplesEditor accountId={accountId} />
         </SectionCard>
       )}
     </Stack>

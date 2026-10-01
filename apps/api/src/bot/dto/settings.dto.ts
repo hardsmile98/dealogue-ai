@@ -94,6 +94,10 @@ export class TimingsDto {
   @ValidateNested() @Type(RANGE) @IsOptional() birthDataReminderMin?: RangeDto;
   @ValidateNested() @Type(RANGE) @IsOptional() returnQuestionMin?: RangeDto;
   @ValidateNested() @Type(RANGE) @IsOptional() stepHours?: RangeDto;
+  @ValidateNested()
+  @Type(RANGE)
+  @IsOptional()
+  offerAfterSilenceHours?: RangeDto;
   @Min(0) @IsInt() @IsOptional() unreadReminderHours?: number;
   @Min(0) @IsInt() @IsOptional() maxReminders?: number;
 }

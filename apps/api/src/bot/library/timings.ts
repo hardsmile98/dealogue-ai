@@ -42,6 +42,11 @@ export interface Timings {
   returnQuestionMin: Range;
   /** Ступени лестницы молчания после диагностики, ч. */
   stepHours: Range;
+  /**
+   * Варианты по таймеру: клиент молчит после диагностики — через столько
+   * часов после неё уходят варианты (вместо второго напоминания).
+   */
+  offerAfterSilenceHours: Range;
   /** Напоминание о непрочитанном, ч. */
   unreadReminderHours: number;
   /** Напоминаний на чат, не больше. */
@@ -64,8 +69,11 @@ export const DEFAULT_TIMINGS: Timings = {
   partPauseSec: { min: 3, max: 10 },
   diagnosticDelayMin: { min: 45, max: 75 },
   birthDataReminderMin: { min: 60, max: 90 },
-  returnQuestionMin: { min: 45, max: 75 },
-  stepHours: { min: 12, max: 16 },
+  // По реальной переписке (01.10.2026): первое касание после диагностики —
+  // через несколько часов после прочтения, дальше — раз в сутки.
+  returnQuestionMin: { min: 120, max: 240 },
+  stepHours: { min: 20, max: 24 },
+  offerAfterSilenceHours: { min: 20, max: 24 },
   unreadReminderHours: 24,
   maxReminders: 3,
 };

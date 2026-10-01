@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { VirtualClock } from './channel.js';
-import { findMilestones, lastAnsweredIncoming } from './copied-chat.js';
+import {
+  copiedIntakeRequests,
+  findMilestones,
+  lastAnsweredIncoming,
+} from './copied-chat.js';
 import { repliesSince } from './history.js';
 import type { HistoryMessage } from './types.js';
 
@@ -106,5 +110,32 @@ describe('виртуальные часы', () => {
     expect(clock.now()).toEqual(at(10));
     await clock.sleep(-5);
     expect(clock.now()).toEqual(at(10));
+  });
+});
+
+describe('копия реального чата: вопросы знакомства человека', () => {
+  it('исходящие до первой вехи — просьбы о данных, не больше лимита', () => {
+    const history = [
+      msg(1, 'in'),
+      msg(2, 'out'),
+      msg(3, 'in'),
+      msg(4, 'out'),
+      msg(5, 'out'),
+      msg(6, 'out'),
+      msg(7, 'out'),
+    ];
+    const requests = copiedIntakeRequests(
+      history,
+      [{ key: 'links', messageId: 6, at: at(6) }],
+      3,
+    );
+    expect(requests.map((request) => [request.key, request.messageId])).toEqual(
+      [
+        ['ask_birth_data', 2],
+        ['ask_birth_date', 4],
+        ['ask_birth_date', 5],
+      ],
+    );
+    expect(copiedIntakeRequests(history, [], 2)).toHaveLength(2);
   });
 });

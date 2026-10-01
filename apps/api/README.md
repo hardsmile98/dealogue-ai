@@ -292,14 +292,14 @@ src/
     bot.module.ts, bot.config.ts      модуль и переменные окружения агента (модель, поллер)
     bot.types.ts                      общий вход в contracts/
     contracts/                формы ответов и мапперы по ресурсам — зеркало apps/web/src/shared/api/contracts/bot/
-    controllers/              настройки, библиотека, примеры, чат, песочница — все под /telegram/accounts/:id
+    controllers/              настройки, библиотека, чат, песочница — все под /telegram/accounts/:id
     dto/                      тела и query-строки запросов (class-validator)
     core/                     чистая логика хода с тестами: план (plan.ts — вся логика воронки),
                               анализ, память, лестница, доставка, жёсткие проверки, реестр сказанного (said.ts)
     library/                  справочники (kinds.ts), образ, тайминги, выбор диагностики, стандартная библиотека
     prompts/                  промпты анализатора, ответчика и проверяющего
     llm/                      клиент DeepSeek (таймаут на весь обмен, включая тело ответа)
-    repositories/             весь SQL агента: настройки, библиотека, примеры, состояние чата,
+    repositories/             весь SQL агента: настройки, библиотека, состояние чата,
                               память, журнал, задания, песочница
     services/
       turn-runner.service.ts          конвейер хода: анализ → план → текст → проверка → доставка → закрытие
@@ -309,7 +309,7 @@ src/
       bot-scheduler.service.ts, bot-job-executor.service.ts, bot-ladder.service.ts  лестница молчания
       bot-sandbox.service.ts          песочница с виртуальными часами
       bot-maintenance.service.ts      уборка снимков промптов старше 30 дней
-      bot-settings / bot-library / bot-examples / bot-chat-state / library-context  настройки и данные для веба и хода
+      bot-settings / bot-library / bot-chat-state / library-context  настройки и данные для веба и хода
   realtime/                   SSE-события для браузера; мост из шины событий Telegram
   health/                     GET /health для мониторинга
   auth/
@@ -426,8 +426,7 @@ await queryRunner.query(
 
 ИИ-агент, который ведёт переписку от лица практика до сообщения с ценами
 (архитектура — [docs/agent-architecture.md](../../docs/agent-architecture.md)).
-Этап 1 (каркас): таблицы, настройки и библиотека аккаунта, примеры, режим
-чата. Модуль `src/bot/`, все эндпоинты под `Authorization: Bearer`, доступ
+Этап 1 (каркас): таблицы, настройки и библиотека аккаунта, режим чата. Модуль `src/bot/`, все эндпоинты под `Authorization: Bearer`, доступ
 только владельцу аккаунта. `TelegramEnabledGuard` здесь не стоит: настройки
 и тексты можно править и без настроенного Telegram.
 
@@ -439,7 +438,6 @@ await queryRunner.query(
 | `GET /telegram/accounts/:id/bot/library?kind=&language=&category=&enabled=`       | элементы библиотеки                                                                                                                                                                  |
 | `POST …/bot/library`, `PUT …/bot/library/:itemId`, `DELETE …/bot/library/:itemId` | правки; у диагностики обязательна категория из справочника, у возражения — из плейбука; плейсхолдеры только `{{bio}}` и `{{links}}`                                                  |
 | `POST /telegram/accounts/:id/bot/library/import`                                  | `{ mode: 'keep' \| 'replace' }` — стандартная библиотека из `src/bot/library/seed/default-library.json`, идемпотентно по `seedKey`; `replace` возвращает тексты, не трогая `enabled` |
-| `GET …/bot/examples?stage=`, `POST`, `PUT …/:exampleId`, `DELETE …/:exampleId`    | примеры реальных диалогов по этапам                                                                                                                                                  |
 | `GET /telegram/accounts/:id/chats/:chatId/bot`                                    | `{ state }` — состояние агента в чате или `null`                                                                                                                                     |
 | `PUT /telegram/accounts/:id/chats/:chatId/bot/mode`                               | `{ mode: 'auto' \| 'off' }`; `manager` ставит только система, возврат в `auto` снимает передачу и ярлык                                                                              |
 | `GET /telegram/accounts/:id/chats/:chatId/bot/journal`                            | `{ journal }` — память, задания и ходы агента в чате (у хода — `messageIds` отправленного); `null`, если агент чат не вёл                                                            |
@@ -456,6 +454,14 @@ await queryRunner.query(
 режимы и ярлыки чата) — `src/bot/library/kinds.ts`; их зеркало для веба —
 `apps/web/src/shared/api/contracts/bot.ts`. Как пересобрать стандартную
 библиотеку из таблиц — [docs/source/README.md](../../docs/source/README.md).
+
+Подстройка под реальную переписку (01.10.2026,
+[docs/real-dialogs-report.md](../../docs/real-dialogs-report.md)) в данных
+аккаунтов — `node scripts/apply-real-dialogs.mjs [--dry-run] [--revert]
+[accountId …]`: добавляет недостающие элементы стандартной библиотеки
+(фразы `real.*`) и меняет открытый вопрос о сфере и «работаю онлайн»,
+если их текст ещё прежний (повторяемо). Примеров диалогов больше нет:
+таблицу `bot_examples` удаляет миграция `1700000000024-BotDropExamples`.
 
 ### Ядро хода (этап 2)
 

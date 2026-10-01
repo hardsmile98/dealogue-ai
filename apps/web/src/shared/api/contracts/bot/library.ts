@@ -1,5 +1,5 @@
-/** Библиотека текстов и примеры диалогов — зеркало apps/api/src/bot/bot.types.ts. */
-import type { Gender, Language, LibraryKind, Stage } from './kinds';
+/** Библиотека текстов — зеркало apps/api/src/bot/bot.types.ts. */
+import type { Gender, Language, LibraryKind } from './kinds';
 
 export interface LibraryItemDto {
   id: string;
@@ -26,27 +26,5 @@ export interface LibraryItemBody {
   category: string | null;
   title: string;
   text: string;
-  enabled: boolean;
-}
-
-export interface ExampleDto {
-  id: string;
-  accountId: string;
-  stage: Stage;
-  situation: string;
-  client: string;
-  practitioner: string;
-  enabled: boolean;
-  sort: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** Тело POST/PUT примера диалога. */
-export interface ExampleBody {
-  stage: Stage;
-  situation: string;
-  client: string;
-  practitioner: string;
   enabled: boolean;
 }

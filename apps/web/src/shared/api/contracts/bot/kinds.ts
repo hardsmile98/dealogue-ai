@@ -54,6 +54,8 @@ export const OBJECTION_CATEGORIES = [
   'ask_partner',
   'tried_before',
   'later',
+  'self_help',
+  'no_need',
 ] as const;
 export type ObjectionCategory = (typeof OBJECTION_CATEGORIES)[number];
 
@@ -129,4 +131,5 @@ export type HandoffReason =
   | 'reply_after_prices'
   | 'prices_sent'
   | 'foreign_outgoing'
-  | 'agent_unavailable';
+  | 'agent_unavailable'
+  | 'underage';

@@ -7,7 +7,6 @@ export type { RealtimeConnection, RealtimeHandlers } from './realtime';
 export {
   ACCOUNT_STATS_TAG,
   BOT_CHAT_TAG,
-  BOT_EXAMPLES_TAG,
   BOT_HANDOFFS_TAG,
   BOT_LIBRARY_TAG,
   BOT_SANDBOX_LIST_TAG,
