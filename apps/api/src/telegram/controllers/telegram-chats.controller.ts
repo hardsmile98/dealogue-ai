@@ -20,7 +20,6 @@ import type { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
 import { AccountAccessGuard } from '../guards/account-access.guard.js';
 import { TelegramEnabledGuard } from '../guards/telegram-enabled.guard.js';
 import { TelegramChatsService } from '../services/telegram-chats.service.js';
-import { toChatDto } from '../telegram.types.js';
 import type {
   ChatDto,
   ChatsPageDto,
@@ -45,8 +44,8 @@ export class TelegramChatsController {
 
   /** Один чат — для прямой ссылки, когда его нет среди загруженных страниц. */
   @Get(':chatId')
-  get(@Chat() chat: TelegramChatEntity): ChatDto {
-    return toChatDto(chat);
+  get(@Chat() chat: TelegramChatEntity): Promise<ChatDto> {
+    return this.chats.describe(chat);
   }
 
   /** Страница переписки: сначала свежие, по `nextCursor` — более старые. */

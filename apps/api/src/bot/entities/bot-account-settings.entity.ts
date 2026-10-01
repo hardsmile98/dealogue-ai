@@ -8,7 +8,7 @@ import {
 
 /**
  * Настройки агента на аккаунте: включён ли, образ практика, тайминги,
- * модель. Одна строка на аккаунт, создаётся при первом обращении.
+ * модель, до какой вехи ведёт клиента. Одна строка на аккаунт, создаётся при первом обращении.
  * Формы `persona` и `timings` — в library/persona.ts и library/timings.ts:
  * читаются через readPersona / readTimings, которые терпят неполный jsonb.
  */
@@ -32,6 +32,18 @@ export class BotAccountSettingsEntity {
 
   @Column({ type: 'varchar', length: 64, default: 'deepseek-chat' })
   model: string;
+
+  /**
+   * До какой вехи агент ведёт клиента, после неё чат уходит менеджеру
+   * (`HANDOFF_AFTER`). Читается через readHandoffAfter.
+   */
+  @Column({
+    name: 'handoff_after',
+    type: 'varchar',
+    length: 16,
+    default: 'prices',
+  })
+  handoffAfter: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

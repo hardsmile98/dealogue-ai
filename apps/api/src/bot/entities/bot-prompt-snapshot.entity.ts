@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-export type PromptKind = 'analyzer' | 'writer' | 'reviewer';
+export type PromptKind = 'analyzer' | 'writer' | 'reviewer' | 'personalizer';
 
 /** Полные промпты и ответы LLM по ходу. Тяжёлые, чистятся через 30 дней. */
 @Entity({ name: 'bot_prompt_snapshots' })

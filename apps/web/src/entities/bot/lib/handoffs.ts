@@ -10,7 +10,9 @@ function groupTitle(chat: HandoffChatDto): string {
   if (chat.label === 'needs_reply' || chat.label === 'agent_unavailable') {
     return 'Ждут ответа';
   }
-  if (chat.label === 'prices_silent') return 'Цены отправлены, молчат';
+  if (chat.label === 'prices_silent' || chat.label === 'limit_silent') {
+    return 'Агент закончил, молчат';
+  }
   return 'Ведёт менеджер';
 }
 

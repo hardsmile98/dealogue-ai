@@ -29,11 +29,12 @@ export const chatsApi = baseApi.injectEndpoints({
         initialPageParam: null,
         getNextPageParam: (lastPage) => lastPage.nextCursor,
       },
-      query: ({ queryArg: { accountId, search, code }, pageParam }) => ({
+      query: ({ queryArg: { accountId, search, code, agent }, pageParam }) => ({
         url: `/telegram/accounts/${accountId}/chats`,
         params: {
           search: search || undefined,
           code,
+          agent,
           cursor: pageParam ?? undefined,
           limit: CHATS_PAGE_SIZE,
         },

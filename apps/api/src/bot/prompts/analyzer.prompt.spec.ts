@@ -35,4 +35,19 @@ describe('промпт анализатора', () => {
     expect(userPart()).not.toContain('Профиль клиента');
     expect(userPart({ clientName: null })).not.toContain('Профиль клиента');
   });
+
+  it('ответ на уточнение и признание «не получается» — не новое возражение', () => {
+    // Песочница 01.10: «Сама, пока не очень получается» ушло вторым «справлюсь сама».
+    const [system] = buildAnalyzerPrompt({
+      memory: { card: {}, facts: [], summary: '', said: [] },
+      history: [],
+      messages: [],
+    });
+    expect(system?.content).toContain(
+      'Ответ на уточняющий вопрос практика — не новое возражение',
+    );
+    expect(system?.content).toContain(
+      '«сама, пока не очень получается», «пробую, но без толку»), — не возражение: objection null',
+    );
+  });
 });

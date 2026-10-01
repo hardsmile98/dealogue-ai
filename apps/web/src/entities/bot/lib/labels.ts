@@ -2,6 +2,7 @@ import type {
   ChatLabel,
   ChatMode,
   Gender,
+  HandoffAfter,
   HandoffReason,
   LibraryKind,
   ObjectionCategory,
@@ -40,7 +41,30 @@ export function modeColor(mode: ChatMode): 'success' | 'warning' | 'default' {
 export const CHAT_LABEL_LABELS: Record<ChatLabel, string> = {
   needs_reply: 'Нужен ответ',
   prices_silent: 'Цены отправлены, молчит',
+  limit_silent: 'Агент закончил, молчит',
   agent_unavailable: 'Агент недоступен',
+};
+
+/** Варианты настройки «Докуда ведёт агент»: подпись и что происходит. */
+export const HANDOFF_AFTER_LABELS: Record<
+  HandoffAfter,
+  { title: string; description: string }
+> = {
+  diagnostic: {
+    title: 'До диагностики',
+    description:
+      'Знакомится, узнаёт дату рождения и запрос, присылает диагностику. Дальше переписку ведёт менеджер.',
+  },
+  offer: {
+    title: 'До вариантов работы',
+    description:
+      'После диагностики отвечает на вопросы и сомнения, присылает варианты работы. Дальше переписку ведёт менеджер.',
+  },
+  prices: {
+    title: 'До цен',
+    description:
+      'Ведёт всю воронку: после вариантов работы присылает цены. Дальше переписку ведёт менеджер.',
+  },
 };
 
 export const HANDOFF_REASON_LABELS: Record<HandoffReason, string> = {
@@ -49,6 +73,8 @@ export const HANDOFF_REASON_LABELS: Record<HandoffReason, string> = {
   no_language_materials: 'Нет материалов на языке клиента',
   reply_after_prices: 'Клиент ответил после цен',
   prices_sent: 'Цены отправлены',
+  limit_reached: 'Агент дошёл до своего последнего этапа',
+  reply_after_limit: 'Клиент ответил после последнего этапа агента',
   foreign_outgoing: 'В чат написал человек',
   agent_unavailable: 'Агент недоступен',
   underage: 'Клиенту меньше 21 года: агент вежливо отказал',

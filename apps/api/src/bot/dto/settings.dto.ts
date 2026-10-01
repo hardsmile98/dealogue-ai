@@ -14,8 +14,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Trim } from '../../common/decorators/trim.decorator.js';
-import { GENDERS } from '../library/kinds.js';
-import type { Gender } from '../library/kinds.js';
+import { GENDERS, HANDOFF_AFTER } from '../library/kinds.js';
+import type { Gender, HandoffAfter } from '../library/kinds.js';
 
 export class PersonaLinkDto {
   @MaxLength(64, { message: 'Подпись ссылки длиннее 64 символов' })
@@ -119,6 +119,13 @@ export class UpdateBotSettingsDto {
   @Trim()
   @IsOptional()
   model?: string;
+
+  /** До какой вехи агент ведёт клиента; после неё чат уходит менеджеру. */
+  @IsIn(HANDOFF_AFTER, {
+    message: 'handoffAfter: ожидается diagnostic, offer или prices',
+  })
+  @IsOptional()
+  handoffAfter?: HandoffAfter;
 }
 
 export class SetBotEnabledDto {

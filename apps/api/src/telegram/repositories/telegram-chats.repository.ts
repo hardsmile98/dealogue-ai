@@ -3,11 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type { SelectQueryBuilder } from 'typeorm';
 import { execute, hydrate } from '../../database/sql.js';
-import type { ChatCodeFilter } from '../dto/chats.dto.js';
+import type { ChatAgentFilter, ChatCodeFilter } from '../dto/chats.dto.js';
 import { TelegramChatEntity } from '../entities/telegram-chat.entity.js';
 import type { MessageDirection } from '../entities/telegram-chat.entity.js';
 import type { ChatCursor } from '../lib/chat-cursor.js';
 import type { PeerFields } from '../lib/telegram-objects.js';
+import type { ChatAgentDto } from '../telegram.types.js';
 
 /**
  * Ключ сортировки списка — выражение из индекса IDX_telegram_chats_account_last_id
@@ -21,6 +22,7 @@ export interface ChatListFilter {
   /** Подстрока имени, @username, телефона или текста последнего сообщения. */
   search?: string;
   code?: ChatCodeFilter;
+  agent?: ChatAgentFilter;
 }
 
 /** Что меняет в строке чата приём сообщений (см. applyIngest). */
@@ -105,6 +107,23 @@ export class TelegramChatsRepository {
       );
     }
     return query.getMany();
+  }
+
+  /**
+   * Агент в чатах страницы: режим и ярлык из bot_chat_state (таблица модуля
+   * агента, только чтение). Чата нет в ответе — агент его не вёл.
+   */
+  async agents(chatIds: string[]): Promise<Map<string, ChatAgentDto>> {
+    if (chatIds.length === 0) return new Map();
+    const { rows } = await execute<ChatAgentDto & { chat_id: string }>(
+      this.chats.manager,
+      `SELECT chat_id, mode, label FROM bot_chat_state
+       WHERE chat_id = ANY($1::uuid[]) AND NOT sandbox`,
+      [chatIds],
+    );
+    return new Map(
+      rows.map((row) => [row.chat_id, { mode: row.mode, label: row.label }]),
+    );
   }
 
   /** Сколько чатов подходит под фильтры (COUNT(*), а не COUNT(DISTINCT id) из getCount). */
@@ -237,7 +256,7 @@ export class TelegramChatsRepository {
   /** Чаты аккаунта с фильтрами из запроса — общая часть страницы и счётчика. */
   private filtered(
     accountId: string,
-    { search, code }: ChatListFilter,
+    { search, code, agent }: ChatListFilter,
   ): SelectQueryBuilder<TelegramChatEntity> {
     const query = this.chats
       .createQueryBuilder('chat')
@@ -257,6 +276,13 @@ export class TelegramChatsRepository {
 
     if (code === 'with') query.andWhere('chat.lead_code IS NOT NULL');
     if (code === 'without') query.andWhere('chat.lead_code IS NULL');
+    if (agent) {
+      query.andWhere(
+        `EXISTS (SELECT 1 FROM bot_chat_state agent
+                 WHERE agent.chat_id = chat.id AND agent.mode = :agentMode AND NOT agent.sandbox)`,
+        { agentMode: agent },
+      );
+    }
     return query;
   }
 }

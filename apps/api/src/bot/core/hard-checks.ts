@@ -6,7 +6,10 @@ export const MESSAGE_MAX_LENGTH = 4096;
 export interface HardCheckInput {
   /** Сообщения ответчика; тело вехи встаёт после них. */
   parts: readonly string[];
-  /** Тело вехи, если она в плане: уходит побайтно, как в библиотеке. */
+  /**
+   * Тело вехи, если она в плане: уходит как есть — текст библиотеки, у
+   * диагностики подстроенный под клиента (core/personalize.ts).
+   */
   block: string | null;
   /** Адреса из образа и библиотеки. */
   allowedUrls: ReadonlySet<string>;
@@ -51,6 +54,18 @@ export function normalizeUrl(url: string): string {
     .replace(/^www\./i, '')
     .replace(/\/+$/u, '')
     .toLowerCase();
+}
+
+/** Тире между словами: « — », « – » (в том числе с неразрывным пробелом). */
+const SPACED_DASH_RE = /([  ])[—–](?=[  ])/gu;
+
+/**
+ * Длинное тире между словами — примета машинного текста: в мессенджере
+ * практик пишет дефис («работать - у вас»), как в его текстах в библиотеке.
+ * Чистая замена знака, смысл не трогается.
+ */
+export function plainDashes(text: string): string {
+  return text.replace(SPACED_DASH_RE, '$1-');
 }
 
 /** Сколько вопросов клиенту в тексте: знаки «?», подряд идущие — один. */
@@ -225,14 +240,15 @@ function packEvenly(
 
 /**
  * Жёсткие проверки кодом, последняя линия перед отправкой (раздел 3.7):
- * тело вехи только из библиотеки и на своём месте, сумм в тексте
- * нет, адреса только разрешённые, нет служебной разметки, письменность та,
- * сообщений не больше лимита, каждое влезает в Telegram.
+ * тело вехи на своём месте, сумм в тексте нет, адреса только разрешённые,
+ * нет служебной разметки, письменность та, сообщений не больше лимита,
+ * каждое влезает в Telegram; тире в тексте ответчика — дефисом, как пишет
+ * человек.
  */
 export function hardChecks(input: HardCheckInput): HardCheckResult {
   const removed: HardCheckResult['removed'] = [];
   const text = input.parts
-    .map((part) => part.trim())
+    .map((part) => plainDashes(part.trim()))
     .filter((part) => checkedText(part, input, removed));
   const block: FinalPart[] = input.block
     ? splitLong(input.block).map((chunk) => ({ text: chunk, block: true }))

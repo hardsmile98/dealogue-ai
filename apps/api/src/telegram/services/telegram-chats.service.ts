@@ -22,6 +22,7 @@ import { TelegramEventsService } from '../runtime/telegram-events.service.js';
 import { TelegramOutboundService } from '../runtime/telegram-outbound.service.js';
 import { toChatDto, toMessageDto } from '../telegram.types.js';
 import type {
+  ChatDto,
   ChatsPageDto,
   MessageDto,
   MessagesPageDto,
@@ -51,19 +52,36 @@ export class TelegramChatsService {
     query: ListChatsQueryDto,
   ): Promise<ChatsPageDto> {
     const cursor = parseCursor(query.cursor, decodeChatCursor);
-    const filter = { search: query.search, code: query.code };
-    const [rows, total] = await Promise.all([
+    const filter = {
+      search: query.search,
+      code: query.code,
+      agent: query.agent,
+    };
+    const [{ items, hasMore, agents }, total] = await Promise.all([
       // Одна строка сверх лимита отвечает на вопрос «есть ли следующая страница».
-      this.chats.page(account.id, filter, cursor, query.limit + 1),
+      this.chats
+        .page(account.id, filter, cursor, query.limit + 1)
+        .then(async (rows) => {
+          const page = rows.slice(0, query.limit);
+          return {
+            items: page,
+            hasMore: rows.length > query.limit,
+            agents: await this.chats.agents(page.map((chat) => chat.id)),
+          };
+        }),
       this.chats.count(account.id, filter),
     ]);
-    const items = rows.slice(0, query.limit);
-    const hasMore = rows.length > query.limit;
     return {
-      items: items.map(toChatDto),
+      items: items.map((chat) => toChatDto(chat, agents.get(chat.id) ?? null)),
       nextCursor: hasMore ? encodeChatCursor(items[items.length - 1]) : null,
       total,
     };
+  }
+
+  /** Один чат вместе с режимом агента в нём. */
+  async describe(chat: TelegramChatEntity): Promise<ChatDto> {
+    const agents = await this.chats.agents([chat.id]);
+    return toChatDto(chat, agents.get(chat.id) ?? null);
   }
 
   /**

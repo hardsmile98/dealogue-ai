@@ -59,11 +59,23 @@ export interface TurnReviewDto {
   final: SandboxViolationDto[] | null;
 }
 
+/** Как диагностика подстроилась под клиента. */
+export interface TurnPersonalizedDto {
+  /** Номера абзацев (с 1), которые поменялись. */
+  applied: number[];
+  /** Правки, которые не прошли проверки кодом, — абзац ушёл как в библиотеке. */
+  rejected: { n: number; reason: string }[];
+  /** Модель не ответила — ушёл текст из библиотеки. */
+  error: string | null;
+}
+
 /** Что вырезали жёсткие проверки кодом. */
 export interface TurnFinalDto {
   removed: { part: string; reason: string }[];
   /** Ушёл запасной текст вместо ответа модели. */
   fallback: boolean;
+  /** Ход с диагностикой; у остальных — null. */
+  personalized: TurnPersonalizedDto | null;
 }
 
 /** Ход из журнала агента — в песочнице и в реальном чате. */

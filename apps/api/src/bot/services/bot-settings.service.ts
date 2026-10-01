@@ -61,7 +61,7 @@ export class BotSettingsService {
     };
   }
 
-  /** Меняет только присланные поля образа, таймингов и модель. */
+  /** Меняет только присланные поля образа, таймингов, модель и последнюю веху агента. */
   async update(
     account: TelegramAccountEntity,
     dto: UpdateBotSettingsDto,
@@ -92,6 +92,7 @@ export class BotSettingsService {
     }
 
     if (dto.model !== undefined) patch.model = dto.model;
+    if (dto.handoffAfter !== undefined) patch.handoffAfter = dto.handoffAfter;
 
     const [updated, library] = await Promise.all([
       Object.keys(patch).length > 0

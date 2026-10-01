@@ -5,11 +5,17 @@ import { BotConfig } from '../bot.config.js';
 import { AnalysisParseError, parseAnalysis } from '../core/analysis.js';
 import { throwIfInterrupted } from '../core/channel.js';
 import type { Clock } from '../core/channel.js';
+import type { PersonalizationEdit } from '../core/personalize.js';
 import type { Analysis, Draft, Review } from '../core/types.js';
 import { WriterParseError, parseWriterOutput } from '../core/writer-output.js';
 import type { PromptKind } from '../entities/bot-prompt-snapshot.entity.js';
 import { LlmError } from '../llm/llm.types.js';
 import type { LlmClient, LlmMessage, LlmRequest } from '../llm/llm.types.js';
+import {
+  buildPersonalizerPrompt,
+  parsePersonalization,
+} from '../prompts/personalizer.prompt.js';
+import type { PersonalizerPromptInput } from '../prompts/personalizer.prompt.js';
 import {
   buildReviewerPrompt,
   parseReview,
@@ -21,6 +27,15 @@ import { BotTurnsRepository } from '../repositories/bot-turns.repository.js';
 
 /** Паузы перед повторами обращения к модели при временной ошибке (сеть, 429, 5xx, таймаут). */
 const LLM_RETRY_DELAYS_MS = [2_000, 5_000];
+
+/**
+ * Подстройка диагностики пишет правки нескольких абзацев длинного текста —
+ * дольше обычного ответа. Повторов нет: не вышло — диагностика уходит как
+ * в библиотеке, клиент не ждёт лишние минуты.
+ */
+const PERSONALIZER_TIMEOUT_MS = 90_000;
+const PERSONALIZER_MAX_TOKENS = 4_096;
+const PERSONALIZER_TEMPERATURE = 0.7;
 
 /** Чем и в рамках какого хода идёт обращение к модели. */
 export interface LlmCallContext {
@@ -34,8 +49,9 @@ export interface LlmCallContext {
 }
 
 /**
- * Три обращения хода к модели — анализатор (t=0), ответчик (t=0.5),
- * проверяющий (t=0), все в JSON-режиме (docs/agent-architecture.md, 3.3–3.6).
+ * Обращения хода к модели — анализатор (t=0), ответчик (t=0.5),
+ * проверяющий (t=0) и, когда уходит диагностика, её подстройка под клиента
+ * (t=0.7), все в JSON-режиме (docs/agent-architecture.md, 3.3–3.7).
  *
  * Каждое пишет в журнал снимок промпта и ответа. Временная ошибка модели
  * (сеть, 429, 5xx, таймаут) повторяется дважды с паузой 2 и 5 с; ответ,
@@ -108,6 +124,30 @@ export class TurnLlmService {
     return parseReview(raw);
   }
 
+  /**
+   * Правки диагностики под клиента (core/personalize.ts). Одна попытка:
+   * ошибка уходит вызывающему, и он отправляет текст из библиотеки.
+   */
+  async personalize(
+    call: LlmCallContext,
+    input: PersonalizerPromptInput,
+  ): Promise<PersonalizationEdit[]> {
+    const raw = await this.complete(
+      call,
+      'personalizer',
+      {
+        model: call.model,
+        messages: buildPersonalizerPrompt(input),
+        temperature: PERSONALIZER_TEMPERATURE,
+        json: true,
+        maxTokens: PERSONALIZER_MAX_TOKENS,
+        timeoutMs: PERSONALIZER_TIMEOUT_MS,
+      },
+      [],
+    );
+    return parsePersonalization(raw);
+  }
+
   /** Обращение с разбором ответа: ответ, который не разобрался, запрашивается ещё раз (один раз). */
   private async completeParsed<T>(
     call: LlmCallContext,
@@ -140,6 +180,7 @@ export class TurnLlmService {
     call: LlmCallContext,
     step: PromptKind,
     request: LlmRequest,
+    retryDelays: readonly number[] = LLM_RETRY_DELAYS_MS,
   ): Promise<string> {
     const snapshot = request.messages
       .map((message) => `### ${message.role}\n${message.content}`)
@@ -158,7 +199,7 @@ export class TurnLlmService {
         // Остановка API — не ошибка модели: без снимка и без повторов.
         throwIfInterrupted(call.signal);
         const retryable = error instanceof LlmError ? error.retryable : true;
-        const delay = LLM_RETRY_DELAYS_MS[attempt];
+        const delay = retryDelays[attempt];
         if (!retryable || delay === undefined) {
           await this.turns.addSnapshot(
             call.turnId,

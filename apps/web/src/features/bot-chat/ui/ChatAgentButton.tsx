@@ -2,7 +2,7 @@ import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import type { ChatBotStateDto } from '@/shared/api';
-import { CHAT_LABEL_LABELS, useGetChatBotStateQuery } from '@/entities/bot';
+import { agentStatus, useGetChatBotStateQuery } from '@/entities/bot';
 
 /** Страховка на случай обрыва живых событий — они и так обновляют состояние. */
 const POLL_MS = 30_000;
@@ -16,15 +16,12 @@ function describe(state: ChatBotStateDto | null): {
   label: string;
   color: ButtonColor;
 } {
-  if (!state) return { label: 'Агент не ведёт', color: 'inherit' };
-  if (state.mode === 'auto') return { label: 'Ведёт агент', color: 'success' };
-  if (state.mode === 'manager') {
-    return {
-      label: state.label ? CHAT_LABEL_LABELS[state.label] : 'У менеджера',
-      color: 'warning',
-    };
-  }
-  return { label: 'Агент выключен', color: 'inherit' };
+  const status = agentStatus(state);
+  if (!status) return { label: 'Агент не ведёт', color: 'inherit' };
+  return {
+    label: status.label,
+    color: status.color === 'default' ? 'inherit' : status.color,
+  };
 }
 
 interface ChatAgentButtonProps {

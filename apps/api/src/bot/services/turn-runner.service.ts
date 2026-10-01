@@ -24,6 +24,8 @@ import {
 import type { HistoryLine } from '../core/history.js';
 import { applyAnalysis, knownGender } from '../core/memory.js';
 import type { FactsUpdate } from '../core/memory.js';
+import { applyPersonalization } from '../core/personalize.js';
+import type { PersonalizeResult } from '../core/personalize.js';
 import { buildPlan, needsWriter } from '../core/plan.js';
 import { fallbackStepPhrase } from '../core/steps.js';
 import { nextRetry } from '../core/retry.js';
@@ -40,8 +42,12 @@ import type {
   TurnResult,
 } from '../core/types.js';
 import type { BotChatStateEntity } from '../entities/bot-chat-state.entity.js';
-import { MILESTONE_TITLES, stageFromMilestones } from '../library/kinds.js';
-import type { HandoffReason, Stage } from '../library/kinds.js';
+import {
+  MILESTONE_TITLES,
+  readHandoffAfter,
+  stageFromMilestones,
+} from '../library/kinds.js';
+import type { HandoffAfter, HandoffReason, Stage } from '../library/kinds.js';
 import { readPersona } from '../library/persona.js';
 import type { Persona } from '../library/persona.js';
 import { readTimings } from '../library/timings.js';
@@ -117,6 +123,8 @@ interface AccountContext {
   persona: Persona;
   timings: Timings;
   model: string;
+  /** До какой вехи агент ведёт клиента. */
+  handoffAfter: HandoffAfter;
 }
 
 /** Всё, что ход прочитал до обращения к модели. */
@@ -744,6 +752,7 @@ export class TurnRunnerService implements OnModuleDestroy {
       stage,
       now,
       timings: context.timings,
+      handoffAfter: context.handoffAfter,
       state: {
         remindersSent: context.state.remindersSent,
         // По истории, а не по времени журнала: в песочнице часы виртуальные.
@@ -762,11 +771,12 @@ export class TurnRunnerService implements OnModuleDestroy {
   }
 
   /**
-   * Текст под план и его проверка. Ответчик нужен, только если есть шаг
-   * воронки или на что ответить: иначе уходит веха сама по себе, а без неё
-   * агент молчит. Переписываем только по грубым нарушениям (стиль — в
-   * журнал); повторная проверка — только если первая нашла то, с чем
-   * отправлять нельзя. Потом жёсткие проверки и запасные фразы.
+   * Текст под план и его проверка. Диагностика сначала подстраивается под
+   * клиента. Ответчик нужен, только если есть шаг воронки или на что
+   * ответить: иначе уходит веха сама по себе, а без неё агент молчит.
+   * Переписываем только по грубым нарушениям (стиль — в журнал); повторная
+   * проверка — только если первая нашла то, с чем отправлять нельзя. Потом
+   * жёсткие проверки и запасные фразы.
    */
   private async compose(
     request: TurnRequest,
@@ -777,12 +787,25 @@ export class TurnRunnerService implements OnModuleDestroy {
   ): Promise<ComposedTurn> {
     const { library, stage, turnId } = context;
     const language = plan.constraints.language;
-    const block = plan.milestone ? library.body(plan.milestone.itemId) : null;
-    if (plan.milestone && !block) {
+    const body = plan.milestone ? library.body(plan.milestone.itemId) : null;
+    if (plan.milestone && !body) {
       throw new Error(
         `Тело вехи ${plan.milestone.key} (${plan.milestone.itemId}) не найдено`,
       );
     }
+    // Диагностика уходит подстроенной под клиента; остальные вехи — как в библиотеке.
+    const personalized =
+      body && plan.milestone?.key === 'diagnostic'
+        ? await this.personalizeDiagnostic(env, context, memory, body, language)
+        : null;
+    const block = personalized?.text ?? body;
+    const personalizedJournal = personalized
+      ? {
+          applied: personalized.applied,
+          rejected: personalized.rejected,
+          error: personalized.error,
+        }
+      : null;
     const allowedUrls = library.allowedUrls();
     if (!needsWriter(plan)) {
       const { parts } = hardChecks({
@@ -793,7 +816,13 @@ export class TurnRunnerService implements OnModuleDestroy {
         maxParts: plan.constraints.maxParts,
       });
       await this.turns.update(turnId, {
-        final: { parts, removed: [], fallback: false, blockedByReview: false },
+        final: {
+          parts,
+          removed: [],
+          fallback: false,
+          blockedByReview: false,
+          personalized: personalizedJournal,
+        },
       });
       return { parts, fallback: false, stepOnly: false };
     }
@@ -813,6 +842,7 @@ export class TurnRunnerService implements OnModuleDestroy {
       about: writerInput.about,
       memory,
       plan,
+      history: context.historyLines,
       messages: request.messages,
       block,
     };
@@ -898,9 +928,43 @@ export class TurnRunnerService implements OnModuleDestroy {
         fallback,
         stepOnly,
         blockedByReview,
+        personalized: personalizedJournal,
       },
     });
     return { parts, fallback, stepOnly };
+  }
+
+  /**
+   * Диагностика под клиента (core/personalize.ts): модель правит несколько
+   * абзацев текста из библиотеки, каждую правку проверяет код. Сбой модели
+   * хода не роняет — уходит текст из библиотеки.
+   */
+  private async personalizeDiagnostic(
+    env: TurnEnvironment,
+    context: TurnContext,
+    memory: Memory,
+    body: string,
+    language: string,
+  ): Promise<PersonalizeResult & { error: string | null }> {
+    let result: PersonalizeResult & { error: string | null };
+    try {
+      const edits = await this.model.personalize(context.llm, {
+        persona: context.persona,
+        memory,
+        history: context.historyLines,
+        text: body,
+      });
+      result = { ...applyPersonalization(body, edits, language), error: null };
+    } catch (error) {
+      if (error instanceof TurnInterrupted) throw error;
+      const message = errorMessage(error);
+      this.logger.warn(
+        `Ход ${context.turnId}: подстройка диагностики не удалась, уходит текст из библиотеки: ${message}`,
+      );
+      result = { text: body, applied: [], rejected: [], error: message };
+    }
+    this.assertFresh(env, 'после подстройки диагностики');
+    return result;
   }
 
   /**
@@ -996,7 +1060,7 @@ export class TurnRunnerService implements OnModuleDestroy {
     return null;
   }
 
-  /** Аккаунт хода, образ, тайминги и модель (своя у аккаунта или по умолчанию). */
+  /** Аккаунт хода, образ, тайминги, модель (своя у аккаунта или по умолчанию) и последняя веха агента. */
   private async accountContext(accountId: string): Promise<AccountContext> {
     const account = await this.accounts.findById(accountId);
     if (!account) throw new Error(`Аккаунт ${accountId} не найден`);
@@ -1006,6 +1070,7 @@ export class TurnRunnerService implements OnModuleDestroy {
       persona: readPersona(settings.persona, account.displayName),
       timings: readTimings(settings.timings),
       model: settings.model || this.config.defaultModel,
+      handoffAfter: readHandoffAfter(settings.handoffAfter),
     };
   }
 

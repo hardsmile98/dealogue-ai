@@ -121,7 +121,8 @@ export type ChatMode = 'auto' | 'manager' | 'off';
 export type ManualChatMode = 'auto' | 'off';
 
 /** Ярлык чата в списке «у менеджера». */
-export type ChatLabel = 'needs_reply' | 'prices_silent' | 'agent_unavailable';
+export type ChatLabel =
+  'needs_reply' | 'prices_silent' | 'limit_silent' | 'agent_unavailable';
 
 /** Причины передачи менеджеру. */
 export type HandoffReason =
@@ -130,6 +131,12 @@ export type HandoffReason =
   | 'no_language_materials'
   | 'reply_after_prices'
   | 'prices_sent'
+  | 'limit_reached'
+  | 'reply_after_limit'
   | 'foreign_outgoing'
   | 'agent_unavailable'
   | 'underage';
+
+/** До какой вехи агент ведёт клиента; после неё чат уходит менеджеру. */
+export const HANDOFF_AFTER = ['diagnostic', 'offer', 'prices'] as const;
+export type HandoffAfter = (typeof HANDOFF_AFTER)[number];

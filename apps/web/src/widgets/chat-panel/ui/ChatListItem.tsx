@@ -3,6 +3,7 @@ import Box from '@mui/material/Box';
 import ListItemButton from '@mui/material/ListItemButton';
 import Typography from '@mui/material/Typography';
 import { formatChatListTime, formatDateTime } from '@/shared/lib';
+import { AgentStatusChip } from '@/entities/bot';
 import { LeadCodeChip } from '@/entities/chat';
 import type { Chat } from '@/entities/chat';
 import { AccountAvatar } from '@/entities/telegram-account';
@@ -14,7 +15,7 @@ interface ChatListItemProps {
   onSelect: (chatId: string) => void;
 }
 
-/** Строка списка: аватар, имя, время и превью последнего сообщения, код. */
+/** Строка списка: аватар, имя, время и превью последнего сообщения, чей чат (агент или менеджер), код. */
 export const ChatListItem = memo(function ChatListItem({
   chat,
   selected,
@@ -47,9 +48,10 @@ export const ChatListItem = memo(function ChatListItem({
             {lastMessage.direction === 'out' && 'Вы: '}
             {lastMessage.text || 'Вложение'}
           </Typography>
-          {chat.leadCode !== null && (
+          {(chat.leadCode !== null || chat.agent !== null) && (
             <Box sx={styles.itemBottom}>
-              <LeadCodeChip code={chat.leadCode} />
+              <AgentStatusChip agent={chat.agent} />
+              {chat.leadCode !== null && <LeadCodeChip code={chat.leadCode} />}
             </Box>
           )}
         </Box>

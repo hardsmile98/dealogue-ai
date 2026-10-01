@@ -33,10 +33,8 @@ export class DeepSeekClient implements LlmClient {
       throw new LlmError('Не задан DEEPSEEK_API_KEY', null, false);
     }
     const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      this.config.llmTimeoutMs,
-    );
+    const timeoutMs = request.timeoutMs ?? this.config.llmTimeoutMs;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const signal = request.signal
       ? AbortSignal.any([controller.signal, request.signal])
       : controller.signal;
@@ -74,7 +72,7 @@ export class DeepSeekClient implements LlmClient {
         throw new LlmError('обращение прервано остановкой API', null, false);
       }
       const reason = controller.signal.aborted
-        ? `таймаут ${this.config.llmTimeoutMs} мс`
+        ? `таймаут ${timeoutMs} мс`
         : errorMessage(error);
       throw new LlmError(`DeepSeek недоступен: ${reason}`, null, true);
     } finally {

@@ -3,12 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { execute, hydrate } from '../../database/sql.js';
 import { BotAccountSettingsEntity } from '../entities/bot-account-settings.entity.js';
+import type { HandoffAfter } from '../library/kinds.js';
 
-/** Что меняет PUT настроек: jsonb образа и таймингов целиком, модель. */
+/** Что меняет PUT настроек: jsonb образа и таймингов целиком, модель, последняя веха агента. */
 export interface SettingsPatch {
   persona?: Record<string, unknown>;
   timings?: Record<string, unknown>;
   model?: string;
+  handoffAfter?: HandoffAfter;
 }
 
 /**
@@ -60,6 +62,7 @@ export class BotSettingsRepository {
        SET persona = COALESCE($2::jsonb, persona),
            timings = COALESCE($3::jsonb, timings),
            model = COALESCE($4::varchar, model),
+           handoff_after = COALESCE($5::varchar, handoff_after),
            updated_at = now()
        WHERE account_id = $1::uuid
        RETURNING *`,
@@ -68,6 +71,7 @@ export class BotSettingsRepository {
         patch.persona === undefined ? null : JSON.stringify(patch.persona),
         patch.timings === undefined ? null : JSON.stringify(patch.timings),
         patch.model ?? null,
+        patch.handoffAfter ?? null,
       ],
     );
     return rows[0] ? hydrate(this.settings, rows[0]) : null;

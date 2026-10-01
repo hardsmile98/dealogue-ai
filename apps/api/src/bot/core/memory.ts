@@ -95,6 +95,22 @@ export function requestKnown(card: ClientCard): boolean {
   return knownCategory(card) !== null || knownSphere(card) !== null;
 }
 
+/** Факты, по которым видно, что клиент рассказал, что у него происходит. */
+const CONCERN_FACTS: readonly ClientFact['kind'][] = [
+  'situation',
+  'emotion',
+  'expectation',
+];
+
+/**
+ * Клиент сам рассказал, что его беспокоит: ситуацию, чувства или чего
+ * ждёт, — по фактам памяти (анализ хода в них уже учтён). Тогда не
+ * спрашиваем «что беспокоит» и не говорим «не увидел вашего запроса».
+ */
+export function toldConcern(memory: Pick<Memory, 'facts'>): boolean {
+  return memory.facts.some((fact) => CONCERN_FACTS.includes(fact.kind));
+}
+
 /**
  * Категория для выбора диагностики: ясная подкатегория, а если её нет —
  * основная категория названной сферы («финансы» → финансовая диагностика).

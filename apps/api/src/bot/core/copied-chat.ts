@@ -15,6 +15,8 @@ export interface FoundMilestone {
 
 /** Сколько начальных символов тела (после нормализации) должно найтись в сообщении. */
 const BODY_PREFIX = 60;
+/** Абзац диагностики короче (после нормализации) слишком общий, чтобы узнавать по нему веху. */
+const PARAGRAPH_MIN = 40;
 
 /** Только буквы и цифры в нижнем регистре: переносы, эмодзи и знаки не мешают сравнению. */
 function normalize(text: string): string {
@@ -35,6 +37,12 @@ function normalize(text: string): string {
  * текст; Telegram мог разрезать длинный на части — хватает первой). Это
  * сравнение с собственными текстами библиотеки, а не разбор смысла. На
  * каждую веху — последнее такое сообщение.
+ *
+ * Диагностику агент отправляет подстроенной под клиента (core/personalize.ts):
+ * её начало могло поменяться, но большая часть абзацев — как в библиотеке.
+ * Поэтому исходящее без начала какой-либо вехи — диагностика, если в нём
+ * есть начало хотя бы одного её абзаца; продолжение той же диагностики
+ * (следующая часть разрезанного текста) второй раз не считается.
  */
 export function findMilestones(
   history: readonly HistoryMessage[],
@@ -46,17 +54,33 @@ export function findMilestones(
       prefix: normalize(body.text).slice(0, BODY_PREFIX),
     }))
     .filter((pattern) => pattern.prefix.length >= 20);
+  const paragraphs = bodies
+    .filter((body) => body.key === 'diagnostic')
+    .flatMap((body) => body.text.split('\n'))
+    .map((paragraph) => normalize(paragraph))
+    .filter((paragraph) => paragraph.length >= PARAGRAPH_MIN)
+    .map((paragraph) => paragraph.slice(0, BODY_PREFIX));
   const found = new Map<Milestone, FoundMilestone>();
+  // Веха, найденная в текущей серии наших сообщений подряд.
+  let inRun: Milestone | null = null;
   for (const message of history) {
-    if (message.direction !== 'out') continue;
+    if (message.direction !== 'out') {
+      inRun = null;
+      continue;
+    }
     const text = normalize(message.text);
-    const match = patterns.find((pattern) => text.includes(pattern.prefix));
-    if (match)
-      found.set(match.key, {
-        key: match.key,
-        messageId: message.id,
-        at: message.sentAt,
-      });
+    const byPrefix = patterns.find((pattern) =>
+      text.includes(pattern.prefix),
+    )?.key;
+    const key: Milestone | null =
+      byPrefix ??
+      (inRun !== 'diagnostic' &&
+      paragraphs.some((paragraph) => text.includes(paragraph))
+        ? 'diagnostic'
+        : null);
+    if (!key) continue;
+    inRun = key;
+    found.set(key, { key, messageId: message.id, at: message.sentAt });
   }
   return [...found.values()].sort((a, b) => a.at.getTime() - b.at.getTime());
 }

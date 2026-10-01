@@ -1,5 +1,6 @@
 import type { BotAccountSettingsEntity } from '../entities/bot-account-settings.entity.js';
-import type { LibraryKind } from '../library/kinds.js';
+import { readHandoffAfter } from '../library/kinds.js';
+import type { HandoffAfter, LibraryKind } from '../library/kinds.js';
 import { readPersona } from '../library/persona.js';
 import type { Persona } from '../library/persona.js';
 import { readTimings } from '../library/timings.js';
@@ -18,6 +19,8 @@ export interface BotSettingsDto {
   persona: Persona;
   timings: Timings;
   model: string;
+  /** До какой вехи агент ведёт клиента; после неё чат уходит менеджеру. */
+  handoffAfter: HandoffAfter;
   library: LibraryCountsDto;
 }
 
@@ -40,6 +43,7 @@ export function toSettingsDto(
     persona: readPersona(settings.persona, accountName),
     timings: readTimings(settings.timings),
     model: settings.model,
+    handoffAfter: readHandoffAfter(settings.handoffAfter),
     library,
   };
 }

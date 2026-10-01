@@ -9,6 +9,7 @@ import type {
   BotTurnDto,
   TurnAnalysisDto,
   TurnFinalDto,
+  TurnPersonalizedDto,
   TurnPlanDto,
   TurnReviewDto,
 } from '@/shared/api';
@@ -94,6 +95,9 @@ export function TurnCard({ turn, defaultOpen }: TurnCardProps) {
           {turn.analysis && <AnalysisSection analysis={turn.analysis} />}
           {turn.plan && <PlanSection plan={turn.plan} />}
           {turn.review && <ReviewSection review={turn.review} />}
+          {turn.final?.personalized && (
+            <PersonalizedSection personalized={turn.final.personalized} />
+          )}
           {turn.final && <RemovedSection final={turn.final} />}
           {turn.draft && turn.review?.rewritten && (
             <JournalSection title="Итоговый черновик">
@@ -201,6 +205,35 @@ function ReviewSection({ review }: { review: TurnReviewDto }) {
           {remaining.map((violation) => violation.code).join(', ')}
         </Typography>
       )}
+    </JournalSection>
+  );
+}
+
+function PersonalizedSection({
+  personalized,
+}: {
+  personalized: TurnPersonalizedDto;
+}) {
+  const { applied, rejected, error } = personalized;
+
+  return (
+    <JournalSection title="Диагностика под клиента">
+      {error ? (
+        <Typography sx={[styles.small, { color: 'warning.dark' }]}>
+          Не удалось подстроить, ушёл текст из библиотеки: {error}
+        </Typography>
+      ) : (
+        <Typography sx={styles.small}>
+          {applied.length > 0
+            ? `Изменены абзацы: ${applied.join(', ')}`
+            : 'Ушла без изменений'}
+        </Typography>
+      )}
+      {rejected.map((item, index) => (
+        <Typography key={index} sx={styles.small}>
+          <b>Абзац {item.n}</b> как в библиотеке: {item.reason}
+        </Typography>
+      ))}
     </JournalSection>
   );
 }

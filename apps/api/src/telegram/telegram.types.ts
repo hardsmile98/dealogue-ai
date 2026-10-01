@@ -1,3 +1,4 @@
+import type { ChatLabel, ChatMode } from '../bot/library/kinds.js';
 import type {
   TelegramAccountEntity,
   TelegramAccountStatus,
@@ -49,6 +50,14 @@ export interface ChatDto {
   leadCode: string | null;
   /** До какого id собеседник прочитал наши сообщения. */
   readOutboxMaxId: number;
+  /** Агент в чате; null — агент этот чат не вёл и режим руками не ставили. */
+  agent: ChatAgentDto | null;
+}
+
+/** Чей чат: агента или менеджера, и ярлык «у менеджера». */
+export interface ChatAgentDto {
+  mode: ChatMode;
+  label: ChatLabel | null;
 }
 
 /** Страница списка чатов. */
@@ -132,7 +141,10 @@ export function toAccountDto(
   };
 }
 
-export function toChatDto(chat: TelegramChatEntity): ChatDto {
+export function toChatDto(
+  chat: TelegramChatEntity,
+  agent: ChatAgentDto | null,
+): ChatDto {
   const lastAt = chat.lastMessageAt ?? chat.firstMessageAt ?? chat.createdAt;
   return {
     id: chat.id,
@@ -153,6 +165,7 @@ export function toChatDto(chat: TelegramChatEntity): ChatDto {
     firstTelegramMessageId: chat.firstMessageId,
     leadCode: chat.leadCode,
     readOutboxMaxId: chat.readOutboxMaxId,
+    agent,
   };
 }
 

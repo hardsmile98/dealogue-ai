@@ -33,7 +33,7 @@ export class BotSettingsController {
     return this.settings.describe(account);
   }
 
-  /** Образ, тайминги, модель — меняется только присланное. */
+  /** Образ, тайминги, модель, до какой вехи ведёт агент — меняется только присланное. */
   @Put()
   update(
     @Account() account: TelegramAccountEntity,

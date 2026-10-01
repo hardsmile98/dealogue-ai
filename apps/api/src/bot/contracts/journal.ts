@@ -50,9 +50,19 @@ export interface TurnReviewDto {
   final: SandboxViolationDto[] | null;
 }
 
+/** Как диагностика подстроилась под клиента: какие абзацы поменялись, какие правки не прошли. */
+export interface TurnPersonalizedDto {
+  applied: number[];
+  rejected: { n: number; reason: string }[];
+  /** Модель не ответила — ушёл текст из библиотеки. */
+  error: string | null;
+}
+
 export interface TurnFinalDto {
   removed: { part: string; reason: string }[];
   fallback: boolean;
+  /** Ход с диагностикой; у остальных и у ходов до 01.10 — null. */
+  personalized: TurnPersonalizedDto | null;
 }
 
 /** Ход из журнала — то, что нужно, чтобы понять «почему агент так ответил». */
@@ -148,13 +158,30 @@ function toReviewDto(review: Json): TurnReviewDto {
   };
 }
 
+function toPersonalizedDto(personalized: Json): TurnPersonalizedDto {
+  return {
+    applied: Array.isArray(personalized.applied)
+      ? personalized.applied.filter(
+          (item): item is number => typeof item === 'number',
+        )
+      : [],
+    rejected: asObjects(personalized.rejected).map((item) => ({
+      n: typeof item.n === 'number' ? item.n : 0,
+      reason: asString(item.reason) ?? '',
+    })),
+    error: asString(personalized.error),
+  };
+}
+
 function toFinalDto(final: Json): TurnFinalDto {
+  const personalized = asObject(final.personalized);
   return {
     removed: asObjects(final.removed).map((item) => ({
       part: asString(item.part) ?? '',
       reason: asString(item.reason) ?? '',
     })),
     fallback: final.fallback === true,
+    personalized: personalized ? toPersonalizedDto(personalized) : null,
   };
 }
 

@@ -1,6 +1,11 @@
-import { SPHERE_QUESTION } from '../library/kinds.js';
-import type { LibraryKind } from '../library/kinds.js';
-import { birthDateSettled, requestKnown } from './memory.js';
+import { SPHERE_QUESTION, SPHERE_TITLES } from '../library/kinds.js';
+import type { LibraryKind, Sphere } from '../library/kinds.js';
+import {
+  birthDateSettled,
+  knownSphere,
+  requestKnown,
+  toldConcern,
+} from './memory.js';
 import type { Memory, Nudge, Plan } from './types.js';
 
 /**
@@ -48,10 +53,13 @@ export interface StepSpec {
 }
 
 export const STEPS: Record<Nudge, StepSpec> = {
+  // Не «в какой сфере вопрос», а «что беспокоит и на какую сферу расклад»
+  // (решение владельца 01.10.2026): человек рассказывает о себе, и
+  // диагностика подстраивается под его слова. Задачу словами собирает stepTask.
   ask_birth_data: {
     kind: 'greeting',
-    task: 'одним сообщением попроси прислать дату рождения, место рождения и в какой сфере вопрос',
-    title: 'просьба о дате, месте рождения и сфере',
+    task: 'одним сообщением попроси прислать дату рождения и место рождения и коротко рассказать, что сейчас беспокоит и на какую сферу нужен расклад',
+    title: 'просьба о дате и месте рождения и о том, что беспокоит',
   },
   ask_birth_date: {
     kind: 'ask_birth_data',
@@ -63,7 +71,7 @@ export const STEPS: Record<Nudge, StepSpec> = {
     kind: 'ask_request',
     category: SPHERE_QUESTION,
     // Как в реальной переписке: открытый вопрос, а не список сфер (решение владельца 01.10.2026).
-    task: 'клиент прислал данные, но не написал, с чем пришёл, — одним коротким открытым вопросом спроси, что его сейчас больше всего беспокоит и на какую сферу жизни сделать упор в анализе; список сфер не перечисляй',
+    task: 'клиент прислал данные, но не написал, с чем пришёл, — одним коротким открытым вопросом попроси рассказать, что его сейчас больше всего беспокоит и на какую сферу нужен расклад; список сфер не перечисляй',
     title: 'вопрос о том, что беспокоит',
     reminds: ['ask_birth_data', 'ask_birth_date'],
   },
@@ -103,7 +111,7 @@ export const STEPS: Record<Nudge, StepSpec> = {
   },
   ask_want_options: {
     kind: null,
-    task: 'одним коротким вопросом спроси, рассказать ли, как это можно проработать (у практика так: «Хотели бы узнать, как всё наладить?», «Рассказать вам о способах проработки?»)',
+    task: 'одним коротким вопросом спроси, рассказать ли, как это можно проработать; если клиент сейчас рассказал о себе или ответил на твой вопрос — свяжи вопрос с его словами, а не задавай отдельно (у практика так: «Хотели бы узнать, как всё наладить?», «Рассказать вам о способах проработки?»)',
     title: 'вопрос, рассказать ли о вариантах работы',
   },
   ask_feedback: {
@@ -202,15 +210,33 @@ const DATA_STEPS: readonly Nudge[] = [
   'birth_data_reminder',
 ];
 
+/** «а, б и в» — перечисление для задачи шага. */
+function listOf(items: readonly string[]): string {
+  return items.length > 1
+    ? `${items.slice(0, -1).join(', ')} и ${items.at(-1)}`
+    : (items[0] ?? '');
+}
+
+/**
+ * Сферы нет — просим не назвать её, а рассказать, что беспокоит и на какую
+ * сферу нужен расклад (решение владельца 01.10.2026).
+ */
+const TELL_CONCERN =
+  'коротко рассказать, что сейчас беспокоит и на какую сферу нужен расклад';
+
 /**
  * Задача шага словами для ответчика; просьба о данных и напоминание о них —
  * ровно о том, чего не хватает. Место рождения — только в первой просьбе и
- * только вместе с датой: оно необязательно.
+ * только вместе с датой: оно необязательно. Сфера уже названа, а о себе
+ * клиент ничего не рассказал — в первой просьбе мягко спросить, что именно
+ * беспокоит (решение владельца 01.10.2026): ответ не обязателен, дальше без
+ * него, и не вместе с уточняющим вопросом — второй вопрос был бы лишним.
  */
 export function stepTask(
   nudge: Nudge,
   plan: Pick<Plan, 'coveredNudges'>,
   memory: Memory,
+  told = toldConcern(memory),
 ): string {
   if (!DATA_STEPS.includes(nudge)) return STEPS[nudge].task;
   const { card } = memory;
@@ -219,34 +245,40 @@ export function stepTask(
   // Прислал день и месяц без года — как в реальной переписке, просим год.
   const yearOnly = date && Boolean(card.birthDate?.value);
   const place = nudge === 'ask_birth_data' && date && !card.birthPlace?.value;
-  const missing = [
+  const data = [
     ...(date ? [yearOnly ? 'год рождения' : 'дату рождения'] : []),
     ...(place ? ['место рождения'] : []),
-    // Повторно сферу спрашиваем открыто: что беспокоит (решение владельца 01.10.2026).
-    ...(request
-      ? []
-      : [
-          nudge === 'ask_birth_data'
-            ? 'в какой сфере вопрос'
-            : 'что сейчас беспокоит больше всего',
-        ]),
   ];
-  const list =
-    missing.length > 1
-      ? `${missing.slice(0, -1).join(', ')} и ${missing.at(-1)}`
-      : (missing[0] ?? 'дату рождения');
   if (nudge === 'birth_data_reminder') {
+    const missing = [
+      ...data,
+      ...(request ? [] : ['что беспокоит и на какую сферу нужен расклад']),
+    ];
     const without = request
       ? 'анализ по тому, что есть'
       : 'общий анализ по основным сферам';
-    return `коротко и мягко напомни, что для анализа нужно знать ${list}, а без этого сделаешь ${without}; без слов «напоминаю», «напомню о себе»`;
+    return `коротко и мягко напомни, что для анализа нужно знать ${listOf(missing) || 'дату рождения'}, а без этого сделаешь ${without}; без слов «напоминаю», «напомню о себе»`;
   }
-  const clarify = plan.coveredNudges.includes('clarify_request')
-    ? ' и задай уточняющий вопрос из образца'
-    : '';
-  return nudge === 'ask_birth_date'
-    ? `одним коротким сообщением ещё раз попроси прислать ${list}${clarify}`
-    : `одним сообщением попроси прислать ${list}${clarify}`;
+  const asks = [
+    ...(data.length > 0 ? [`прислать ${listOf(data)}`] : []),
+    ...(request ? [] : [TELL_CONCERN]),
+  ];
+  const ask = `попроси ${listOf(asks) || 'прислать дату рождения'}`;
+  const withClarify = plan.coveredNudges.includes('clarify_request');
+  const clarify = withClarify ? ' и задай уточняющий вопрос из образца' : '';
+  if (nudge === 'ask_birth_date')
+    return `одним коротким сообщением ещё раз ${ask}${clarify}`;
+  // «Всё сразу» — не сфера, о которой можно спросить «что в ней беспокоит».
+  const sphere = knownSphere(card);
+  const where =
+    sphere && sphere !== 'all'
+      ? ` в этой сфере (${SPHERE_TITLES[sphere as Sphere]})`
+      : '';
+  const concern =
+    request && !withClarify && !told
+      ? `; ещё мягко, одним вопросом спроси, что именно беспокоит${where}: ответ не обязателен, не настаивай`
+      : '';
+  return `одним сообщением ${ask}${clarify}${concern}`;
 }
 
 /**

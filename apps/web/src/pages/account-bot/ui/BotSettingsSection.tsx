@@ -5,12 +5,13 @@ import { QueryBoundary, SectionCard } from '@/shared/ui';
 import { useGetBotSettingsQuery } from '@/entities/bot';
 import {
   AgentToggle,
+  HandoffAfterSetting,
   LibraryImportCard,
   PersonaForm,
   TimingsForm,
 } from '@/features/bot-settings';
 
-/** Настройки агента: включение, стандартная библиотека, образ, тайминги. */
+/** Настройки агента: включение, стандартная библиотека, до какого этапа ведёт, образ, тайминги. */
 export function BotSettingsSection({ accountId }: { accountId: string }) {
   const query = useGetBotSettingsQuery(accountId, { skip: accountId === '' });
 
@@ -26,7 +27,7 @@ export function BotSettingsSection({ accountId }: { accountId: string }) {
             <Grid size={{ xs: 12, md: 5 }}>
               <SectionCard
                 title="Агент"
-                subtitle="Ведёт переписку от лица практика до сообщения с ценами, дальше отвечает менеджер."
+                subtitle="Ведёт переписку от лица практика до выбранного этапа, дальше отвечает менеджер."
                 fullHeight
               >
                 <AgentToggle settings={settings} />
@@ -42,6 +43,16 @@ export function BotSettingsSection({ accountId }: { accountId: string }) {
               </SectionCard>
             </Grid>
           </Grid>
+
+          <SectionCard
+            title="До какого этапа ведёт агент"
+            subtitle="Отправив выбранный этап, агент передаёт чат менеджеру и больше в нём не пишет."
+          >
+            <HandoffAfterSetting
+              accountId={settings.accountId}
+              initial={settings.handoffAfter}
+            />
+          </SectionCard>
 
           <SectionCard
             title="Образ практика"

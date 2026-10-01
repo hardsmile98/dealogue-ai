@@ -42,4 +42,35 @@ export const settingsFormStyles = {
   rangeFields: {
     alignItems: 'flex-start',
   },
+  /** Варианты «докуда ведёт агент» — карточками: в ряд на широком экране, стопкой на узком. */
+  handoffOptions: {
+    display: 'grid',
+    gridTemplateColumns: {
+      xs: 'minmax(0, 1fr)',
+      md: 'repeat(3, minmax(0, 1fr))',
+    },
+    gap: 1.5,
+  },
+  handoffOption: {
+    m: 0,
+    alignItems: 'flex-start',
+    gap: 0.5,
+    p: 1.5,
+    pl: 1,
+    border: '1px solid',
+    borderColor: 'divider',
+    borderRadius: 2,
+    transition: 'border-color 120ms, background-color 120ms',
+    '& .MuiRadio-root': {
+      mt: -0.5,
+    },
+  },
+  handoffOptionSelected: {
+    borderColor: 'primary.main',
+    bgcolor: 'action.selected',
+  },
+  handoffTitle: {
+    fontWeight: 600,
+    mb: 0.25,
+  },
 } satisfies SxStyles;

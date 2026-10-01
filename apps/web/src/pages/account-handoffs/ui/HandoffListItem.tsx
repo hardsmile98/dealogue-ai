@@ -34,7 +34,11 @@ export function HandoffListItem({ accountId, chat }: HandoffListItemProps) {
           {chat.label && (
             <Chip
               size="small"
-              color={chat.label === 'prices_silent' ? 'default' : 'warning'}
+              color={
+                chat.label === 'prices_silent' || chat.label === 'limit_silent'
+                  ? 'default'
+                  : 'warning'
+              }
               label={CHAT_LABEL_LABELS[chat.label]}
             />
           )}

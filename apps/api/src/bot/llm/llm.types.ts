@@ -12,6 +12,8 @@ export interface LlmRequest {
   /** Просить у модели строго JSON (response_format json_object). */
   json: boolean;
   maxTokens?: number;
+  /** Свой таймаут обращения, мс; по умолчанию — `BOT_LLM_TIMEOUT_MS` (длинный ответ пишется дольше). */
+  timeoutMs?: number;
   /** Остановка API: обращение обрывается, ход подхватит восстановление. */
   signal?: AbortSignal;
 }

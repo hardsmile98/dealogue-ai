@@ -1,5 +1,5 @@
 /** Настройки агента на аккаунте — зеркало apps/api/src/bot/bot.types.ts. */
-import type { Gender, LibraryKind } from './kinds';
+import type { Gender, HandoffAfter, LibraryKind } from './kinds';
 
 export interface PersonaLink {
   title: string;
@@ -51,6 +51,8 @@ export interface BotSettingsDto {
   persona: Persona;
   timings: Timings;
   model: string;
+  /** До какой вехи агент ведёт клиента; после неё чат уходит менеджеру. */
+  handoffAfter: HandoffAfter;
   /** Сколько элементов в библиотеке по видам — чтобы показать, что импорт сделан. */
   library: { total: number; byKind: Partial<Record<LibraryKind, number>> };
 }
@@ -64,6 +66,7 @@ export interface UpdateBotSettingsBody {
       : Timings[K];
   }>;
   model?: string;
+  handoffAfter?: HandoffAfter;
 }
 
 /** `keep` — добавить недостающее, `replace` — вернуть стандартные тексты. */

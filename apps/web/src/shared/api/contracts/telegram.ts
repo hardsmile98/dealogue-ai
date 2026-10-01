@@ -5,6 +5,8 @@
  * Все даты — ISO-строки; дни статистики — `YYYY-MM-DD`.
  */
 
+import type { ChatLabel, ChatMode } from './bot/kinds';
+
 export type TelegramAccountStatus =
   | 'connected'
   /** Авторизация начата, но код или пароль ещё не подтверждены. */
@@ -65,6 +67,14 @@ export interface ChatDto {
   leadCode: string | null;
   /** До какого id собеседник прочитал наши сообщения. */
   readOutboxMaxId: number;
+  /** Агент в чате; null — агент этот чат не вёл и режим руками не ставили. */
+  agent: ChatAgentDto | null;
+}
+
+/** Чей чат: агента или менеджера, и ярлык «у менеджера». */
+export interface ChatAgentDto {
+  mode: ChatMode;
+  label: ChatLabel | null;
 }
 
 /** Страница списка чатов: свежие сверху, по `CHATS_PAGE_SIZE` штук. */
@@ -81,6 +91,9 @@ export const CHATS_PAGE_SIZE = 100;
 
 /** Фильтр по коду из первого сообщения: только с кодом или только без. */
 export type ChatCodeFilter = 'with' | 'without';
+
+/** Фильтр по режиму агента: ведёт, чат у менеджера, выключен. */
+export type ChatAgentFilter = ChatMode;
 
 export interface MessageDto {
   id: string;
@@ -155,6 +168,7 @@ export interface ChatsQuery {
   /** Подстрока имени, @username, телефона или текста последнего сообщения. */
   search?: string;
   code?: ChatCodeFilter;
+  agent?: ChatAgentFilter;
 }
 
 export interface ChatQuery {

@@ -102,7 +102,9 @@ export const chatListStyles = {
   itemBottom: {
     display: 'flex',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 1,
+    rowGap: 0.5,
     mt: 0.75,
   },
 } satisfies SxStyles;

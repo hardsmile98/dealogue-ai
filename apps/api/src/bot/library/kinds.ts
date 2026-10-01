@@ -30,6 +30,22 @@ export function stageFromMilestones(delivered: readonly string[]): Stage {
 }
 
 /**
+ * До какой вехи агент ведёт клиента (настройка аккаунта, решение владельца
+ * 01.10.2026): после неё чат уходит менеджеру, как после цен. `prices` — вся
+ * воронка, как было до настройки.
+ */
+export const HANDOFF_AFTER = ['diagnostic', 'offer', 'prices'] as const;
+export type HandoffAfter = (typeof HANDOFF_AFTER)[number];
+export const DEFAULT_HANDOFF_AFTER: HandoffAfter = 'prices';
+
+/** Значение из базы; незнакомое — вся воронка. */
+export function readHandoffAfter(value: unknown): HandoffAfter {
+  return (HANDOFF_AFTER as readonly unknown[]).includes(value)
+    ? (value as HandoffAfter)
+    : DEFAULT_HANDOFF_AFTER;
+}
+
+/**
  * Виды элементов библиотеки. Тела вех (`links`, `diagnostic`, `offer`,
  * `prices`) уходят дословно; остальное — образцы тона: по ним ответчик
  * пишет своё сообщение, а не копирует их. Возражений два плейбука:
@@ -292,6 +308,8 @@ export const MANUAL_CHAT_MODES = ['auto', 'off'] as const;
 export const CHAT_LABELS = [
   'needs_reply',
   'prices_silent',
+  // Агент дошёл до своей последней вехи (настройка `handoffAfter`), клиент молчит.
+  'limit_silent',
   'agent_unavailable',
 ] as const;
 export type ChatLabel = (typeof CHAT_LABELS)[number];
@@ -303,6 +321,8 @@ export const HANDOFF_REASONS = [
   'no_language_materials',
   'reply_after_prices',
   'prices_sent',
+  'limit_reached',
+  'reply_after_limit',
   'foreign_outgoing',
   'agent_unavailable',
   'underage',
@@ -320,6 +340,8 @@ export const HANDOFF_LABELS: Readonly<Record<HandoffReason, ChatLabel | null>> =
     no_language_materials: 'needs_reply',
     reply_after_prices: 'needs_reply',
     prices_sent: 'prices_silent',
+    limit_reached: 'limit_silent',
+    reply_after_limit: 'needs_reply',
     foreign_outgoing: null,
     agent_unavailable: 'agent_unavailable',
     // Агент уже вежливо отказал (младше порога): ждать ответа менеджера не нужно.

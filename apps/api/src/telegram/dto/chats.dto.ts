@@ -24,6 +24,10 @@ export const MESSAGE_MAX_LENGTH = 4096;
 export const CHAT_CODE_FILTERS = ['with', 'without'] as const;
 export type ChatCodeFilter = (typeof CHAT_CODE_FILTERS)[number];
 
+/** Фильтр по режиму агента в чате (bot_chat_state.mode). */
+export const CHAT_AGENT_FILTERS = ['auto', 'manager', 'off'] as const;
+export type ChatAgentFilter = (typeof CHAT_AGENT_FILTERS)[number];
+
 export class ListChatsQueryDto {
   /** `nextCursor` предыдущей страницы; без него — первая страница. */
   @MaxLength(256, { message: 'Некорректный курсор' })
@@ -49,6 +53,13 @@ export class ListChatsQueryDto {
   @IsIn(CHAT_CODE_FILTERS, { message: 'code: ожидается with или without' })
   @IsOptional()
   code?: ChatCodeFilter;
+
+  /** Только чаты, где агент ведёт, где чат у менеджера или где агент выключен. */
+  @IsIn(CHAT_AGENT_FILTERS, {
+    message: 'agent: ожидается auto, manager или off',
+  })
+  @IsOptional()
+  agent?: ChatAgentFilter;
 }
 
 export class ListMessagesQueryDto {

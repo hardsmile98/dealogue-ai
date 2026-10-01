@@ -12,7 +12,7 @@ import TextField from '@mui/material/TextField';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import SearchOffOutlinedIcon from '@mui/icons-material/SearchOffOutlined';
-import type { ChatCodeFilter, ChatsQuery } from '@/shared/api';
+import type { ChatAgentFilter, ChatCodeFilter, ChatsQuery } from '@/shared/api';
 import {
   getApiErrorMessage,
   pluralize,
@@ -20,6 +20,7 @@ import {
   useInfiniteScroll,
 } from '@/shared/lib';
 import { EmptyState } from '@/shared/ui';
+import { agentModeIcon } from '@/entities/bot';
 import { useGetChatsInfiniteQuery } from '@/entities/chat';
 import { chatListStyles as styles } from './ChatList.styles';
 import { ChatListItem } from './ChatListItem';
@@ -37,6 +38,13 @@ const FILTERS: { key: ChatFilter; label: string }[] = [
   { key: 'without', label: 'Без кода' },
 ];
 
+/** Чей чат: нажатый фильтр сужает список, повторное нажатие снимает его. */
+const AGENT_FILTERS: { key: ChatAgentFilter; label: string }[] = [
+  { key: 'auto', label: 'Ведёт агент' },
+  { key: 'manager', label: 'У менеджера' },
+  { key: 'off', label: 'Выключен' },
+];
+
 interface ChatListProps {
   accountId: string;
   selectedId: string | null;
@@ -47,12 +55,14 @@ interface ChatListProps {
 export function ChatList({ accountId, selectedId, onSelect }: ChatListProps) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ChatFilter>('all');
+  const [agent, setAgent] = useState<ChatAgentFilter | null>(null);
   const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS);
 
   const query: ChatsQuery = {
     accountId,
     search: debouncedSearch || undefined,
     code: filter === 'all' ? undefined : filter,
+    agent: agent ?? undefined,
   };
   const {
     data,
@@ -70,7 +80,10 @@ export function ChatList({ accountId, selectedId, onSelect }: ChatListProps) {
     [data],
   );
   const total = data?.pages[0]?.total ?? 0;
-  const isFiltered = query.search !== undefined || query.code !== undefined;
+  const isFiltered =
+    query.search !== undefined ||
+    query.code !== undefined ||
+    query.agent !== undefined;
 
   const { rootRef, sentinelRef } = useInfiniteScroll<HTMLUListElement>({
     hasMore: hasNextPage,
@@ -82,6 +95,7 @@ export function ChatList({ accountId, selectedId, onSelect }: ChatListProps) {
   const resetFilters = () => {
     setSearch('');
     setFilter('all');
+    setAgent(null);
   };
 
   return (
@@ -118,6 +132,24 @@ export function ChatList({ accountId, selectedId, onSelect }: ChatListProps) {
                 variant={active ? 'filled' : 'outlined'}
                 aria-pressed={active}
                 onClick={() => setFilter(item.key)}
+              />
+            );
+          })}
+        </Box>
+        <Box sx={styles.filterRow} role="group" aria-label="Фильтр по агенту">
+          {AGENT_FILTERS.map((item) => {
+            const active = agent === item.key;
+            return (
+              <Chip
+                key={item.key}
+                size="small"
+                icon={agentModeIcon(item.key)}
+                label={item.label}
+                clickable
+                color={active ? 'primary' : 'default'}
+                variant={active ? 'filled' : 'outlined'}
+                aria-pressed={active}
+                onClick={() => setAgent(active ? null : item.key)}
               />
             );
           })}

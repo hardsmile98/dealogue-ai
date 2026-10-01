@@ -40,6 +40,7 @@ import { BotSandboxClientName1700000000021 } from './migrations/1700000000021-Bo
 import { BotLongerQuietWindow1700000000022 } from './migrations/1700000000022-BotLongerQuietWindow.js';
 import { BotRealDialogs1700000000023 } from './migrations/1700000000023-BotRealDialogs.js';
 import { BotDropExamples1700000000024 } from './migrations/1700000000024-BotDropExamples.js';
+import { BotHandoffAfter1700000000025 } from './migrations/1700000000025-BotHandoffAfter.js';
 
 export interface DatabaseConfig {
   host: string;
@@ -163,6 +164,7 @@ export function buildTypeOrmOptions(config: DatabaseConfig): DataSourceOptions {
       BotLongerQuietWindow1700000000022,
       BotRealDialogs1700000000023,
       BotDropExamples1700000000024,
+      BotHandoffAfter1700000000025,
     ],
     // Схему меняем только миграциями.
     synchronize: false,

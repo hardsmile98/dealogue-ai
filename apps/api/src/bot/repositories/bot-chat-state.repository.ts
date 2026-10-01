@@ -152,7 +152,8 @@ export class BotChatStateRepository {
 
   /**
    * Чаты аккаунта у менеджера (не песочница): сначала ждущие ответа — дольше
-   * всех ждущие выше, потом «цены отправлены, молчит», потом остальные.
+   * всех ждущие выше, потом «агент закончил (цены или последняя веха),
+   * молчит», потом остальные.
    * `waiting_since` — первое сообщение клиента после нашего последнего,
    * `milestones` — доставленные вехи (этап) тем же запросом.
    */
@@ -175,7 +176,7 @@ export class BotChatStateRepository {
          WHERE state.account_id = $1::uuid AND state.mode = 'manager' AND NOT state.sandbox
        ) handoff
        ORDER BY
-         CASE WHEN label IN ('needs_reply', 'agent_unavailable') THEN 0 WHEN label = 'prices_silent' THEN 1 ELSE 2 END,
+         CASE WHEN label IN ('needs_reply', 'agent_unavailable') THEN 0 WHEN label IN ('prices_silent', 'limit_silent') THEN 1 ELSE 2 END,
          COALESCE(waiting_since, handoff_at) ASC NULLS LAST
        LIMIT $2::int`,
       [accountId, limit],

@@ -7,6 +7,7 @@ import {
 } from '../library/kinds.js';
 import type {
   Gender,
+  HandoffAfter,
   HandoffReason,
   LibraryKind,
   Milestone,
@@ -33,6 +34,7 @@ import {
   nudgesSaid,
   objectionPending,
   requestKnown,
+  toldConcern,
 } from './memory.js';
 import type { IntakeQuestionNudge, ObjectionPending } from './memory.js';
 import { RETURN_STEPS, objectionMove, objectionStage } from './objections.js';
@@ -98,6 +100,8 @@ export interface PlanInput {
   stage: Stage;
   now: Date;
   timings: Timings;
+  /** Последняя веха агента (настройка аккаунта): после неё чат уходит менеджеру. */
+  handoffAfter: HandoffAfter;
   state: PlanState;
   library: LibraryAvailability;
   /** Задания, которые созрели или созреют в ближайшие минуты, — входят в ход как срочные. */
@@ -279,6 +283,23 @@ export function buildPlan(input: PlanInput): Plan {
     return handoff(plan, 'risk', analysis.risk.join(', '));
   if (stage === 'prices' && trigger === 'client')
     return handoff(plan, 'reply_after_prices', 'клиент ответил после цен');
+  // Последняя веха агента уже ушла (настройку убавили или чат вернули
+  // агенту руками): дальше ведёт менеджер. Клиент написал — ему нужен ответ;
+  // созрело напоминание — молча, с ярлыком «агент закончил».
+  if (stage !== 'prices' && !before(stage, input.handoffAfter)) {
+    const last = MILESTONE_TITLES[input.handoffAfter];
+    return trigger === 'client'
+      ? handoff(
+          plan,
+          'reply_after_limit',
+          `клиент ответил после последней вехи агента («${last}»)`,
+        )
+      : handoff(
+          plan,
+          'limit_reached',
+          `агент дошёл до последней вехи («${last}»)`,
+        );
+  }
   if (!input.library.supportsLanguage(language)) {
     return handoff(
       plan,
@@ -316,9 +337,7 @@ export function buildPlan(input: PlanInput): Plan {
   // после суток молчания.
   // Клиент рассказал о своей ситуации: сферу всё равно спрашиваем
   // (решение 30.09), но «не увидел вашего запроса» ему не говорим.
-  const told =
-    intents.has('shares_story') ||
-    memory.facts.some((fact) => fact.kind === 'situation');
+  const told = intents.has('shares_story') || toldConcern(memory);
   const clarify = clarifyPhrases(input, query);
   const intake =
     stage === 'intake' && trigger === 'client'
@@ -430,6 +449,10 @@ export function buildPlan(input: PlanInput): Plan {
       );
     }
     plan.milestone = item;
+    // Последняя веха агента: после её отправки чат уходит менеджеру (после
+    // цен — своей причиной, `prices_sent`).
+    if (target === input.handoffAfter && target !== 'prices')
+      plan.close = 'limit_reached';
   }
 
   // 3. Возражение: подход по этапу и повтору, образцы — из плейбука этапа.
@@ -585,6 +608,9 @@ export function buildPlan(input: PlanInput): Plan {
     memory,
     history: input.history,
     afterDiagnostic: !before(stage, 'diagnostic'),
+    told,
+    mood: analysis?.mood ?? null,
+    answersClarification: turn.answersQuestion,
   });
   return plan;
 }
